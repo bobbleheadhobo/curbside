@@ -31,8 +31,12 @@ from ..models import Hunt, Listing, Score
 
 log = logging.getLogger("dealbot.notify.discord")
 
-GREEN, AMBER, GREY = 0x2E9E5B, 0xC08A2E, 0x6B6B6B
-MAX_TITLE, MAX_DESC = 250, 3900
+# Colour tracks the score, so the left edge of the card reads at a glance in a
+# scrolling channel.
+HOT, GOOD, FAIR, DIM = 0x22C55E, 0x16A34A, 0xD97706, 0x6B7280
+MAX_TITLE, MAX_DESC, MAX_FIELD = 250, 3900, 1000
+
+MET_MARK = {"yes": "\u2705", "no": "\u274c", "unknown": "\u2753"}
 
 
 def _money(cents: int | None) -> str:
@@ -47,51 +51,99 @@ def _age_days(posted_at: datetime | None) -> int | None:
     return max(0, (datetime.now(timezone.utc) - posted_at).days)
 
 
+def _colour(score: float) -> int:
+    if score >= 9:
+        return HOT
+    if score >= 7:
+        return GOOD
+    return FAIR if score >= 5 else DIM
+
+
+def _badge(score: float) -> str:
+    if score >= 9:
+        return "\U0001f525 "          # fire
+    if score >= 8:
+        return "\u2b50 "              # star
+    return ""
+
+
+def _requirement_lines(score: Score) -> str:
+    """The per-requirement verdicts with their evidence.
+
+    This is the most useful thing we know and it was never shown: "at least 70
+    inches wide -- 'six feet long' = 72 inches" is what makes an alert
+    actionable without opening anything."""
+    out = []
+    for req in score.requirements[:5]:
+        if not isinstance(req, dict):
+            continue
+        mark = MET_MARK.get(str(req.get("met")), "\u2753")
+        line = f"{mark} {req.get('req', '')}"
+        if (ev := req.get("evidence")):
+            line += f"\n\u2003*{str(ev)[:110]}*"
+        out.append(line)
+    return "\n".join(out)[:MAX_FIELD]
+
+
 def build_embed(listing: Listing, score: Score, dashboard_url: str) -> dict:
-    """One listing as a Discord embed: photo, price, distance, verdict."""
+    """One listing as a Discord embed."""
     price = _money(listing.price_cents)
     if (listing.previous_price_cents is not None
             and listing.price_cents is not None
             and listing.previous_price_cents > listing.price_cents):
-        price = f"~~${listing.previous_price_cents / 100:,.0f}~~ → {price}"
+        drop = 100 - (listing.price_cents / listing.previous_price_cents * 100)
+        price = (f"~~${listing.previous_price_cents / 100:,.0f}~~ \u2192 {price}"
+                 f"\n`-{drop:.0f}%`")
 
-    verdict = f"{score.deal_score:.0f}/10"
+    verdict = f"**{score.deal_score:.0f}**/10"
     if score.est_value_cents:
-        verdict += f" · worth ~${score.est_value_cents / 100:,.0f}"
+        verdict += f"\nworth ~${score.est_value_cents / 100:,.0f}"
+    if score.match == "unknown":
+        verdict += "\n*unverified*"
 
     fields = [
         {"name": "Price", "value": price, "inline": True},
         {"name": "Distance", "value":
-            f"{listing.distance_mi:.0f} mi" if listing.distance_mi is not None else "?",
-         "inline": True},
+            (f"{listing.distance_mi:.0f} mi" if listing.distance_mi is not None
+             else "unknown"), "inline": True},
         {"name": "Verdict", "value": verdict, "inline": True},
     ]
 
-    notes = [score.reasoning or ""]
+    if (reqs := _requirement_lines(score)):
+        fields.append({"name": "Requirements", "value": reqs, "inline": False})
     if score.match == "unknown" and score.unknowns:
-        notes.append("**Needs checking:** " + "; ".join(score.unknowns[:3]))
+        fields.append({"name": "Worth checking",
+                       "value": "\n".join(f"\u2022 {u}" for u in score.unknowns[:4])[:MAX_FIELD],
+                       "inline": False})
     if score.red_flags:
-        notes.append("⚠ " + "; ".join(score.red_flags[:3]))
-    notes.append(f"[open on the dashboard]({dashboard_url}/listing/{listing.id})")
+        fields.append({"name": "\u26a0\ufe0f Red flags",
+                       "value": "\n".join(f"\u2022 {f}" for f in score.red_flags[:4])[:MAX_FIELD],
+                       "inline": False})
+
+    description = (score.reasoning or "").strip()
+    if dashboard_url:
+        description += f"\n\n[\u2192 open in Curbside]({dashboard_url}/listing/{listing.id})"
 
     age = _age_days(listing.posted_at)
     footer = [listing.source]
     if age is not None:
-        footer.append(f"listed {age}d ago")
+        footer.append("listed today" if age == 0 else f"listed {age}d ago")
     if age is not None and age >= 14 and listing.previous_price_cents is not None:
-        footer.append("motivated seller")
+        footer.append("\U0001f4c9 motivated seller")
     if score.images_checked:
-        footer.append("photos checked")
+        footer.append("\U0001f4f7 photos checked")
 
     embed = {
-        "title": listing.title[:MAX_TITLE],
+        "author": {"name": (listing.city or listing.source).strip()},
+        "title": (_badge(score.deal_score) + listing.title)[:MAX_TITLE],
         "url": listing.url,
-        "description": "\n\n".join(n for n in notes if n)[:MAX_DESC],
-        "color": GREEN if score.match == "yes" else (
-            AMBER if score.match == "unknown" else GREY),
+        "description": description[:MAX_DESC],
+        "color": _colour(score.deal_score),
         "fields": fields,
-        "footer": {"text": " · ".join(footer)},
+        "footer": {"text": " \u00b7 ".join(footer)},
     }
+    if listing.posted_at:
+        embed["timestamp"] = listing.posted_at.isoformat()
     if listing.images:
         embed["image"] = {"url": listing.images[0]}
     return embed

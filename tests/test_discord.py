@@ -10,9 +10,10 @@ from dealbot.notify.discord import DiscordNotifier, build_embed
 NOW = datetime.now(timezone.utc)
 
 
-def make_listing(lid="fb:1", price=0, previous=None, days_old=1, images=("p.jpg",)):
+def make_listing(lid="fb:1", price=0, previous=None, days_old=1,
+                 images=("p.jpg",), title="Free Organ with Bench"):
     return Listing(id=lid, source="facebook", source_id=lid.split(":")[-1],
-                   title="Free Organ with Bench", description="d",
+                   title=title, description="d",
                    price_cents=price, previous_price_cents=previous,
                    currency="USD", url="https://example/x", distance_mi=9.0,
                    images=images, posted_at=NOW - timedelta(days=days_old))
@@ -51,7 +52,8 @@ def _register(store, hunt, listing):
 def test_a_price_drop_renders_struck_through():
     e = build_embed(make_listing(price=0, previous=50000), make_score(), "http://d")
     price = next(f for f in e["fields"] if f["name"] == "Price")["value"]
-    assert price == "~~$500~~ → **FREE**"
+    assert "~~$500~~" in price and "**FREE**" in price
+    assert "-100%" in price
 
 
 def test_the_photo_is_attached():
@@ -64,8 +66,10 @@ def test_an_unverified_match_says_what_to_check():
                     make_score(match="unknown",
                                unknowns=("width not stated", "colour")),
                     "http://d")
-    assert "Needs checking" in e["description"]
-    assert "width not stated" in e["description"]
+    field = next(f for f in e["fields"] if f["name"] == "Worth checking")
+    assert "width not stated" in field["value"]
+    verdict = next(f for f in e["fields"] if f["name"] == "Verdict")
+    assert "unverified" in verdict["value"]
 
 
 def test_the_dashboard_link_is_included():
@@ -180,3 +184,48 @@ def test_a_bin_entry_predating_notifications_still_gets_announced(rig):
     n.notify(hunt, [])                      # this run surfaced nothing new
     assert len(sent) == 1
     assert sent[0][0] == "https://w"        # and it went to the wants channel
+
+
+def test_requirement_evidence_is_shown():
+    """The most useful thing we know, and it was never in the alert: "at least
+    70 inches wide -- 'six feet long' = 72 inches" makes it actionable without
+    opening anything."""
+    e = build_embed(make_listing(), make_score(match="yes", requirements=(
+        {"req": "at least 70 inches wide", "met": "yes",
+         "evidence": '"six feet long" = 72 inches'},
+        {"req": "not a corner unit", "met": "unknown",
+         "evidence": "shape not described"},
+    )), "http://d")
+    reqs = next(f for f in e["fields"] if f["name"] == "Requirements")["value"]
+    assert "✅ at least 70 inches wide" in reqs
+    assert "six feet long" in reqs
+    assert "❓ not a corner unit" in reqs
+
+
+def test_colour_and_badge_track_the_score():
+    from dealbot.notify.discord import DIM, FAIR, GOOD, HOT
+    assert build_embed(make_listing(), make_score(deal_score=9.5), "")["color"] == HOT
+    assert build_embed(make_listing(), make_score(deal_score=7.5), "")["color"] == GOOD
+    assert build_embed(make_listing(), make_score(deal_score=5.5), "")["color"] == FAIR
+    assert build_embed(make_listing(), make_score(deal_score=2.0), "")["color"] == DIM
+    assert build_embed(make_listing(), make_score(deal_score=9.5), "")["title"].startswith("🔥")
+    assert build_embed(make_listing(), make_score(deal_score=8.0), "")["title"].startswith("⭐")
+    assert not build_embed(make_listing(), make_score(deal_score=6.0), "")["title"].startswith(("🔥", "⭐"))
+
+
+def test_a_malformed_requirement_does_not_break_the_embed():
+    e = build_embed(make_listing(),
+                    make_score(requirements=("junk", {"req": "ok", "met": "yes"})),
+                    "http://d")
+    assert any(f["name"] == "Requirements" for f in e["fields"])
+
+
+def test_the_embed_stays_inside_discord_limits():
+    long = make_score(reasoning="x" * 9000,
+                      unknowns=tuple(f"u{i}" * 200 for i in range(20)),
+                      red_flags=tuple(f"f{i}" * 200 for i in range(20)))
+    e = build_embed(make_listing(title="t" * 400), long, "http://d")
+    assert len(e["title"]) <= 256
+    assert len(e["description"]) <= 4096
+    assert all(len(f["value"]) <= 1024 for f in e["fields"])
+    assert len(e["fields"]) <= 25
