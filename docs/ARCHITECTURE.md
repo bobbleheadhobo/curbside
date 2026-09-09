@@ -194,7 +194,31 @@ All of this was collected and none of it was visible:
 - **Rejections by reason** on the hunt page. "118 rejected on `over_price`" says
   your cap is wrong far faster than reading listings one at a time.
 
-## 10. Known gaps
+## 10. The dashboard
+
+| view | what it holds |
+|---|---|
+| `/` wants | matches for your list, unverified ones flagged |
+| `/free` free finds | worth collecting regardless of the list |
+| `/saved` | what you decided to act on (saved + contacted) |
+| `/near` near misses | judged, but under the bar |
+| `/hunt/<id>` | everything one hunt matched, including rejections and why |
+| `/listing/<id>` | detail, score history, price sparkline |
+| `/runs` | every fetch attempt: counts, cost, errors |
+
+**Near misses exist so the threshold is falsifiable.** `deal_score` assumes
+anything unverified resolves favourably, so a 6 means "even at its best,
+mediocre" -- but a bar you can never see over cannot be calibrated. If good
+things keep appearing there, 7.0 is too high.
+
+**Photos are cached locally** for listings that reach a bin, at 512px and around
+34KB each. Facebook's image URLs carry an expiry token and die after roughly
+four days -- 225 of 619 listings with photos are Facebook -- so a browsing UI
+built on the source URLs would rot a third of its images every week. `/thumb/<id>`
+serves the local copy and falls back to the source while one exists.
+`dealbot prune-thumbs` drops copies for listings no longer in a bin or triaged.
+
+## 11. Known gaps
 
 - **Relist detection** is inert without seller ids.
 - **Comparables from our own price history** need a month of observations; that

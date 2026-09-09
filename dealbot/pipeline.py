@@ -42,6 +42,7 @@ def run_hunt(
     no_score: bool = False,
     image_provider=None,
     max_image_checks: int = 10,
+    thumbnails=None,
 ) -> RunResult:
     run_id = store.start_run(hunt, source.name)
     result = RunResult(run_id=run_id, hunt_id=hunt.id)
@@ -302,6 +303,12 @@ def run_hunt(
     for s in free_finds:
         store.set_status(hunt.id, s.listing_id, "free_find")
     result.n_wanted, result.n_free_find = len(wanted), len(free_finds)
+
+    # Keep a local copy of the photo for anything you will actually browse.
+    # Facebook's URLs expire in about four days; the dashboard outlives them.
+    if thumbnails is not None:
+        for sc in wanted + free_finds:
+            thumbnails.store(by_id[sc.listing_id])
     surfaced = [(by_id[s.listing_id], s) for s in wanted + free_finds]
     for notifier in notifiers:
         try:

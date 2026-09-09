@@ -42,7 +42,7 @@ button:hover{border-color:var(--dim)}
 .wrap{overflow-x:auto}
 </style></head><body>
 <header><b><a href="/">Curbside</a></b>
-<nav><a href="/">wants</a> &nbsp; <a href="/free">free finds</a> &nbsp;
+<nav><a href="/">wants</a> &nbsp; <a href="/free">free finds</a> &nbsp; <a href="/saved">saved</a> &nbsp; <a href="/near">near misses</a> &nbsp;
 {% for h in hunts %}<a href="/hunt/{{h.id}}">{{h.name}}</a> &nbsp;{% endfor %}
 <a href="/runs">runs</a></nav></header>
 <main>{% block content %}{% endblock %}</main></body></html>

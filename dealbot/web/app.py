@@ -11,11 +11,12 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from ..config import Config
 from ..db import Store
+from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -77,6 +78,17 @@ WHERE listing_id = ? ORDER BY id
 
 PAGE_LIMIT = 200
 
+# Things you decided to act on. Clicking "saved" used to make a listing vanish:
+# it left the bin and was only findable by digging through a hunt view.
+SAVED_SQL = QUEUE_SQL.replace("WHERE m.status = ?",
+                              "WHERE m.status IN ('saved', 'contacted')")
+
+# The band just under the bar. `deal_score` is judged as if unknowns resolve
+# favourably, so a 6 means "even if it is what it looks like, it is mediocre" --
+# but you cannot calibrate a threshold you can never see over.
+NEAR_MISS_SQL = QUEUE_SQL.replace(
+    "WHERE m.status = ?", "WHERE m.status = 'scored' AND s.deal_score >= ?")
+
 
 def _rows(store: Store, sql: str, args=()) -> list[dict]:
     out = []
@@ -115,6 +127,7 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
 def create_app(cfg: Config) -> FastAPI:
     app = FastAPI(title="Curbside")
     store = Store(cfg.db_path)
+    thumbs = ThumbnailStore(cfg.db_path.parent / "thumbs")
     hunts = {h.id: h for h in cfg.hunts}
 
     def ctx(request: Request, **kw):
@@ -140,6 +153,44 @@ def create_app(cfg: Config) -> FastAPI:
         matches sit here too, flagged, rather than in a bin of their own -- a
         9.0 unconfirmed TV stand belongs next to a 9.0 confirmed one."""
         return _bin(request, "wants.html", "wanted")
+
+    @app.get("/saved")
+    def saved(request: Request):
+        items = _rows(store, SAVED_SQL, (PAGE_LIMIT,))
+        return TEMPLATES.TemplateResponse(
+            request, "saved.html",
+            ctx(request, items=items, counts=_counts(), total=len(items),
+                truncated=False))
+
+    @app.get("/near")
+    def near_misses(request: Request, floor: float = 4.0):
+        """Judged, but under the bar. This is how you tell whether the bar is
+        in the right place."""
+        items = _rows(store, NEAR_MISS_SQL, (floor, PAGE_LIMIT))
+        total = store.conn.execute(
+            "SELECT COUNT(*) c FROM hunt_matches m JOIN scores s ON s.id = "
+            "(SELECT MAX(id) FROM scores WHERE hunt_id=m.hunt_id AND "
+            "listing_id=m.listing_id) WHERE m.status='scored' AND s.deal_score>=?",
+            (floor,)).fetchone()["c"]
+        return TEMPLATES.TemplateResponse(
+            request, "near.html",
+            ctx(request, items=items, counts=_counts(), total=total,
+                floor=floor, truncated=total > len(items)))
+
+    @app.get("/thumb/{listing_id:path}")
+    def thumb(listing_id: str):
+        """Local copy if we have one, otherwise fall back to the source URL --
+        which for Facebook stops working after about four days."""
+        path = thumbs.path_for(listing_id)
+        if path.exists():
+            return FileResponse(path, media_type="image/jpeg",
+                                headers={"Cache-Control": "public, max-age=86400"})
+        row = store.conn.execute(
+            "SELECT images FROM listings WHERE id=?", (listing_id,)).fetchone()
+        urls = json.loads(row["images"]) if row and row["images"] else []
+        if urls:
+            return RedirectResponse(urls[0], status_code=307)
+        return RedirectResponse("/static-missing", status_code=404)
 
     @app.get("/free")
     def free_finds(request: Request):

@@ -57,3 +57,31 @@ def test_both_scorer_backends_build(store):
     for backend in ("stub", "claude_code"):
         c = replace(cfg, scorer=replace(cfg.scorer, backend=backend))
         assert _build_scorer(c, store) is not None
+
+
+def test_notify_command_costs_nothing_and_drains_the_queue(tmp_path, monkeypatch):
+    """Catch-up otherwise rides along with a hunt's cadence, so something stuck
+    under an hourly want search waits up to an hour."""
+    import shutil
+    from dealbot.cli import cmd_notify
+    from dealbot.models import Listing, Score
+    from datetime import datetime, timezone
+
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    st = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
+                price_cents=0, currency="USD", url="u")
+    st.upsert_listing(l); st.mark_matches(hunt.id, [l])
+    st.set_status(hunt.id, l.id, "free_find")
+    st.save_score(Score(listing_id=l.id, hunt_id=hunt.id, model="m",
+                        scored_at=datetime.now(timezone.utc), match="no",
+                        deal_score=6.0, est_value_cents=None, condition=None,
+                        matched_want=None, worth_grabbing=True, unknowns=(),
+                        requirements=(), red_flags=(), reasoning="r"),
+                  priced_at_cents=0)
+    st.close()
+
+    assert cmd_notify(type("A", (), {"config": str(tmp_path / "config.yaml"),
+                                     "hunt": None})()) == 0

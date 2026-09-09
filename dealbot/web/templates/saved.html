@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% from "_card.html" import card %}
+{% block content %}
+<h1>Saved &mdash; {{total}}</h1>
+<p class="meta">Things you decided to act on. Saved and contacted both land here;
+nothing leaves except by being dismissed.</p>
+{% for i in items %}{{ card(i, '/saved') }}{% else %}
+<div class="empty">Nothing saved yet. Hit <b>saved</b> on anything in
+<a href="/">wants</a> or <a href="/free">free finds</a> and it will collect here.</div>
+{% endfor %}
+{% endblock %}

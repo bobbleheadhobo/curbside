@@ -20,6 +20,9 @@ from .scoring.stub import StubScorer
 from .sources.craigslist import CraigslistSource
 from .sources.facebook import FacebookSource
 from .sources.fixture import FixtureSource
+from .thumbs import ThumbnailStore
+
+log = logging.getLogger("dealbot.cli")
 
 
 def _build_image_provider(cfg: config_mod.Config, source_name: str):
@@ -118,12 +121,56 @@ def cmd_once(args) -> int:
                          no_score=args.no_score,
                          image_provider=None if args.no_images
                          else _build_image_provider(cfg, name),
-                         max_image_checks=cfg.scorer.max_image_checks)
+                         max_image_checks=cfg.scorer.max_image_checks,
+                         thumbnails=ThumbnailStore(cfg.db_path.parent / "thumbs"))
             status = f"ERROR {r.error}" if r.error else (
                 f"fetched={r.n_fetched} new={r.n_new} cand={r.n_candidates} "
                 f"scored={r.n_scored} wanted={r.n_wanted} free={r.n_free_find} "
                 f"imgs={r.n_image_checks} cost=${r.cost_usd:.4f}")
             print(f"{hunt.id:24} {name:11} {status}")
+    store.close()
+    return 0
+
+
+def cmd_notify(args) -> int:
+    """Flush pending notifications without fetching or scoring anything.
+
+    Catch-up otherwise rides along with a hunt's own cadence, so something stuck
+    under an hourly want search waits up to an hour. This costs nothing -- no
+    requests, no model calls -- and is the way to drain a backlog on demand."""
+    cfg = config_mod.load(args.config)
+    store = Store(cfg.db_path)
+    notifiers = _build_notifiers(cfg, store)
+    total = 0
+    for hunt in _hunts(cfg, args.hunt):
+        pending = store.pending_notifications(hunt.id)
+        if not pending:
+            continue
+        print(f"{hunt.id:24} {len(pending)} pending")
+        for n in notifiers:
+            try:
+                n.notify(hunt, [])
+            except Exception:                              # noqa: BLE001
+                log.exception("notifier %s failed", n.name)
+        total += len(pending)
+    still = sum(len(store.pending_notifications(h.id)) for h in _hunts(cfg, args.hunt))
+    print(f"queued {total}, {still} still pending (per-run caps defer the rest)")
+    store.close()
+    return 0
+
+
+def cmd_prune_thumbs(args) -> int:
+    """Drop cached photos for listings no longer in a bin or triaged."""
+    cfg = config_mod.load(args.config)
+    store = Store(cfg.db_path)
+    thumbs = ThumbnailStore(cfg.db_path.parent / "thumbs")
+    keep = {r["listing_id"] for r in store.conn.execute(
+        """SELECT listing_id FROM hunt_matches WHERE status IN
+           ('wanted','free_find','saved','contacted')""")}
+    before = thumbs.disk_usage_mb()
+    removed = thumbs.prune(keep)
+    print(f"kept {len(keep)}, removed {removed} "
+          f"({before:.1f}MB -> {thumbs.disk_usage_mb():.1f}MB)")
     store.close()
     return 0
 
@@ -178,7 +225,9 @@ def cmd_run(args) -> int:
                     r = run_hunt(store, hunt, source, scorer, notifiers,
                                  cfg.location,
                                  image_provider=_build_image_provider(cfg, name),
-                                 max_image_checks=cfg.scorer.max_image_checks)
+                                 max_image_checks=cfg.scorer.max_image_checks,
+                                 thumbnails=ThumbnailStore(
+                                     cfg.db_path.parent / "thumbs"))
                     stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
                     print(f"[{stamp}] {hunt.id:24} {name:11} "
                           + (f"ERROR {r.error}" if r.error
@@ -212,6 +261,13 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run", help="poll on each hunt's cadence")
     r.add_argument("--hunt")
     r.set_defaults(func=cmd_run)
+
+    nt = sub.add_parser("notify", help="send pending alerts; no fetching, no cost")
+    nt.add_argument("--hunt")
+    nt.set_defaults(func=cmd_notify)
+
+    pr = sub.add_parser("prune-thumbs", help="drop cached photos no longer needed")
+    pr.set_defaults(func=cmd_prune_thumbs)
 
     h = sub.add_parser("hunts", help="list hunts and last run")
     h.set_defaults(func=cmd_hunts)

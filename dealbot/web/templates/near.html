@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% from "_card.html" import card %}
+{% block content %}
+<h1>Near misses &mdash; {{total}}</h1>
+<p class="meta">Judged, but under the bar. Scores assume anything unverified
+turns out <i>favourably</i>, so a 6 means "even at its best, mediocre". Skim
+this occasionally: if good things keep appearing here, the threshold is too
+high, and if it is all junk then the bar is right where it should be.
+{% if truncated %}<br>showing the top {{items|length}}.{% endif %}</p>
+{% for i in items %}{{ card(i, '/near') }}{% else %}
+<div class="empty">Nothing judged below the bar yet.</div>{% endfor %}
+{% endblock %}

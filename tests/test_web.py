@@ -35,3 +35,66 @@ def test_rejection_reasons_are_countable(tmp_path):
     got = {r["filter_reason"]: r["n"] for r in
            s.conn.execute(REJECT_REASONS_SQL, ("h",))}
     assert got == {"over_price": 2, "too_far": 1}
+
+
+def _client(tmp_path):
+    """A dashboard wired to a throwaway database."""
+    import shutil
+    from fastapi.testclient import TestClient
+    from dealbot.config import load
+    from dealbot.web.app import create_app
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    shutil.copy(root / "config.yaml", tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    return TestClient(create_app(cfg)), cfg
+
+
+def test_every_view_renders_on_an_empty_database(tmp_path):
+    client, _ = _client(tmp_path)
+    for path in ("/", "/free", "/saved", "/near", "/runs"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_saved_and_near_miss_views_show_the_right_rows(tmp_path):
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    for lid, status, score in (("x:1", "saved", 9.0), ("x:2", "scored", 6.0),
+                               ("x:3", "scored", 1.0)):
+        l = Listing(id=lid, source="x", source_id=lid[-1], title=f"item {lid}",
+                    description=None, price_cents=0, currency="USD", url="u")
+        s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+        s.set_status(hunt.id, lid, status)
+        s.save_score(Score(listing_id=lid, hunt_id=hunt.id, model="m",
+                           scored_at=datetime.now(timezone.utc), match="no",
+                           deal_score=score, est_value_cents=None, condition=None,
+                           matched_want=None, worth_grabbing=True, unknowns=(),
+                           requirements=(), red_flags=(), reasoning="r"),
+                     priced_at_cents=0)
+
+    saved = client.get("/saved").text
+    assert "item x:1" in saved and "item x:2" not in saved
+
+    near = client.get("/near").text
+    assert "item x:2" in near        # 6.0, under the bar
+    assert "item x:3" not in near    # 1.0, junk, below the floor
+    assert "item x:1" not in near    # saved, not a near miss
+
+
+def test_thumb_falls_back_to_the_source_url(tmp_path):
+    """Until a local copy exists, the original still works -- for about four
+    days, in Facebook's case."""
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.upsert_listing(Listing(id="x:9", source="x", source_id="9", title="t",
+                             description=None, price_cents=0, currency="USD",
+                             url="u", images=("https://img.example/a.jpg",)))
+    r = client.get("/thumb/x:9", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "https://img.example/a.jpg"

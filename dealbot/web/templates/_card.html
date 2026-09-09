@@ -1,6 +1,6 @@
 {% macro card(i, back) %}
 <div class="card">
-  {% if i.images %}<img class="thumb" src="{{i.images[0]}}" alt="">
+  {% if i.images %}<img class="thumb" src="/thumb/{{i.id}}" alt="" loading="lazy">
   {% else %}<div class="thumb">no photo</div>{% endif %}
   <div class="body">
     <div class="title"><a href="/listing/{{i.id}}">{{i.title}}</a></div>
