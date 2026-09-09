@@ -10,8 +10,10 @@ from datetime import datetime, timedelta, timezone
 
 from . import config as config_mod
 from .db import Store
+from .env import load_env
 from .images import FixtureImageProvider, HttpImageProvider
 from .notify.dashboard import DashboardNotifier
+from .notify.discord import DiscordNotifier
 from .pipeline import dry_run, run_hunt
 from .scoring.claude_code import ClaudeCodeScorer
 from .scoring.stub import StubScorer
@@ -46,6 +48,17 @@ def _build_sources(cfg: config_mod.Config):
     """Each source gets its own run per hunt, so one being throttled is visible
     in the runs table instead of quietly halving the results."""
     return [(n, _build_one_source(cfg, n)) for n in cfg.sources]
+
+
+def _build_notifiers(cfg: config_mod.Config, store):
+    notifiers = _build_notifiers(cfg, store)
+    if cfg.discord.enabled:
+        d = cfg.discord
+        notifiers.append(DiscordNotifier(
+            store, dashboard_url=d.dashboard_url, mention_score=d.mention_score,
+            max_per_run=d.max_per_run, max_age_days=d.max_age_days,
+            pause_seconds=d.pause_seconds))
+    return notifiers
 
 
 def _build_scorer(cfg: config_mod.Config, store):
@@ -89,7 +102,7 @@ def cmd_once(args) -> int:
     cfg = config_mod.load(args.config)
     store = Store(cfg.db_path)
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
-    notifiers = [DashboardNotifier(store)]
+    notifiers = _build_notifiers(cfg, store)
 
     for hunt in _hunts(cfg, args.hunt):
         for name, source in sources:
@@ -149,7 +162,7 @@ def cmd_run(args) -> int:
     cfg = config_mod.load(args.config)
     store = Store(cfg.db_path)
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
-    notifiers = [DashboardNotifier(store)]
+    notifiers = _build_notifiers(cfg, store)
     next_due: dict[str, float] = {}
 
     print("polling; ctrl-c to stop")
@@ -209,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(func=cmd_serve)
 
     args = p.parse_args(argv)
+    load_env()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
     return args.func(args)

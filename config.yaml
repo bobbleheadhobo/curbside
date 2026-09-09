@@ -48,6 +48,16 @@ craigslist:
   min_interval_seconds: 4    # friendlier than Facebook, but still polite
   max_requests_per_run: 40
 
+discord:
+  # Webhooks live in .env (gitignored), not here, so this file stays shareable:
+  #   DISCORD_WANTS_WEBHOOK, DISCORD_FREE_WEBHOOK, DISCORD_MENTION_USER_ID
+  enabled: false           # flip on once both webhooks are set
+  dashboard_url: "http://koda.taila4e463.ts.net:8477"
+  mention_score: 8.0       # the free channel is muted, so a mention must earn it
+  max_per_run: 10
+  max_age_days: 7          # older backlog is marked seen WITHOUT pinging you
+  pause_seconds: 1.2
+
 wants:
   - name: tv-stand
     # `queries` cast the net for the targeted hourly search -- keyword search

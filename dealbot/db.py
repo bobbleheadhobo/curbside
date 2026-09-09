@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS hunt_matches (
   dismiss_note  TEXT,
   miss_count    INTEGER NOT NULL DEFAULT 0,
   status_before_gone TEXT,
+  notified_at   TEXT,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (hunt_id, listing_id)
 );
@@ -169,7 +170,8 @@ class Store:
             ("listings", (("dup_key", "TEXT"),
                           ("previous_price_cents", "INTEGER"))),
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
-                              ("status_before_gone", "TEXT"))),
+                              ("status_before_gone", "TEXT"),
+                              ("notified_at", "TEXT"))),
             ("runs", (("n_worth_a_look", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_free_find", "INTEGER NOT NULL DEFAULT 0"),
@@ -436,6 +438,17 @@ class Store:
             "WHERE hunt_id=? AND listing_id=?",
             (status, note, _now(), hunt_id, listing_id),
         )
+
+    def was_notified(self, hunt_id: str, listing_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT notified_at FROM hunt_matches WHERE hunt_id=? AND listing_id=?",
+            (hunt_id, listing_id)).fetchone()
+        return bool(row and row["notified_at"])
+
+    def mark_notified(self, hunt_id: str, listing_id: str) -> None:
+        self.conn.execute(
+            "UPDATE hunt_matches SET notified_at=? WHERE hunt_id=? AND listing_id=?",
+            (_now(), hunt_id, listing_id))
 
     def dismissed_titles(self, hunt_id: str, limit: int = 20) -> list[str]:
         """What you have rejected for this hunt, newest first.

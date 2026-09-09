@@ -59,6 +59,16 @@ class CraigslistConfig:
 
 
 @dataclass(frozen=True)
+class DiscordConfig:
+    enabled: bool = False
+    dashboard_url: str = "http://koda.taila4e463.ts.net:8477"
+    mention_score: float = 8.0      # @mention in the muted free channel above this
+    max_per_run: int = 10
+    max_age_days: int = 7           # cold-start suppression
+    pause_seconds: float = 1.2
+
+
+@dataclass(frozen=True)
 class Config:
     location: Location
     hunts: tuple[Hunt, ...]
@@ -68,6 +78,7 @@ class Config:
     sources: tuple[str, ...]
     facebook: FacebookConfig
     craigslist: CraigslistConfig
+    discord: DiscordConfig
 
     @property
     def source(self) -> str:
@@ -172,6 +183,16 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     if unknown:
         raise ValueError(f"want_hunts references unknown wants: {sorted(unknown)}")
 
+    dc = raw.get("discord") or {}
+    discord = DiscordConfig(
+        enabled=bool(dc.get("enabled", False)),
+        dashboard_url=dc.get("dashboard_url", "http://koda.taila4e463.ts.net:8477"),
+        mention_score=float(dc.get("mention_score", 8.0)),
+        max_per_run=int(dc.get("max_per_run", 10)),
+        max_age_days=int(dc.get("max_age_days", 7)),
+        pause_seconds=float(dc.get("pause_seconds", 1.2)),
+    )
+
     cl = raw.get("craigslist") or {}
     craigslist = CraigslistConfig(
         area_id=int(cl.get("area_id", 50)),
@@ -200,4 +221,5 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         sources=tuple(raw.get("sources") or [raw.get("source", "fixture")]),
         facebook=facebook,
         craigslist=craigslist,
+        discord=discord,
     )
