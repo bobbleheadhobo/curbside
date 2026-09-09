@@ -120,6 +120,9 @@ sweeps:
     queries: ["free"]
     max_price: 0
     interval_minutes: 15     # free stuff evaporates in minutes
+    # Do not pay to judge a free listing from a fortnight ago -- it is gone.
+    # Want hunts have no such limit: priced things sit, and age is a buy signal.
+    max_age_days: 7
     exclude:
       - "free estimate"
       - "free delivery"

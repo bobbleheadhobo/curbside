@@ -621,3 +621,107 @@ def test_home_coordinates_can_be_overridden_from_the_environment(tmp_path, monke
     assert (override.location.lat, override.location.lng) == (35.145, -106.59)
     assert override.location.radius_miles == 12
     assert override.location.lat != plain.location.lat
+
+
+def test_enrichment_dates_are_not_discarded(rig):
+    """REGRESSION: posted_at was in the INSERT but missing from the UPDATE, so
+    every Craigslist listing ended up with no age at all -- no "listed 12d ago",
+    no motivated-seller flag, and nothing for an age filter to work with. Same
+    class of bug as the coordinates one."""
+    from dataclasses import replace
+    from datetime import datetime, timezone
+    cfg, store, source, *_ = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    thin = next(source.parse(r) for r in source.search(hunt))
+    thin = replace(thin, posted_at=None, category=None)
+    store.upsert_listing(thin)
+
+    when = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    store.upsert_listing(replace(thin, posted_at=when, category="fuo"))
+    row = store.conn.execute("SELECT * FROM listings WHERE id=?", (thin.id,)).fetchone()
+    assert row["posted_at"].startswith("2026-08-01")
+    assert row["category"] == "fuo"
+
+    store.upsert_listing(thin)          # a later index-only pass must not wipe it
+    row = store.conn.execute("SELECT * FROM listings WHERE id=?", (thin.id,)).fetchone()
+    assert row["posted_at"].startswith("2026-08-01")
+
+
+def test_stale_free_listings_are_not_paid_for(rig):
+    """A free couch posted a fortnight ago is gone. Judging it costs real money
+    and can only ever produce a wasted trip."""
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    assert hunt.max_age_days == 7
+
+    class Aged:
+        """Every fixture listing, backdated a month."""
+        name = "fixture"
+        def search(self, hunt): return source.search(hunt)
+        def parse(self, raw):
+            l = source.parse(raw)
+            return replace(l, posted_at=datetime.now(timezone.utc) - timedelta(days=30))
+
+    from dealbot.pipeline import run_hunt
+    r = run_hunt(store, hunt, Aged(), scorer, notifiers, cfg.location)
+    assert r.n_fetched == 10          # still collected -- history is free
+    assert r.n_candidates == 0        # but nothing judged
+    assert r.cost_usd == 0.0
+    reasons = {x["filter_reason"] for x in store.conn.execute(
+        "SELECT filter_reason FROM hunt_matches WHERE hunt_id=?", (hunt.id,))}
+    assert "too_old" in reasons
+
+
+def test_an_undated_listing_is_never_dropped_for_age(rig):
+    """Craigslist's search feed omits the date. Failing closed would silently
+    discard most of what it returns."""
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Undated:
+        name = "fixture"
+        def search(self, hunt): return source.search(hunt)
+        def parse(self, raw): return replace(source.parse(raw), posted_at=None)
+
+    from dealbot.pipeline import run_hunt
+    r = run_hunt(store, hunt, Undated(), scorer, notifiers, cfg.location)
+    assert r.n_candidates > 0
+
+
+def test_want_hunts_have_no_age_limit_by_default(rig):
+    """Priced things sit, and age there is a BUY signal -- the motivated-seller
+    flag depends on exactly the listings an age filter would throw away."""
+    cfg, *_ = rig
+    for h in cfg.hunts:
+        if h.kind == "want":
+            assert h.max_age_days == 0
+
+
+def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
+    """An image pass costs about twice a text appraisal, and two thirds were
+    being spent confirming that things scoring 3/10 are indeed poor."""
+    from dealbot.pipeline import _would_bin
+    from dealbot.models import Score
+    from datetime import datetime, timezone
+    cfg, *_ = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    def sc(match, score, grab=True):
+        return Score(listing_id="x", hunt_id=hunt.id, model="m",
+                     scored_at=datetime.now(timezone.utc), match=match,
+                     deal_score=score, est_value_cents=None, condition=None,
+                     matched_want=None, worth_grabbing=grab, unknowns=(),
+                     requirements=(), red_flags=(), reasoning="")
+
+    # the case worth paying for: a high text score photos might demolish
+    assert _would_bin(sc("unknown", 9.0), hunt)
+    assert _would_bin(sc("yes", 7.0), hunt)
+    # a free find clearing its own, lower bar
+    assert _would_bin(sc("no", 5.0), hunt)
+    # and the two thirds that were pure waste
+    assert not _would_bin(sc("unknown", 3.0), hunt)
+    assert not _would_bin(sc("no", 4.0), hunt)
+    assert not _would_bin(sc("no", 9.0, grab=False), hunt)

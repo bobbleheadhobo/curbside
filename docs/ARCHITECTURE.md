@@ -57,6 +57,7 @@ REJECT   already saved/dismissed/contacted   → "triaged"
          over the hunt's max_price            → "over_price"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
+         older than the hunt's max_age_days     → "too_old"
          matches an exclude phrase             → "excluded_kw"
          already scored, nothing changed       → "unchanged"
 
@@ -80,6 +81,12 @@ almost everything hits it, so **most ticks make zero model calls**.
 
 Then two more filters:
 
+- **Age**, after enrichment. Free things evaporate: a couch posted a fortnight
+  ago is gone, and appraising it can only ever produce a wasted trip, so free
+  sweeps skip anything over 7 days. Want hunts have **no** limit — priced things
+  sit, and age there is a *buy* signal, which is what the motivated-seller flag
+  is built on. Undated listings always pass; Craigslist's search feed omits the
+  date, so failing closed would discard most of what it returns.
 - **Cap** at `max_results_per_run` (5) per hunt per source, newest first. The
   overflow stays `new` and drains over later runs, so a cold start arrives
   gradually rather than as one bill. The deferred count is recorded per run —
@@ -107,7 +114,11 @@ Then two more filters:
   ├─ APPRAISE   1 call each → match yes/no/unknown, per-requirement evidence,
   │             unknowns, deal_score, worth_grabbing, est_value
   ↓
-  ├─ IMAGES     1 more call, ONLY where the model itself set needs_images.
+  ├─ IMAGES     1 more call, where the model set needs_images AND the text
+  │             score already puts the listing in a bin. An image pass costs
+  │             about twice a text appraisal, and two thirds were being spent
+  │             confirming that 3/10 listings are indeed poor. Its value is at
+  │             the top: a 9 that photos reveal to be junk saves a wasted trip.
   │             We download and downscale the photos; it gets `Read` scoped to
   │             that directory and nothing else.
   ↓

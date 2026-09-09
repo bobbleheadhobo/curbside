@@ -310,6 +310,12 @@ class Store:
                  lng          = COALESCE(?, lng),
                  distance_mi  = COALESCE(?, distance_mi),
                  dup_key      = COALESCE(?, dup_key),
+                 -- Craigslist only reveals postedDate on the item page, so
+                 -- leaving these out of the UPDATE meant every Craigslist
+                 -- listing had no age: no "listed 12d ago", no motivated-seller
+                 -- flag, and nothing for an age filter to work with.
+                 posted_at    = COALESCE(?, posted_at),
+                 category     = COALESCE(?, category),
                  seller_id    = COALESCE(?, seller_id),
                  seller_name  = COALESCE(?, seller_name),
                  images       = CASE WHEN json_array_length(?) >= json_array_length(images)
@@ -319,7 +325,9 @@ class Store:
             (listing.title, listing.description, listing.price_cents,
              listing.previous_price_cents, listing.url,
              listing.city, listing.lat, listing.lng, listing.distance_mi,
-             listing.dup_key, listing.seller_id, listing.seller_name,
+             listing.dup_key,
+             listing.posted_at.isoformat() if listing.posted_at else None,
+             listing.category, listing.seller_id, listing.seller_name,
              json.dumps(list(listing.images)), json.dumps(list(listing.images)),
              now, json.dumps(listing.raw), listing.id),
         )

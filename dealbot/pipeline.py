@@ -14,7 +14,7 @@ for a few hours, never data.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 from .db import Store
@@ -29,6 +29,13 @@ from .scoring.claude_code import ScoringUnavailable
 from .sources.base import Source, validate
 
 log = logging.getLogger("dealbot.pipeline")
+
+
+def _would_bin(score: Score, hunt: Hunt) -> bool:
+    """Whether this score alone puts a listing in front of you."""
+    if score.match in ("yes", "unknown"):
+        return score.deal_score >= hunt.min_deal_score
+    return bool(score.worth_grabbing) and score.deal_score >= hunt.free_find_min_score
 
 
 def run_hunt(
@@ -165,6 +172,25 @@ def run_hunt(
         store.record_rejections(hunt.id, out_of_range)
         gr = GateResult(candidates=in_range, rejected=gr.rejected + out_of_range)
 
+    # --- 4b2. too old to bother judging --------------------------------------
+    # Placed AFTER enrichment on purpose: Craigslist only reveals postedDate on
+    # the item page, so before this point most listings have no age at all.
+    # Enrichment is cheap (an HTTP request); appraisal is not.
+    if hunt.max_age_days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=hunt.max_age_days)
+        fresh, stale = [], []
+        for cand in gr.candidates:
+            posted = cand.listing.posted_at
+            if posted is not None and posted < cutoff:
+                stale.append((cand.listing.id, "too_old"))
+            else:
+                fresh.append(cand)          # undated listings pass: fail open
+        if stale:
+            store.record_rejections(hunt.id, stale)
+            log.info("%d listings older than %dd skipped", len(stale),
+                     hunt.max_age_days)
+        gr = GateResult(candidates=fresh, rejected=gr.rejected + stale)
+
     # --- 4c. cross-source duplicates -----------------------------------------
     # People post the same thing to both marketplaces. This runs for EVERY
     # source, not only ones with a detail fetch -- it lived inside the
@@ -269,6 +295,16 @@ def run_hunt(
     if image_provider is not None and hasattr(scorer, "resolve_with_images"):
         for i, score in enumerate(scores):
             if not score.needs_images or result.n_image_checks >= max_image_checks:
+                continue
+            # Only look at photos for something that would ALREADY reach a bin on
+            # its text score. An image pass costs about twice a text appraisal,
+            # and two thirds of them were being spent confirming that things
+            # scoring 3/10 are indeed poor. Its real value is at the top -- a 9
+            # that photos reveal to be junk saves a wasted trip -- and that case
+            # is preserved, because such a listing is in a bin already.
+            if not _would_bin(score, hunt):
+                log.debug("skipping image pass for %s (scored %.0f)",
+                          score.listing_id, score.deal_score)
                 continue
             listing = by_id[score.listing_id]
             try:

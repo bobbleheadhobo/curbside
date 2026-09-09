@@ -62,6 +62,11 @@ class Hunt:
     free_find_min_score: float
     interval_minutes: int
     max_results: int
+    # Judge nothing older than this. Free things evaporate -- a couch posted a
+    # fortnight ago is gone, and paying to appraise it is pure waste. Priced
+    # things sit, and age there is a BUY signal (see the motivated-seller flag),
+    # so want hunts default to no limit at all. 0 disables.
+    max_age_days: int = 0
     enabled: bool = True
 
 

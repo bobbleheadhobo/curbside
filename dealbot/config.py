@@ -144,6 +144,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
                 s.get("free_find_min_score", default_free_score)),
             interval_minutes=int(s.get("interval_minutes", 15)),
             max_results=int(s.get("max_results", default_max_results)),
+            max_age_days=int(s.get("max_age_days", 7)),
             enabled=bool(s.get("enabled", True)),
         ))
 
@@ -169,6 +170,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
             # down without costing anything real.
             interval_minutes=int(cfg.get("interval_minutes", 60)),
             max_results=int(cfg.get("max_results", default_max_results)),
+            max_age_days=int(cfg.get("max_age_days", 0)),
             enabled=bool(cfg.get("enabled", True)),
         ))
 
