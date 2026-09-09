@@ -176,3 +176,11 @@ def test_a_price_drop_is_put_in_front_of_the_model(src):
     rendered = render_listing(desk)
     assert "previously: $150" in rendered
     assert "dropped the price" in rendered
+
+
+def test_the_state_is_kept_on_the_city_label(src):
+    """"Albuquerque, NM" not "Albuquerque" -- the state is what lets the gate
+    reject Kansas City without knowing where Kansas City is."""
+    raws = src.parse_search_html((HTML / "search-free-abq.html").read_text(errors="replace"))
+    cities = {l.city for r in raws if (l := src.parse(r)) and l.city}
+    assert any(c.endswith(", NM") for c in cities)

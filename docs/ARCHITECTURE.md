@@ -56,6 +56,7 @@ REJECT   already saved/dismissed/contacted   → "triaged"
          seller on the blocklist              → "blocked_seller"
          over the hunt's max_price            → "over_price"
          beyond location.radius_miles          → "too_far"
+         city/state alone puts it out of range → "too_far_by_city"
          matches an exclude phrase             → "excluded_kw"
          already scored, nothing changed       → "unchanged"
 
@@ -63,6 +64,16 @@ ADMIT    never scored for this hunt            → "new"
          price fell ≥15% since last score      → "price_drop"
          relist of something already seen      → "relist"
 ```
+
+`too_far_by_city` exists because Facebook gives no coordinates until the item
+page is fetched, and its results are not confined to your area at all — a single
+"free" search returned listings from Kansas City, Amarillo, Sacramento and
+Findlay OH. Two rules run in order: a state that is not yours is definitively
+too far, and a known city gets its centroid distance. Anything unrecognised
+fails **open** — failing closed silently drops a listing that might be the one
+you wanted, whereas failing open costs one detail fetch. On collected data this
+rejects 14% before paying for detail, ~6 minutes of rate-limited fetching per
+pass.
 
 `unchanged` is what makes a tight poll interval affordable: in steady state
 almost everything hits it, so **most ticks make zero model calls**.

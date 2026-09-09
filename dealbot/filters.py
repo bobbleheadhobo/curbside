@@ -17,6 +17,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Iterable, Mapping, Sequence
 
+from .geo import approx_distance_miles
 from .models import Candidate, GateResult, Hunt, Listing, Location, UpsertResult
 
 # How far a price must fall before a listing we already judged is worth
@@ -64,9 +65,17 @@ def gate(
             rejected.append((listing.id, "over_price"))
             continue
 
-        if (listing.distance_mi is not None
-                and listing.distance_mi > location.radius_miles):
-            rejected.append((listing.id, "too_far"))
+        # Facebook has no coordinates until the item page is fetched, so fall
+        # back to the city name. That turns a 15-second detail request for
+        # something in Santa Fe into a string comparison.
+        distance = listing.distance_mi
+        approx = distance is None
+        if approx:
+            distance = approx_distance_miles(listing.city, location.lat,
+                                             location.lng)
+        if distance is not None and distance > location.radius_miles:
+            rejected.append((listing.id,
+                             "too_far_by_city" if approx else "too_far"))
             continue
 
         if hunt.exclude and (hit := _matches_any(listing, hunt.exclude)):

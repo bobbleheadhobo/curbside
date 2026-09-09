@@ -223,6 +223,12 @@ class FacebookSource:
             return None
 
         geo = ((p.get("location") or {}).get("reverse_geocode") or {})
+        # "Albuquerque, NM" rather than "Albuquerque": the state is what lets
+        # the gate reject Kansas City without knowing where Kansas City is.
+        city_name = geo.get("city")
+        city_state = geo.get("state")
+        city_label = (f"{city_name}, {city_state}" if city_name and city_state
+                      else city_name)
         loc = p.get("location") or {}
         lat, lng = loc.get("latitude"), loc.get("longitude")
         distance = None
@@ -244,7 +250,7 @@ class FacebookSource:
             previous_price_cents=_cents(p.get("strikethrough_price")),
             currency="USD",
             url=f"{BASE}/marketplace/item/{raw.source_id}/",
-            city=geo.get("city") or (p.get("location_text") or {}).get("text"),
+            city=city_label or (p.get("location_text") or {}).get("text"),
             lat=lat, lng=lng, distance_mi=distance,
             seller_id=None, seller_name=None,
             images=(photo,) if photo else (),
