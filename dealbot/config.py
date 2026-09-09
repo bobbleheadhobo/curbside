@@ -82,7 +82,8 @@ def _cents(value: Any) -> int | None:
 
 
 def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
-    raw = yaml.safe_load(Path(path).read_text()) or {}
+    config_path = Path(path).resolve()
+    raw = yaml.safe_load(config_path.read_text()) or {}
 
     loc = raw.get("location") or {}
     location = Location(
@@ -191,7 +192,10 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         hunts=tuple(hunts),
         wants=wants,
         scorer=scorer,
-        db_path=Path(raw.get("db_path", "data/dealbot.db")),
+        # Resolved against the CONFIG FILE, not the working directory. A
+        # relative db_path interpreted per-CWD is how the data ended up split
+        # across three databases -- one of which held the best find so far.
+        db_path=(config_path.parent / raw.get("db_path", "data/dealbot.db")),
         # `sources` is the list; `source` remains accepted as a single value.
         sources=tuple(raw.get("sources") or [raw.get("source", "fixture")]),
         facebook=facebook,

@@ -589,3 +589,18 @@ def test_a_cross_source_duplicate_is_not_appraised_twice(rig):
         "SELECT filter_reason FROM hunt_matches WHERE listing_id='other:999'"
     ).fetchone()["filter_reason"]
     assert reason.startswith("duplicate_of:")
+
+
+def test_db_path_is_relative_to_the_config_not_the_cwd(tmp_path, monkeypatch):
+    """A relative db_path interpreted per working directory is how the data
+    ended up split across three databases, one of which held the best find."""
+    import shutil
+    from dealbot.config import load
+    cfg_dir = tmp_path / "proj"
+    cfg_dir.mkdir()
+    shutil.copy(ROOT / "config.yaml", cfg_dir / "config.yaml")
+
+    monkeypatch.chdir(tmp_path)          # run from somewhere else entirely
+    cfg = load(cfg_dir / "config.yaml")
+    assert cfg.db_path == cfg_dir / "data/dealbot.db"
+    assert cfg.db_path.is_absolute()
