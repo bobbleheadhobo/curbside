@@ -9,3 +9,4 @@ data/
 .env
 secrets.yaml
 data/thumbs/
+config.demo.yaml

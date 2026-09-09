@@ -3,6 +3,9 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}Curbside{% endblock %}</title>
 <style>
+/* All the CSS lives here. Colours are custom properties on :root with a
+   prefers-color-scheme override -- both themes are real, so check changes in
+   both. Layout is flex with a viewport meta: this gets read on a phone. */
 :root{--bg:#fbfaf8;--fg:#1a1a1a;--dim:#6b6b6b;--line:#e2ded8;--card:#fff;--good:#1a7f4b;--warn:#a8620a;--bad:#a11}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#151513;--fg:#eceae6;--dim:#9a968f;--line:#2e2e2b;--card:#1d1d1b;--good:#4ec27f;--warn:#d99a3f;--bad:#e06c6c}}
 *{box-sizing:border-box}

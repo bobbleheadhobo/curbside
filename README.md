@@ -13,6 +13,7 @@ plan quota.
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | what actually runs, as built |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | why the shape is what it is |
 | [`docs/FLOW.md`](docs/FLOW.md) | features, types, control flow |
+| [`docs/UI.md`](docs/UI.md) | changing the dashboard |
 | [`systemd/README.md`](systemd/README.md) | deployment |
 
 ## Status: P1 + P2 + P2.5 complete, two live sources

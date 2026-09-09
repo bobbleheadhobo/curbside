@@ -1,3 +1,10 @@
+{# The shared listing card. Four views render through this, so a change here
+   lands everywhere: wants, free finds, saved and near misses.
+
+   `i` carries every listings and scores column plus age_days and price_moves;
+   `back` is where the triage buttons return to. See docs/UI.md for the field
+   reference. Images go through /thumb/<id>, never i.images[0] -- Facebook's
+   URLs expire after about four days. #}
 {% macro card(i, back) %}
 <div class="card">
   {% if i.images %}<img class="thumb" src="/thumb/{{i.id}}" alt="" loading="lazy">

@@ -33,6 +33,10 @@ docs/             DESIGN (why), FLOW (features+types), ARCHITECTURE (as built)
 systemd/          the deployed units
 ```
 
+**Changing the dashboard?** Read [`docs/UI.md`](docs/UI.md) — it covers getting
+a realistic offline database to develop against (`dealbot seed-demo`), what a
+card receives, and what not to break.
+
 Read `docs/ARCHITECTURE.md` for what actually runs. `docs/DESIGN.md` explains
 why the shape is what it is, including options that were rejected and why.
 

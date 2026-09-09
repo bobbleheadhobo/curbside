@@ -121,3 +121,32 @@ def test_the_free_page_can_pause_and_resume_sweeps(tmp_path):
     client.post("/hunts/toggle", data={"kind": "all", "enable": "1", "back": "/"},
                 follow_redirects=False)
     assert s.disabled_hunts() == set()
+
+
+def test_the_demo_database_populates_every_view(tmp_path):
+    """A UI agent's first command. If any view is empty here they will design
+    against nothing, or assume the dashboard is broken."""
+    import shutil
+    from fastapi.testclient import TestClient
+    from pathlib import Path
+    from dealbot.config import load
+    from dealbot.demo import build
+    from dealbot.web.app import create_app
+    from dataclasses import replace
+
+    root = Path(__file__).resolve().parents[1]
+    shutil.copy(root / "config.yaml", tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    build(cfg, cfg.db_path)
+    client = TestClient(create_app(cfg))
+
+    for path in ("/", "/free", "/saved", "/near", "/runs"):
+        body = client.get(path).text
+        assert "&mdash; 0</h1>" not in body and "— 0</h1>" not in body, path
+
+    # ...and the awkward cases a designer needs on screen
+    wants = client.get("/").text
+    assert "78in wide" in wants                      # a price drop with evidence
+    assert "no photo" in wants                       # the empty-image state
+    assert "~~" in wants or "strike" in wants        # strikethrough treatment
+    assert "Worth checking" in wants or "needs checking" in wants.lower()
