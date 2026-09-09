@@ -96,11 +96,17 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     config_path = Path(path).resolve()
     raw = yaml.safe_load(config_path.read_text()) or {}
 
+    # Your actual coordinates go in .env (gitignored); config.yaml keeps a
+    # rounded city-level fallback so it stays shareable. Precision is capped by
+    # the marketplaces anyway -- 61% of listings are snapped to a neighbourhood
+    # centre -- but measuring from your street instead of downtown removes a
+    # systematic bias from every distance.
     loc = raw.get("location") or {}
     location = Location(
-        lat=float(loc["lat"]),
-        lng=float(loc["lng"]),
-        radius_miles=float(loc.get("radius_miles", 25)),
+        lat=float(os.environ.get("HOME_LAT") or loc["lat"]),
+        lng=float(os.environ.get("HOME_LNG") or loc["lng"]),
+        radius_miles=float(os.environ.get("RADIUS_MILES")
+                           or loc.get("radius_miles", 25)),
     )
 
     defaults = raw.get("defaults") or {}

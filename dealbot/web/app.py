@@ -113,7 +113,7 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
 
 
 def create_app(cfg: Config) -> FastAPI:
-    app = FastAPI(title="deal_bot")
+    app = FastAPI(title="Curbside")
     store = Store(cfg.db_path)
     hunts = {h.id: h for h in cfg.hunts}
 

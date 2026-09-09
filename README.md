@@ -1,4 +1,4 @@
-# deal_bot
+# Curbside
 
 Watches Facebook Marketplace around Albuquerque for free and underpriced things,
 scores them, and puts what survives on a local dashboard.

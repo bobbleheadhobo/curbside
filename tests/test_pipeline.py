@@ -604,3 +604,20 @@ def test_db_path_is_relative_to_the_config_not_the_cwd(tmp_path, monkeypatch):
     cfg = load(cfg_dir / "config.yaml")
     assert cfg.db_path == cfg_dir / "data/dealbot.db"
     assert cfg.db_path.is_absolute()
+
+
+def test_home_coordinates_can_be_overridden_from_the_environment(tmp_path, monkeypatch):
+    """Your real address belongs in .env, not in a committed config file."""
+    import shutil
+    from dealbot.config import load
+    shutil.copy(ROOT / "config.yaml", tmp_path / "config.yaml")
+
+    plain = load(tmp_path / "config.yaml")
+    monkeypatch.setenv("HOME_LAT", "35.1450")
+    monkeypatch.setenv("HOME_LNG", "-106.5900")
+    monkeypatch.setenv("RADIUS_MILES", "12")
+    override = load(tmp_path / "config.yaml")
+
+    assert (override.location.lat, override.location.lng) == (35.145, -106.59)
+    assert override.location.radius_miles == 12
+    assert override.location.lat != plain.location.lat

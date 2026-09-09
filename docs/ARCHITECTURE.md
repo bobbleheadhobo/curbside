@@ -23,8 +23,8 @@ Each hunt runs **once per source**, so there are 6 hunt×source combinations. A
 run counts toward the cadence only if it finished, had no error, and actually
 scored — a `--no-score` pass fetches but does not reset the clock.
 
-Units live in `~/.config/systemd/user/`: `dealbot.timer` → `dealbot.service`,
-plus `dealbot-web.service` for the dashboard (bound to localhost).
+Units live in `~/.config/systemd/user/`: `curbside.timer` → `curbside.service`,
+plus `curbside-web.service` for the dashboard (bound to localhost).
 
 ## 2. Fetch — two stages
 

@@ -5,7 +5,10 @@
 # anyway" test, so a sweep can surface something you never thought to search for.
 
 location:
-  # Albuquerque, NM
+  # City-level fallback. Put your real coordinates in .env as HOME_LAT /
+  # HOME_LNG (and optionally RADIUS_MILES) -- this file is committed, .env is
+  # not. Distances are straight-line, so real driving is typically 20-30%
+  # further in a grid city.
   lat: 35.0844
   lng: -106.6504
   radius_miles: 25
@@ -52,7 +55,7 @@ discord:
   # Webhooks live in .env (gitignored), not here, so this file stays shareable:
   #   DISCORD_WANTS_WEBHOOK, DISCORD_FREE_WEBHOOK, DISCORD_MENTION_USER_ID
   enabled: false           # flip on once both webhooks are set
-  dashboard_url: "http://koda.taila4e463.ts.net:8477"
+  dashboard_url: "https://curbside.YOURDOMAIN"   # <- set once the subdomain exists
   mention_score: 8.0       # the free channel is muted, so a mention must earn it
   max_per_run: 10
   max_age_days: 7          # older backlog is marked seen WITHOUT pinging you

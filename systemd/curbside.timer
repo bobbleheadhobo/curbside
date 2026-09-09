@@ -1,5 +1,5 @@
 [Unit]
-Description=deal_bot poll timer
+Description=Curbside poll timer
 
 [Timer]
 # Fires every 15 minutes; each hunt decides for itself whether it is due
