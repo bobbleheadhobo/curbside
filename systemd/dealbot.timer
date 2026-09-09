@@ -1,0 +1,14 @@
+[Unit]
+Description=deal_bot poll timer
+
+[Timer]
+# Fires every 15 minutes; each hunt decides for itself whether it is due
+# (free sweeps 15 min, want searches 60 min) via `once --due`.
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=30s
+# Catch up one missed run after downtime rather than waiting for the next tick.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

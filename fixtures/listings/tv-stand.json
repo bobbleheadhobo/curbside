@@ -1,0 +1,243 @@
+[
+  {
+    "id": "2001",
+    "title": "Walnut media console 75 inch",
+    "price": 180,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2001",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s21",
+      "name": "Seller 21"
+    },
+    "images": [
+      "https://img.example/2001-0.jpg",
+      "https://img.example/2001-1.jpg",
+      "https://img.example/2001-2.jpg",
+      "https://img.example/2001-3.jpg"
+    ],
+    "description": "Mid century walnut console, 75 inches wide, sliding doors. Solid, no damage.",
+    "posted_at": "2026-09-06T12:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2002",
+    "title": "Corner TV stand",
+    "price": 60,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2002",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s22",
+      "name": "Seller 22"
+    },
+    "images": [
+      "https://img.example/2002-0.jpg",
+      "https://img.example/2002-1.jpg"
+    ],
+    "description": "Fits in a corner, holds up to 50 inch TV. Black finish.",
+    "posted_at": "2026-09-06T11:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2003",
+    "title": "Media console 55 inch",
+    "price": 90,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2003",
+    "location": {
+      "city": "Rio Rancho",
+      "lat": 35.2328,
+      "lng": -106.663
+    },
+    "seller": {
+      "id": "s23",
+      "name": "Seller 23"
+    },
+    "images": [
+      "https://img.example/2003-0.jpg",
+      "https://img.example/2003-1.jpg"
+    ],
+    "description": "White media console, 55 inches wide, two drawers.",
+    "posted_at": "2026-09-06T10:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2004",
+    "title": "Large solid oak credenza 80 inch",
+    "price": 240,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2004",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s24",
+      "name": "Seller 24"
+    },
+    "images": [
+      "https://img.example/2004-0.jpg",
+      "https://img.example/2004-1.jpg",
+      "https://img.example/2004-2.jpg",
+      "https://img.example/2004-3.jpg"
+    ],
+    "description": "80 inch solid oak credenza, previous owner used it as a TV stand. Very heavy.",
+    "posted_at": "2026-09-06T09:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2005",
+    "title": "TV stand like new 70in",
+    "price": 300,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2005",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s25",
+      "name": "Seller 25"
+    },
+    "images": [
+      "https://img.example/2005-0.jpg",
+      "https://img.example/2005-1.jpg",
+      "https://img.example/2005-2.jpg"
+    ],
+    "description": "70 inch wide TV stand, barely used, paid 600 new.",
+    "posted_at": "2026-09-06T08:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2006",
+    "title": "TV wall mount bracket",
+    "price": 25,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2006",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s26",
+      "name": "Seller 26"
+    },
+    "images": [
+      "https://img.example/2006-0.jpg"
+    ],
+    "description": "Full motion wall mount, fits up to 85 inch. Hardware included.",
+    "posted_at": "2026-09-06T07:00:00+00:00",
+    "category": "electronics"
+  },
+  {
+    "id": "2101",
+    "title": "TV stand",
+    "price": 80,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2101",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s70",
+      "name": "Seller 70"
+    },
+    "images": [
+      "https://img.example/2101-0.jpg",
+      "https://img.example/2101-1.jpg",
+      "https://img.example/2101-2.jpg"
+    ],
+    "description": "Great condition, holds a big TV. Must go this weekend.",
+    "posted_at": "2026-09-08T09:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2102",
+    "title": "Solid wood media console",
+    "price": 150,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2102",
+    "location": {
+      "city": "Rio Rancho",
+      "lat": 35.2328,
+      "lng": -106.663
+    },
+    "seller": {
+      "id": "s71",
+      "name": "Seller 71"
+    },
+    "images": [
+      "https://img.example/2102-0.jpg",
+      "https://img.example/2102-1.jpg",
+      "https://img.example/2102-2.jpg",
+      "https://img.example/2102-3.jpg",
+      "https://img.example/2102-4.jpg"
+    ],
+    "description": "Beautiful piece with lots of storage. Smoke free home.",
+    "posted_at": "2026-09-08T05:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2103",
+    "title": "Entertainment center",
+    "price": 50,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2103",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s72",
+      "name": "Seller 72"
+    },
+    "images": [
+      "https://img.example/2103-0.jpg"
+    ],
+    "description": "Moving sale, everything must go.",
+    "posted_at": "2026-09-08T00:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "2104",
+    "title": "Long low credenza, mid century",
+    "price": 220,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/2104",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s73",
+      "name": "Seller 73"
+    },
+    "images": [
+      "https://img.example/2104-0.jpg",
+      "https://img.example/2104-1.jpg",
+      "https://img.example/2104-2.jpg",
+      "https://img.example/2104-3.jpg",
+      "https://img.example/2104-4.jpg",
+      "https://img.example/2104-5.jpg"
+    ],
+    "description": "Danish teak, six feet long, four drawers. Excellent shape.",
+    "posted_at": "2026-09-07T18:00:00+00:00",
+    "category": "furniture"
+  }
+]

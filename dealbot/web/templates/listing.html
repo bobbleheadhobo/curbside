@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{listing.title}}</h1>
+<p class="meta">
+  {% if listing.previous_price_cents is not none and listing.price_cents is not none
+        and listing.price_cents < listing.previous_price_cents %}
+    <span class="strike">${{ '%.0f'|format(listing.previous_price_cents/100) }}</span>
+    <span class="drop">{% if listing.price_cents == 0 %}now FREE{% else %}${{ '%.0f'|format(listing.price_cents/100) }}{% endif %} ↓</span>
+  {% elif listing.price_cents == 0 %}<b>free</b>{% elif listing.price_cents is none %}no price
+  {% else %}${{ '%.0f'|format(listing.price_cents/100) }}{% endif %}
+  &middot; {{ '%.0f'|format(listing.distance_mi or 0) }} mi &middot; {{listing.city or '?'}}
+  &middot; seller {{listing.seller_name or '?'}}
+  &middot; <a href="{{listing.url}}" target="_blank" rel="noopener">open on marketplace ↗</a>
+</p>
+{% if listing.images %}<p>{% for im in listing.images %}<img class="thumb" src="{{im}}" alt="">{% endfor %}</p>{% endif %}
+<p>{{listing.description or ''}}</p>
+
+<h1>Scores</h1>
+<div class="wrap"><table><tr><th>when</th><th>hunt</th><th>model</th><th>score</th><th>want</th><th>flags</th><th>reasoning</th></tr>
+{% for s in scores %}<tr><td>{{s.scored_at}}</td><td>{{s.hunt_id}}</td><td>{{s.model}}</td>
+<td>{{ '%.1f'|format(s.deal_score) }}</td><td>{{s.matched_want or '-'}}</td>
+<td>{{ s.red_flags|join(', ') or '-' }}</td><td style="white-space:normal">{{s.reasoning}}</td></tr>
+{% else %}<tr><td colspan="7">not scored yet</td></tr>{% endfor %}</table></div>
+
+<h1>Price history</h1>
+{% if sparkline %}<p>{{ sparkline|safe }}</p>{% endif %}
+<div class="wrap"><table><tr><th>observed</th><th>price</th></tr>
+{% for when, cents in history %}<tr><td>{{when}}</td>
+<td>{% if cents is none %}-{% elif cents == 0 %}free{% else %}${{ '%.0f'|format(cents/100) }}{% endif %}</td></tr>{% endfor %}
+</table></div>
+
+<h1>Triage</h1>
+{% for m in matches %}
+<p>{{m.hunt_id}} &mdash; <b>{{m.status}}</b>{% if m.filter_reason %} ({{m.filter_reason}}){% endif %}
+{% for s in ['saved','dismissed','contacted','surfaced'] %}
+<form class="inline" method="post" action="/triage">
+  <input type="hidden" name="hunt_id" value="{{m.hunt_id}}">
+  <input type="hidden" name="listing_id" value="{{listing.id}}">
+  <input type="hidden" name="status" value="{{s}}">
+  <input type="hidden" name="back" value="/listing/{{listing.id}}">
+  <button>{{s}}</button></form>
+{% endfor %}</p>
+{% endfor %}
+{% endblock %}

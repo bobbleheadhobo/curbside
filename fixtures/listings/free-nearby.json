@@ -1,0 +1,229 @@
+[
+  {
+    "id": "1001",
+    "title": "Free sectional couch - must go today",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1001",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s11",
+      "name": "Seller 11"
+    },
+    "images": [
+      "https://img.example/1001-0.jpg",
+      "https://img.example/1001-1.jpg",
+      "https://img.example/1001-2.jpg"
+    ],
+    "description": "Grey fabric sectional, clean, no pets. Need it gone by tonight, you haul.",
+    "posted_at": "2026-09-08T12:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "1002",
+    "title": "FREE ESTIMATE on roof repair - call now",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1002",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s12",
+      "name": "Seller 12"
+    },
+    "images": [
+      "https://img.example/1002-0.jpg"
+    ],
+    "description": "Licensed and insured. Free estimate for all roofing work.",
+    "posted_at": "2026-09-06T22:00:00+00:00",
+    "category": "services"
+  },
+  {
+    "id": "1003",
+    "title": "Free washing machine - not working",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1003",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s13",
+      "name": "Seller 13"
+    },
+    "images": [
+      "https://img.example/1003-0.jpg"
+    ],
+    "description": "Doesn't spin. Good for parts or scrap metal.",
+    "posted_at": "2026-09-06T21:00:00+00:00",
+    "category": "appliances"
+  },
+  {
+    "id": "1004",
+    "title": "Free teal ottoman, stacked round design",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1004",
+    "location": {
+      "city": "Rio Rancho",
+      "lat": 35.2328,
+      "lng": -106.663
+    },
+    "seller": {
+      "id": "s14",
+      "name": "Seller 14"
+    },
+    "images": [
+      "https://img.example/1004-0.jpg",
+      "https://img.example/1004-1.jpg"
+    ],
+    "description": "Three round tiers, teal velvet. One small stain on the top tier. Curb pickup.",
+    "posted_at": "2026-09-08T08:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "1005",
+    "title": "Free TV stand 72 inch wide",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1005",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s15",
+      "name": "Seller 15"
+    },
+    "images": [
+      "https://img.example/1005-0.jpg",
+      "https://img.example/1005-1.jpg"
+    ],
+    "description": "Solid oak media console, 72 inches wide, 3 shelves. Heavy, bring help.",
+    "posted_at": "2026-09-08T11:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "1006",
+    "title": "Free moving boxes",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1006",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s16",
+      "name": "Seller 16"
+    },
+    "images": [
+      "https://img.example/1006-0.jpg"
+    ],
+    "description": "About 20 boxes, various sizes. Some tape still on them.",
+    "posted_at": "2026-09-08T06:00:00+00:00",
+    "category": "other"
+  },
+  {
+    "id": "1007",
+    "title": "Free upright piano",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1007",
+    "location": {
+      "city": "Santa Fe",
+      "lat": 35.687,
+      "lng": -105.9378
+    },
+    "seller": {
+      "id": "s17",
+      "name": "Seller 17"
+    },
+    "images": [
+      "https://img.example/1007-0.jpg",
+      "https://img.example/1007-1.jpg"
+    ],
+    "description": "Old upright, needs tuning. You move it.",
+    "posted_at": "2026-09-07T08:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "1008",
+    "title": "Free entertainment center",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1008",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s18",
+      "name": "Seller 18"
+    },
+    "images": [
+      "https://img.example/1008-0.jpg"
+    ],
+    "description": "Small unit, about 40 inches wide, holds a 32 inch TV. Particle board.",
+    "posted_at": "2026-09-07T18:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "1009",
+    "title": "Free firewood - you pick up",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1009",
+    "location": {
+      "city": "Los Lunas",
+      "lat": 34.8062,
+      "lng": -106.7331
+    },
+    "seller": {
+      "id": "s19",
+      "name": "Seller 19"
+    },
+    "images": [
+      "https://img.example/1009-0.jpg"
+    ],
+    "description": "Pile of split pinon, been seasoning a year.",
+    "posted_at": "2026-09-06T14:00:00+00:00",
+    "category": "other"
+  },
+  {
+    "id": "1010",
+    "title": "Free treadmill works great",
+    "price": 0,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/1010",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s20",
+      "name": "Seller 20"
+    },
+    "images": [
+      "https://img.example/1010-0.jpg",
+      "https://img.example/1010-1.jpg",
+      "https://img.example/1010-2.jpg"
+    ],
+    "description": "ProForm treadmill, works fine, just no room. Very heavy.",
+    "posted_at": "2026-09-08T09:00:00+00:00",
+    "category": "sporting"
+  }
+]

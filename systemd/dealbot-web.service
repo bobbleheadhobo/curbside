@@ -1,0 +1,16 @@
+[Unit]
+Description=deal_bot dashboard
+After=network-online.target
+
+[Service]
+# Bound to all interfaces so a reverse proxy (Pangolin/Newt) and the tailnet can
+# both reach it. NOTE: /triage is an unauthenticated POST that mutates state, so
+# whatever fronts this MUST require auth. Pangolin resource auth covers that;
+# without it, anyone who can reach the URL can change your bins.
+WorkingDirectory=/home/joey/code/deal_bot
+ExecStart=/home/joey/code/deal_bot/.venv/bin/python -m dealbot.cli serve --host 0.0.0.0 --port 8477
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

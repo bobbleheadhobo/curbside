@@ -1,0 +1,145 @@
+[
+  {
+    "id": "3001",
+    "title": "Teal stacked pouf ottoman",
+    "price": 85,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3001",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s27",
+      "name": "Seller 27"
+    },
+    "images": [
+      "https://img.example/3001-0.jpg",
+      "https://img.example/3001-1.jpg",
+      "https://img.example/3001-2.jpg"
+    ],
+    "description": "Three stacked round cushions, teal velvet, excellent condition.",
+    "posted_at": "2026-09-06T02:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "3002",
+    "title": "Grey round pouf",
+    "price": 40,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3002",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s28",
+      "name": "Seller 28"
+    },
+    "images": [
+      "https://img.example/3002-0.jpg",
+      "https://img.example/3002-1.jpg"
+    ],
+    "description": "Single piece grey knit pouf, about 20 inches across.",
+    "posted_at": "2026-09-06T01:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "3003",
+    "title": "Blue storage ottoman",
+    "price": 55,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3003",
+    "location": {
+      "city": "Rio Rancho",
+      "lat": 35.2328,
+      "lng": -106.663
+    },
+    "seller": {
+      "id": "s29",
+      "name": "Seller 29"
+    },
+    "images": [
+      "https://img.example/3003-0.jpg",
+      "https://img.example/3003-1.jpg"
+    ],
+    "description": "Square blue ottoman with lift off lid for storage.",
+    "posted_at": "2026-09-06T00:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "3004",
+    "title": "Navy blue tiered ottoman",
+    "price": 200,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3004",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s30",
+      "name": "Seller 30"
+    },
+    "images": [
+      "https://img.example/3004-0.jpg",
+      "https://img.example/3004-1.jpg",
+      "https://img.example/3004-2.jpg"
+    ],
+    "description": "Three tier round ottoman in navy, designer piece, like new.",
+    "posted_at": "2026-09-05T23:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "3101",
+    "title": "Round pouf ottoman",
+    "price": 60,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3101",
+    "location": {
+      "city": "Albuquerque",
+      "lat": 35.0844,
+      "lng": -106.6504
+    },
+    "seller": {
+      "id": "s74",
+      "name": "Seller 74"
+    },
+    "images": [
+      "https://img.example/3101-0.jpg",
+      "https://img.example/3101-1.jpg",
+      "https://img.example/3101-2.jpg"
+    ],
+    "description": "Barely used, very comfortable. Great accent piece.",
+    "posted_at": "2026-09-08T07:00:00+00:00",
+    "category": "furniture"
+  },
+  {
+    "id": "3102",
+    "title": "Tiered ottoman",
+    "price": 95,
+    "currency": "USD",
+    "url": "https://www.facebook.com/marketplace/item/3102",
+    "location": {
+      "city": "Rio Rancho",
+      "lat": 35.2328,
+      "lng": -106.663
+    },
+    "seller": {
+      "id": "s75",
+      "name": "Seller 75"
+    },
+    "images": [
+      "https://img.example/3102-0.jpg",
+      "https://img.example/3102-1.jpg",
+      "https://img.example/3102-2.jpg",
+      "https://img.example/3102-3.jpg"
+    ],
+    "description": "Layered design, super cute in a living room. Pet free home.",
+    "posted_at": "2026-09-08T02:00:00+00:00",
+    "category": "furniture"
+  }
+]

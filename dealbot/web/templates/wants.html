@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% from "_card.html" import card %}
+{% block content %}
+<h1>Wants &mdash; {{total}}</h1>
+{% if truncated %}<p class="meta">showing the top {{items|length}}</p>{% endif %}
+<p class="meta">Matches for things on your list. A <span class="chip unk">name?</span>
+chip means the listing text could not confirm every requirement &mdash; the
+photos usually settle it in seconds.</p>
+{% for i in items %}{{ card(i, '/') }}{% else %}
+<div class="empty">Nothing matching your wants.
+{% if counts.get('free_find') %}<br><a href="/free">{{counts['free_find']}} free finds waiting</a>.{% endif %}
+<br><a href="/runs">Check the runs</a> to see whether that's a quiet day or a broken fetch.</div>
+{% endfor %}
+{% endblock %}

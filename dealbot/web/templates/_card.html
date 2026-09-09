@@ -1,0 +1,64 @@
+{% macro card(i, back) %}
+<div class="card">
+  {% if i.images %}<img class="thumb" src="{{i.images[0]}}" alt="">
+  {% else %}<div class="thumb">no photo</div>{% endif %}
+  <div class="body">
+    <div class="title"><a href="/listing/{{i.id}}">{{i.title}}</a></div>
+    {% set was = i.previous_price_cents if i.previous_price_cents is not none
+                 else (i.priced_at_cents if i.priced_at_cents is not none
+                       and i.price_cents is not none
+                       and i.price_cents < i.priced_at_cents else none) %}
+    <div class="meta">
+      {% if was is not none and i.price_cents is not none and i.price_cents < was %}
+        <span class="strike">${{ '%.0f'|format(was/100) }}</span>
+        <span class="drop">{% if i.price_cents == 0 %}now FREE{% else %}${{ '%.0f'|format(i.price_cents/100) }}{% endif %} ↓</span>
+      {% elif i.price_cents == 0 %}<b>free</b>
+      {% elif i.price_cents is none %}no price
+      {% else %}${{ '%.0f'|format(i.price_cents/100) }}{% endif %}
+      &middot; {{ '%.0f'|format(i.distance_mi or 0) }} mi &middot; {{ i.city or '?' }}
+      {% if i.age_days is not none %}&middot; listed {{i.age_days}}d ago{% endif %}
+      {% if i.status %}&middot; {{i.status}}{% endif %}
+      {% if i.filter_reason %}<span class="chip">{{i.filter_reason}}</span>{% endif %}
+    </div>
+    <div class="why">
+      {% if i.matched_want %}<span class="chip {{'unk' if i.match=='unknown' else 'want'}}">{{i.matched_want}}{% if i.match=='unknown' %}?{% endif %}</span>{% endif %}
+      {% if i.images_checked %}<span class="chip">photos checked</span>{% endif %}
+      {# Old and repriced = a seller who wants it gone. The single signal no
+         keyword filter can express, and we had the data for it all along. #}
+      {% if (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
+        <span class="chip drop">motivated seller</span>
+      {% elif (i.age_days or 0) >= 21 %}<span class="chip">sitting {{i.age_days}}d</span>{% endif %}
+      {% if (i.price_moves or 0) >= 2 %}<span class="chip drop">{{i.price_moves}} price drops</span>{% endif %}
+      {% for f in i.red_flags %}<span class="chip flag">{{f}}</span>{% endfor %}
+      {{ i.reasoning or '' }}
+    </div>
+    {% if i.unknowns %}
+    <div class="unknowns">needs checking: {{ i.unknowns|join('; ') }}</div>
+    {% endif %}
+    {% if i.requirements %}
+    <div class="reqs"><ul>
+      {% for r in i.requirements %}
+      <li>{{ '✓' if r.met=='yes' else ('✗' if r.met=='no' else '?') }}
+          {{r.req}}{% if r.evidence %} &mdash; <i>{{r.evidence}}</i>{% endif %}</li>
+      {% endfor %}
+    </ul></div>
+    {% endif %}
+    <div style="margin-top:.5rem">
+      {% for s in ['saved','dismissed','contacted'] %}
+      <form class="inline" method="post" action="/triage">
+        <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
+        <input type="hidden" name="listing_id" value="{{i.id}}">
+        <input type="hidden" name="status" value="{{s}}">
+        <input type="hidden" name="back" value="{{back}}">
+        <button>{{s}}</button>
+      </form>
+      {% endfor %}
+      <a class="chip" href="{{i.url}}" target="_blank" rel="noopener">open ↗</a>
+    </div>
+  </div>
+  {% if i.deal_score is not none %}
+  <div class="score {{ 's-hi' if i.deal_score>=7 else ('s-mid' if i.deal_score>=5 else 's-lo') }}">
+    {{ '%.1f'|format(i.deal_score) }}</div>
+  {% endif %}
+</div>
+{% endmacro %}

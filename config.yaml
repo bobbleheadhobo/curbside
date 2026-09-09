@@ -1,0 +1,111 @@
+# deal_bot configuration.
+#
+# `wants` are things you actually want. `sweeps` are broad trawls (free stuff)
+# that get scored against every want plus a general "is this worth grabbing
+# anyway" test, so a sweep can surface something you never thought to search for.
+
+location:
+  # Albuquerque, NM
+  lat: 35.0844
+  lng: -106.6504
+  radius_miles: 25
+
+defaults:
+  min_deal_score: 7.0        # bar for the wants bin -- you will drive for these
+  free_find_min_score: 5.0   # bar for free finds -- browsing, so a lower bar
+  max_results_per_run: 5     # per hunt per source per run; bounds one run
+
+db_path: data/dealbot.db
+
+sources: [facebook, craigslist]   # any of: fixture, facebook, craigslist
+                             # each source gets its own run per hunt, so one
+                             # being throttled is visible rather than silent
+
+scorer:
+  backend: claude_code       # stub | claude_code
+  triage_model: sonnet
+  appraise_model: sonnet
+  claude_bin: /home/joey/.local/bin/claude
+  timeout_seconds: 180
+  batch_size: 20
+  max_image_checks: 10
+  # Hard ceiling on model spend per UTC day. Fetching continues past it --
+  # that costs no quota -- so the bot keeps collecting and stops judging.
+  # This quota is shared with otter.
+  daily_cost_limit_usd: 3.0
+
+facebook:
+  city: albuquerque
+  # Throttling is SILENT -- Facebook keeps answering 200 with a full-size page
+  # that contains no listings at all. These numbers are set for never noticing
+  # it rather than for speed.
+  min_interval_seconds: 15
+  max_requests_per_run: 25
+  fetch_details: true
+
+craigslist:
+  area_id: 50                # 50 = albuquerque (its own coords match ours exactly)
+  min_interval_seconds: 4    # friendlier than Facebook, but still polite
+  max_requests_per_run: 40
+
+wants:
+  - name: tv-stand
+    # `queries` cast the net for the targeted hourly search -- keyword search
+    # cannot know that "media console" means "tv stand". `description` is what
+    # the model judges against, and `requires` carries the pass/fail conditions
+    # so each is evidenced separately instead of blurring into one number.
+    queries:
+      - "tv stand"
+      - "media console"
+      - "entertainment center"
+      - "tv console"
+      - "credenza"
+    max_price: 250           # GUESS -- adjust
+    requires:
+      - "at least 70 inches wide"
+      - "is a stand or console the TV sits on, not a wall mount or bracket"
+      - "not a corner unit"
+    description: |
+      A large TV stand or media console for a big TV. Width is what matters most
+      -- a narrow one is useless however nice it looks or however cheap it is.
+
+      Prefer solid wood or genuinely sturdy construction. Particle board that is
+      already sagging is not worth hauling. Mid-century and simple modern styles
+      are welcome; glass-and-black-metal gaming towers are not.
+
+      Dimensions are often not stated. Reason from whatever the listing gives --
+      "six feet long" is 72 inches, "holds a 55 inch TV" implies something near
+      that width -- and where there is genuinely nothing to go on, say so rather
+      than guessing.
+
+  - name: stacked-ottoman
+    queries:
+      - "ottoman"
+      - "pouf"
+      - "footstool"
+      - "round ottoman"
+    max_price: 150           # GUESS -- adjust
+    requires:
+      - "teal or blue in colour"
+      - "body is three stacked round tiers, not one smooth cylinder or dome"
+      - "round, not square or rectangular"
+      - "not a storage ottoman with a lift-off lid"
+    description: |
+      A round ottoman or pouf built from three stacked round tiers -- three discs
+      or cushions piled on top of each other, like a layer cake or a stack of
+      macarons.
+
+      Colour and tier count are frequently impossible to judge from a title
+      alone. Where the text does not say, report it as unverifiable rather than
+      assuming either way -- a human can settle it in seconds by looking.
+
+sweeps:
+  - name: free-nearby
+    queries: ["free"]
+    max_price: 0
+    interval_minutes: 15     # free stuff evaporates in minutes
+    exclude:
+      - "free estimate"
+      - "free delivery"
+      - "free consultation"
+      - "free quote"

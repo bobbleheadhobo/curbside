@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% from "_card.html" import card %}
+{% block content %}
+<h1>{{ hunt.name if hunt else hunt_id }}</h1>
+<p><a class="chip {{'on' if not active}}" href="/hunt/{{hunt_id}}">all ({{counts.values()|sum}})</a>
+{% for s, n in counts|dictsort %}<a class="chip {{'on' if active==s}}" href="/hunt/{{hunt_id}}?status={{s}}">{{s}} ({{n}})</a>{% endfor %}</p>
+{% if reasons %}
+<p class="meta">rejected, by reason &mdash; this is the tuning view:
+{% for reason, n in reasons %}<a class="chip" href="/hunt/{{hunt_id}}?status=filtered">{{reason}} ({{n}})</a>{% endfor %}</p>
+{% endif %}
+{% if truncated %}<p class="meta">showing {{items|length}} of {{total}}</p>{% endif %}
+{% for i in items %}{{ card(i, '/hunt/' ~ hunt_id) }}{% else %}
+<div class="empty">Nothing matched yet.</div>{% endfor %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Runs</h1>
+<p class="meta">Every fetch attempt, success or failure. A quiet feed is only good news if these look healthy.</p>
+<div class="wrap"><table>
+<tr><th>started</th><th>hunt</th><th>source</th><th>fetched</th><th>new</th><th>cand</th><th>scored</th><th>wanted</th><th>free</th><th>imgs</th><th>cost</th><th>error</th></tr>
+{% for r in runs %}
+<tr class="{{'err' if r.error}}">
+<td>{{r.started_at}}</td><td>{{r.hunt_id}}</td><td>{{r.source}}</td>
+<td>{{r.n_fetched}}</td><td>{{r.n_new}}</td><td>{{r.n_candidates}}</td>
+<td>{{r.n_scored}}</td><td>{{r.n_wanted}}</td><td>{{r.n_free_find}}</td><td>{{r.n_image_checks}}</td><td>${{ '%.4f'|format(r.cost_usd) }}</td>
+<td style="white-space:normal">{{r.error or ''}}</td></tr>
+{% else %}<tr><td colspan="11">no runs yet</td></tr>{% endfor %}
+</table></div>
+{% endblock %}
