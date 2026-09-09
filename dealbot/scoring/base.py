@@ -147,6 +147,27 @@ class TriageResult:
 
 
 class Scorer(Protocol):
+    """Judgement. Two stages, because they cost very different amounts.
+
+    `triage` is coarse and BATCHED -- every `claude -p` invocation pays a fixed
+    ~2,500-token Claude Code prefix regardless of prompt size, so twenty
+    listings in one call pay it once. Keep when unsure; the next stage looks
+    properly. Return the survivors plus a reason for each drop, or a drop
+    becomes unauditable.
+
+    `appraise` is one call per listing and about three times dearer. It must
+    raise ScoringUnavailable carrying whatever it already completed in
+    `partial`: those appraisals are paid for, and a pause partway through a
+    batch used to discard them and re-charge next run.
+
+    `resolve_with_images(hunt, listing, score, provider)` is OPTIONAL. The
+    pipeline calls it only where the model set `needs_images` AND the text score
+    already puts the listing in a bin.
+
+    Both stages must call `check_available()` first, which is where the quota
+    ceiling and the rate-limit pause live.
+    """
+
     name: str
 
     def triage(self, hunt: Hunt, candidates: Sequence[Candidate]) -> "TriageResult": ...

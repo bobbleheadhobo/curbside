@@ -51,6 +51,24 @@ def run_hunt(
     max_image_checks: int = 10,
     thumbnails=None,
 ) -> RunResult:
+    """One hunt against one source, end to end.
+
+    Stages: fetch -> parse -> store -> gate -> cap -> enrich -> age -> dedupe
+    -> triage -> appraise -> images -> route.
+
+    Two invariants worth protecting:
+
+    * **Idempotent.** Running twice in a minute re-upserts the same listings and
+      makes ZERO model calls, because the gate rejects everything `unchanged`.
+      Anything that breaks this makes the poll interval expensive.
+    * **Fetching is free, judgement is not.** Every pause here -- quota ceiling,
+      rate limit, spend ceiling, connectivity -- stops the judging and lets the
+      collecting continue. You lose judgement for a while, never data.
+
+    Nothing is deleted. A rejected listing keeps its reason and its raw payload,
+    which is how three separate parser bugs were repaired from data already on
+    disk without re-fetching anything.
+    """
     run_id = store.start_run(hunt, source.name)
     result = RunResult(run_id=run_id, hunt_id=hunt.id)
 

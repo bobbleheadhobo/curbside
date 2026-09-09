@@ -3,8 +3,17 @@
 Watches Facebook Marketplace around Albuquerque for free and underpriced things,
 scores them, and puts what survives on a local dashboard.
 
-Design lives in [`docs/DESIGN.md`](docs/DESIGN.md) (architecture and rationale)
-and [`docs/FLOW.md`](docs/FLOW.md) (features, types, control flow).
+**Working on this?** Start with [`CLAUDE.md`](CLAUDE.md) — orientation, the
+invariants that fail quietly when broken, and how to run things without spending
+plan quota.
+
+| doc | what it answers |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | how to work on it safely; what not to break |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | what actually runs, as built |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | why the shape is what it is |
+| [`docs/FLOW.md`](docs/FLOW.md) | features, types, control flow |
+| [`systemd/README.md`](systemd/README.md) | deployment |
 
 ## Status: P1 + P2 + P2.5 complete, two live sources
 

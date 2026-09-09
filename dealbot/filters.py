@@ -44,6 +44,16 @@ def gate(
     upserts: Mapping[str, UpsertResult],
     blocked_sellers: Sequence[str] = (),
 ) -> GateResult:
+    """Decide who is worth spending money on. Pure: state comes in as dicts.
+
+    Order matters -- cheapest checks first, and every one that fires is a
+    listing never paid for. `unchanged` is the load-bearing rule: in steady
+    state almost everything hits it, which is what makes a 15-minute poll
+    interval affordable rather than ruinous.
+
+    Rejections are RETURNED, not discarded, so the caller can record why. An
+    empty result you cannot explain is indistinguishable from a broken scraper.
+    """
     candidates: list[Candidate] = []
     rejected: list[tuple[str, str]] = []
 

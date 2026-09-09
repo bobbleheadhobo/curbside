@@ -16,6 +16,28 @@ from ..models import Hunt, Listing, RawListing
 
 
 class Source(Protocol):
+    """A marketplace adapter. To add one, implement these three things.
+
+    `name` is stored on every listing and every run, and `mark_gone` is scoped
+    by it -- so two sources sharing a name would retire each other's listings.
+
+    `search` yields whatever the cheap index gives you, and MUST raise rather
+    than return an empty list when the site withholds data. Facebook answers a
+    throttled request with HTTP 200 and a full-size page containing nothing;
+    read as "no results" that looks exactly like a quiet day, forever.
+
+    `parse` turns one raw payload into a Listing. Return None for anything
+    unusable rather than raising -- one malformed row should not lose the batch.
+
+    `detail(listing) -> Listing | None` is OPTIONAL. Implement it when the index
+    omits things worth paying for (descriptions, coordinates), and the pipeline
+    will call it only for listings that survive the gate. Return None when the
+    detail is unavailable; the listing is deferred rather than judged thin.
+
+    Rate limiting belongs INSIDE the adapter, never in the caller, so it cannot
+    be bypassed by accident.
+    """
+
     name: str
 
     def search(self, hunt: Hunt) -> Iterator[RawListing]: ...

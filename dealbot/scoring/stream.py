@@ -75,6 +75,14 @@ def parse_events(raw: str) -> list[dict[str, Any]]:
 
 
 def extract(events: Iterable[dict[str, Any]]) -> StreamFacts:
+    """Facts from one `claude -p` event stream. Pure, so it is testable against
+    recorded output with no subprocess -- see fixtures/streams/.
+
+    Read the module docstring before changing any of this: every rule in here
+    was measured against real streams, and several are counter-intuitive
+    (`subtype` says "success" even when `is_error` is true; cost must be summed
+    across every `result`, not taken from the last).
+    """
     facts = StreamFacts()
     final: dict[str, Any] | None = None
 
