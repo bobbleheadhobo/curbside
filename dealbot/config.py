@@ -28,6 +28,13 @@ class ScorerConfig:
     batch_size: int = 20
     # A hard ceiling on the image pass per run, so a bad day cannot run away.
     max_image_checks: int = 10
+    # Photos sent per image pass, downscaled to 512px. Three was arbitrary.
+    # Roughly 260 tokens each, so this is about a third of what an image
+    # appraisal costs over a text one. Two keeps a fallback for when the
+    # seller's hero shot is a room photo or a close-up: a pass that fails to
+    # resolve the unknown has cost money and learned nothing, which is worse
+    # value than the photo it saved.
+    images_per_check: int = 2
     # Hard ceiling on model spend per calendar day (UTC). Fetching continues
     # past it -- that costs no quota -- so the bot keeps collecting and simply
     # stops judging. The quota is shared with otter, and an unattended bot
@@ -194,6 +201,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         timeout_seconds=int(sc.get("timeout_seconds", 180)),
         batch_size=int(sc.get("batch_size", 20)),
         max_image_checks=int(sc.get("max_image_checks", 10)),
+        images_per_check=int(sc.get("images_per_check", 2)),
         daily_cost_limit_usd=float(sc.get("daily_cost_limit_usd", 10.0)),
         max_five_hour_utilization=float(sc.get("max_five_hour_utilization", 0.70)),
         max_seven_day_utilization=float(sc.get("max_seven_day_utilization", 0.90)),

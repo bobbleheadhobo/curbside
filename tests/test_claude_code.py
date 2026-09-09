@@ -313,3 +313,37 @@ def test_no_reading_at_all_is_not_a_blocker(scorer, monkeypatch):
     sc, _ = scorer
     monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
     sc.check_available()
+
+
+def test_the_image_pass_honours_the_photo_limit(scorer, monkeypatch):
+    """Three was arbitrary and hard-coded. Each photo is ~260 tokens, so this
+    is about a third of what an image appraisal costs over a text one."""
+    from dealbot.config import ScorerConfig
+    from dealbot.models import Hunt, Listing
+    sc, _ = scorer
+    sc.cfg = ScorerConfig(images_per_check=2)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    asked = {}
+
+    class Provider:
+        name = "p"
+        def fetch(self, listing, dest, limit=3):
+            asked["limit"] = limit
+            return []
+
+    hunt = Hunt(id="h", name="h", kind="want", queries=(), max_price_cents=0,
+                exclude=(), wants=(), min_deal_score=7.0, free_find_min_score=5.0,
+                interval_minutes=15, max_results=60)
+    listing = Listing(id="x:1", source="x", source_id="1", title="t",
+                      description=None, price_cents=0, currency="USD", url="u")
+    from dealbot.models import Score
+    from datetime import datetime, timezone
+    score = Score(listing_id="x:1", hunt_id="h", model="m",
+                  scored_at=datetime.now(timezone.utc), match="unknown",
+                  deal_score=8.0, est_value_cents=None, condition=None,
+                  matched_want=None, worth_grabbing=True, unknowns=(),
+                  requirements=(), red_flags=(), reasoning="",
+                  needs_images=True)
+    sc.resolve_with_images(hunt, listing, score, Provider())
+    assert asked["limit"] == 2

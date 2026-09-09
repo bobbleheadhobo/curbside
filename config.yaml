@@ -35,6 +35,7 @@ scorer:
   timeout_seconds: 180
   batch_size: 20
   max_image_checks: 10
+  images_per_check: 2      # photos per image pass; ~260 tokens each
   # A blunt backstop. The real constraint is the one below.
   daily_cost_limit_usd: 10.0
   # Plan quota, shared with otter's incident triage and your own interactive

@@ -477,7 +477,8 @@ class ClaudeCodeScorer:
 
         tmp = Path(tempfile.mkdtemp(prefix="dealbot-img-"))
         try:
-            paths = provider.fetch(listing, tmp)
+            paths = provider.fetch(listing, tmp,
+                                   limit=self.cfg.images_per_check)
             if not paths:
                 return None
             listed = "\n".join(f"  {p.name}" for p in paths)
