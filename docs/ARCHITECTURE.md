@@ -163,8 +163,9 @@ so one threshold serves both bins and the match field carries the uncertainty.
 
 | guard | behaviour |
 |---|---|
-| Daily ceiling | $3.00/day. Fetching continues (no quota cost); only judging stops. Counts in-flight spend, not just finished runs. |
-| Rate-limit pause | Resumes at `resetsAt`; never zero. |
+| Plan quota | Stands aside at **70%** of the 5-hour window or **90%** of the 7-day one. Waiting for an outright rejection means otter has already been refused by the time we react; these numbers come from Claude Code's own `rate_limit_event` stream, so Curbside yields first. A reading older than 30 minutes is treated as unknown and one run is let through — enforcing a stale number is self-sealing, since no calls means no fresh number. |
+| Daily ceiling | $10/day, a blunt backstop under the quota ceiling. Counts in-flight spend, not just finished runs. |
+| Rate-limit pause | If refused anyway, resumes at `resetsAt`; never zero. |
 | Connectivity preflight | A `claude -p` with no network burns ~10 min of retry backoff; a 200ms TCP probe avoids it. |
 | Silent throttling | Facebook answers 200 with a full page and no data. Absent `feed_units` raises. |
 | Model output | Coerced, not trusted: `"$1,350"` parses, scores clamp to 0–10, non-scalars never reach TEXT columns. |

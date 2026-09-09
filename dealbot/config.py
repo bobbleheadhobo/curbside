@@ -33,7 +33,18 @@ class ScorerConfig:
     # stops judging. The quota is shared with otter, and an unattended bot
     # draining a cold-start backlog is exactly how you would find that out the
     # hard way.
-    daily_cost_limit_usd: float = 3.0
+    daily_cost_limit_usd: float = 10.0
+    # The real constraint is plan quota, not dollars, and it is shared with
+    # otter's incident triage and your own interactive use. Claude Code reports
+    # live utilisation in its rate_limit_event stream, so we can stand aside
+    # BEFORE otter gets refused rather than after.
+    max_five_hour_utilization: float = 0.70
+    max_seven_day_utilization: float = 0.90
+    # A utilisation reading only arrives with a model call, so pausing on it
+    # would otherwise deadlock: no calls, no fresh number, no way back. A
+    # reading older than this is treated as unknown and one run is let through
+    # to refresh it.
+    utilization_stale_minutes: int = 30
     # Pause scoring when Claude Code rejects us, and resume at resetsAt. Never 0:
     # a falsy resume deadline reads as "no deadline, resume now", which would make
     # the pause a silent no-op. (Lesson borrowed from otter.)
@@ -183,7 +194,10 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         timeout_seconds=int(sc.get("timeout_seconds", 180)),
         batch_size=int(sc.get("batch_size", 20)),
         max_image_checks=int(sc.get("max_image_checks", 10)),
-        daily_cost_limit_usd=float(sc.get("daily_cost_limit_usd", 3.0)),
+        daily_cost_limit_usd=float(sc.get("daily_cost_limit_usd", 10.0)),
+        max_five_hour_utilization=float(sc.get("max_five_hour_utilization", 0.70)),
+        max_seven_day_utilization=float(sc.get("max_seven_day_utilization", 0.90)),
+        utilization_stale_minutes=int(sc.get("utilization_stale_minutes", 30)),
         rate_limit_fallback_seconds=int(sc.get("rate_limit_fallback_seconds", 5 * 3600)),
     )
 

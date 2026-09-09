@@ -251,3 +251,65 @@ def test_negative_examples_are_snapshotted_daily(scorer):
 
     sc._negatives.clear()                       # new process, same day
     assert sc._negative_examples(hunt) == ()    # snapshot held, prefix stable
+
+
+def _record(store, five=None, seven=None, minutes_ago=0):
+    from datetime import datetime, timedelta, timezone
+    from dealbot.scoring.claude_code import UTIL_5H, UTIL_7D, UTIL_AT
+    if five is not None:
+        store.set_setting(UTIL_5H, str(five))
+    if seven is not None:
+        store.set_setting(UTIL_7D, str(seven))
+    when = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    store.set_setting(UTIL_AT, when.isoformat(timespec="seconds"))
+
+
+def test_it_stands_aside_before_the_plan_is_exhausted(scorer, monkeypatch):
+    """Waiting for an outright rejection means otter has already been refused
+    by the time we react."""
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.72)
+    with pytest.raises(ScoringUnavailable, match="5-hour"):
+        sc.check_available()
+
+
+def test_the_weekly_window_has_its_own_ceiling(scorer, monkeypatch):
+    """A poller running every 15 minutes creeps up the 7-day window without
+    ever tripping the hourly one -- and otter does not watch it at all."""
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.10, seven=0.95)
+    with pytest.raises(ScoringUnavailable, match="7-day"):
+        sc.check_available()
+
+
+def test_below_the_ceiling_it_carries_on(scorer, monkeypatch):
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.55, seven=0.40)
+    sc.check_available()
+
+
+def test_a_stale_reading_never_seals_the_pause_shut(scorer, monkeypatch):
+    """A utilisation number only arrives with a model call. Enforcing an old one
+    means no calls, so no fresh number, so no way to discover the window has
+    reopened."""
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.99, minutes_ago=120)
+    sc.check_available()          # let one through to refresh
+
+
+def test_a_fresh_reading_is_enforced(scorer, monkeypatch):
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.99, minutes_ago=5)
+    with pytest.raises(ScoringUnavailable):
+        sc.check_available()
+
+
+def test_no_reading_at_all_is_not_a_blocker(scorer, monkeypatch):
+    sc, _ = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    sc.check_available()

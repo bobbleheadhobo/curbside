@@ -35,10 +35,15 @@ scorer:
   timeout_seconds: 180
   batch_size: 20
   max_image_checks: 10
-  # Hard ceiling on model spend per UTC day. Fetching continues past it --
-  # that costs no quota -- so the bot keeps collecting and stops judging.
-  # This quota is shared with otter.
-  daily_cost_limit_usd: 3.0
+  # A blunt backstop. The real constraint is the one below.
+  daily_cost_limit_usd: 10.0
+  # Plan quota, shared with otter's incident triage and your own interactive
+  # use. Claude Code reports live utilisation, so Curbside can stand aside
+  # BEFORE otter gets refused rather than after. Fetching continues throughout:
+  # it costs no quota, so the bot keeps collecting and only stops judging.
+  max_five_hour_utilization: 0.70
+  max_seven_day_utilization: 0.90
+  utilization_stale_minutes: 30
 
 facebook:
   city: albuquerque

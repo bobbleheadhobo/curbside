@@ -30,7 +30,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from ..config import ScorerConfig
@@ -45,6 +45,7 @@ log = logging.getLogger("dealbot.scoring")
 
 PAUSE_UNTIL = "scoring_paused_until"
 PAUSE_REASON = "scoring_paused_reason"
+UTIL_5H, UTIL_7D, UTIL_AT = "util_five_hour", "util_seven_day", "util_recorded_at"
 
 
 class ScoringUnavailable(RuntimeError):
@@ -119,6 +120,8 @@ class ClaudeCodeScorer:
                 raise ScoringUnavailable(
                     f"daily spend ceiling reached (${spent:.2f} of ${limit:.2f})")
 
+        self._check_utilization()
+
         until = self.store.get_setting(PAUSE_UNTIL)
         if until and time.time() < float(until):
             reason = self.store.get_setting(PAUSE_REASON, "rate limit")
@@ -126,6 +129,43 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable(f"paused ({reason}), {mins:.0f} min remaining")
         if not api_reachable():
             raise ScoringUnavailable("api.anthropic.com unreachable")
+
+    def _check_utilization(self) -> None:
+        """Stand aside while the plan is busy.
+
+        Waiting for an outright rejection means otter has already been refused
+        by the time we react. These numbers come from Claude Code's own
+        rate_limit_event stream, so we can yield first.
+
+        A stale reading is treated as unknown and allowed through -- otherwise
+        pausing is self-sealing: no calls means no fresh number means no way to
+        discover the window has reopened.
+        """
+        stamp = self.store.get_setting(UTIL_AT)
+        if not stamp:
+            return
+        try:
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(stamp)
+        except ValueError:
+            return
+        if age > timedelta(minutes=self.cfg.utilization_stale_minutes):
+            return
+
+        for key, ceiling, label in (
+            (UTIL_5H, self.cfg.max_five_hour_utilization, "5-hour"),
+            (UTIL_7D, self.cfg.max_seven_day_utilization, "7-day"),
+        ):
+            raw = self.store.get_setting(key)
+            if raw is None or ceiling <= 0:
+                continue
+            try:
+                used = float(raw)
+            except ValueError:
+                continue
+            if used >= ceiling:
+                raise ScoringUnavailable(
+                    f"{label} plan window at {used*100:.0f}% "
+                    f"(ceiling {ceiling*100:.0f}%) -- standing aside")
 
     def _pause(self, seconds_until: float | None, reason: str) -> None:
         # Never 0: a falsy deadline reads as "no deadline, resume now", which
@@ -177,9 +217,13 @@ class ClaudeCodeScorer:
         # a steady background poller creeps up `seven_day` without ever tripping
         # `five_hour`, and only one of those is obvious.
         if facts.five_hour_utilization is not None:
-            self.store.set_setting("util_five_hour", str(facts.five_hour_utilization))
+            self.store.set_setting(UTIL_5H, str(facts.five_hour_utilization))
         if facts.seven_day_utilization is not None:
-            self.store.set_setting("util_seven_day", str(facts.seven_day_utilization))
+            self.store.set_setting(UTIL_7D, str(facts.seven_day_utilization))
+        if (facts.five_hour_utilization is not None
+                or facts.seven_day_utilization is not None):
+            self.store.set_setting(
+                UTIL_AT, datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
         rejected = (facts.rate_limit_status not in (None, "allowed")
                     or (facts.failed and "rate limit" in facts.text.lower()))
