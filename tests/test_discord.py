@@ -139,3 +139,44 @@ def test_a_missing_webhook_is_not_an_error(rig):
     _register(store, hunt, l)
     n.notify(hunt, [(l, make_score(match="yes"))])
     assert sent == []
+
+
+def test_the_cap_defers_rather_than_drops(rig):
+    """REGRESSION: the notifier only ever saw what the CURRENT run surfaced, so
+    anything past the per-run cap was lost forever -- next run it is
+    `unchanged` and never surfaces again. Two TV stands, the whole point of the
+    thing, sat un-announced because of it."""
+    store, hunt, n, sent = rig
+    n.max_per_run = 2
+    for i in range(5):
+        l = make_listing(f"fb:{i}")
+        _register(store, hunt, l)
+        store.set_status(hunt.id, l.id, "free_find")
+        store.save_score(make_score(listing_id=f"fb:{i}", deal_score=6.0 + i * 0.1),
+                         priced_at_cents=0)
+
+    n.notify(hunt, [])                      # nothing surfaced THIS run
+    assert len(sent) == 2                   # cap respected
+    n._sent_this_run = 0
+    n.notify(hunt, [])
+    assert len(sent) == 4                   # the rest are picked up next run
+    n._sent_this_run = 0
+    n.notify(hunt, [])
+    assert len(sent) == 5
+    n._sent_this_run = 0
+    n.notify(hunt, [])
+    assert len(sent) == 5                   # ...and never announced twice
+
+
+def test_a_bin_entry_predating_notifications_still_gets_announced(rig):
+    """The two TV stands entered the wants bin before Discord was switched on."""
+    store, hunt, n, sent = rig
+    l = make_listing("fb:old-find")
+    _register(store, hunt, l)
+    store.set_status(hunt.id, l.id, "wanted")
+    store.save_score(make_score(listing_id="fb:old-find", match="yes"),
+                     priced_at_cents=0)
+
+    n.notify(hunt, [])                      # this run surfaced nothing new
+    assert len(sent) == 1
+    assert sent[0][0] == "https://w"        # and it went to the wants channel

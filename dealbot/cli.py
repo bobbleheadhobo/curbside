@@ -51,7 +51,7 @@ def _build_sources(cfg: config_mod.Config):
 
 
 def _build_notifiers(cfg: config_mod.Config, store):
-    notifiers = _build_notifiers(cfg, store)
+    notifiers = [DashboardNotifier(store)]
     if cfg.discord.enabled:
         d = cfg.discord
         notifiers.append(DiscordNotifier(

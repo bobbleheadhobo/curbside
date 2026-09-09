@@ -439,6 +439,58 @@ class Store:
             (status, note, _now(), hunt_id, listing_id),
         )
 
+    def pending_notifications(self, hunt_id: str, limit: int = 50
+                              ) -> list[tuple[Listing, Score]]:
+        """Everything sitting in a bin that has never been announced.
+
+        The notifier used to see only what the CURRENT run surfaced, which meant
+        a listing was announced or lost forever. Anything that entered a bin
+        before notifications were switched on, or fell past the per-run cap, or
+        hit a transient send failure, was never revisited -- on the next run it
+        is `unchanged`, so it never surfaces again. Two TV stands, the whole
+        point of the thing, sat un-announced because of it.
+
+        With this, the cap DEFERS rather than drops.
+        """
+        rows = self.conn.execute(
+            """SELECT l.*, s.* FROM hunt_matches m
+               JOIN listings l ON l.id = m.listing_id
+               JOIN scores  s ON s.id = (SELECT MAX(id) FROM scores
+                    WHERE hunt_id = m.hunt_id AND listing_id = m.listing_id)
+               WHERE m.hunt_id = ? AND m.notified_at IS NULL
+                 AND m.status IN ('wanted', 'free_find')
+               ORDER BY s.deal_score DESC LIMIT ?""", (hunt_id, limit)).fetchall()
+        return [(self._row_to_listing(r), self._row_to_score(r)) for r in rows]
+
+    @staticmethod
+    def _row_to_listing(r: sqlite3.Row) -> Listing:
+        return Listing(
+            id=r["id"], source=r["source"], source_id=r["source_id"],
+            title=r["title"], description=r["description"],
+            price_cents=r["price_cents"],
+            previous_price_cents=r["previous_price_cents"],
+            currency=r["currency"], url=r["url"], city=r["city"],
+            lat=r["lat"], lng=r["lng"], distance_mi=r["distance_mi"],
+            seller_id=r["seller_id"], seller_name=r["seller_name"],
+            images=tuple(json.loads(r["images"] or "[]")),
+            category=r["category"],
+            posted_at=(datetime.fromisoformat(r["posted_at"])
+                       if r["posted_at"] else None))
+
+    @staticmethod
+    def _row_to_score(r: sqlite3.Row) -> Score:
+        return Score(
+            listing_id=r["listing_id"], hunt_id=r["hunt_id"], model=r["model"],
+            scored_at=datetime.fromisoformat(r["scored_at"]),
+            match=r["match"], deal_score=r["deal_score"],
+            est_value_cents=r["est_value_cents"], condition=r["condition"],
+            matched_want=r["matched_want"],
+            worth_grabbing=bool(r["worth_grabbing"]),
+            unknowns=tuple(json.loads(r["unknowns"] or "[]")),
+            requirements=tuple(json.loads(r["requirements"] or "[]")),
+            red_flags=tuple(json.loads(r["red_flags"] or "[]")),
+            reasoning=r["reasoning"], images_checked=bool(r["images_checked"]))
+
     def was_notified(self, hunt_id: str, listing_id: str) -> bool:
         row = self.conn.execute(
             "SELECT notified_at FROM hunt_matches WHERE hunt_id=? AND listing_id=?",

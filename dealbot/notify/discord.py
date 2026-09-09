@@ -143,7 +143,15 @@ class DiscordNotifier:
     # --- the Notifier interface --------------------------------------------
 
     def notify(self, hunt: Hunt, surfaced: Sequence[tuple[Listing, Score]]) -> None:
-        for listing, score in surfaced:
+        # Work from everything in a bin that has never been announced, not just
+        # what this run produced. Otherwise the per-run cap DROPS rather than
+        # defers, and anything that landed in a bin while notifications were off
+        # is never revisited -- next run it is `unchanged` and never surfaces.
+        pending = self.store.pending_notifications(hunt.id)
+        seen = {l.id for l, _ in pending}
+        queue = list(pending) + [(l, s) for l, s in surfaced if l.id not in seen]
+
+        for listing, score in queue:
             if self.store.was_notified(hunt.id, listing.id):
                 continue
 
