@@ -218,6 +218,18 @@ All of this was collected and none of it was visible:
 | `/listing/<id>` | detail, score history, price sparkline |
 | `/runs` | every fetch attempt: counts, cost, errors |
 
+The free page carries a **pause switch** for the sweeps. Unlike every other
+pause here, this one stops the *fetching* too — nothing is collected for a
+paused hunt. That is deliberate: it exists to stop spending on free stuff, not
+to quieten it. The switch lives in the `settings` table rather than in
+`config.yaml`, so the dashboard and a hand edit are never fighting over one
+file, and it is an override *on top of* config — a hunt disabled in config stays
+disabled.
+
+A paused hunt is announced in a banner on **every** page, and marked `[PAUSED]`
+in `dealbot hunts`. A bot switched off and forgotten looks exactly like a broken
+one.
+
 **Near misses exist so the threshold is falsifiable.** `deal_score` assumes
 anything unverified resolves favourably, so a 6 means "even at its best,
 mediocre" -- but a bar you can never see over cannot be calibrated. If good

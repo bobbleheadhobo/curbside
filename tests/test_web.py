@@ -98,3 +98,26 @@ def test_thumb_falls_back_to_the_source_url(tmp_path):
     r = client.get("/thumb/x:9", follow_redirects=False)
     assert r.status_code == 307
     assert r.headers["location"] == "https://img.example/a.jpg"
+
+
+def test_the_free_page_can_pause_and_resume_sweeps(tmp_path):
+    client, cfg = _client(tmp_path)
+    from dealbot.db import Store
+    s = Store(cfg.db_path)
+    sweep = next(h for h in cfg.hunts if h.kind == "sweep")
+
+    assert "pause free-stuff searches" in client.get("/free").text
+
+    client.post("/hunts/toggle", data={"kind": "sweep", "enable": "0",
+                                       "back": "/free"}, follow_redirects=False)
+    assert sweep.id in s.disabled_hunts()
+    assert not any(h.id in s.disabled_hunts() for h in cfg.hunts if h.kind == "want")
+
+    page = client.get("/free").text
+    assert "resume free-stuff searches" in page
+    assert "Paused:" in page                       # banner
+    assert "Paused:" in client.get("/").text       # ...on every page
+
+    client.post("/hunts/toggle", data={"kind": "all", "enable": "1", "back": "/"},
+                follow_redirects=False)
+    assert s.disabled_hunts() == set()

@@ -557,6 +557,21 @@ class Store:
 
     # --- settings -----------------------------------------------------------
 
+    def hunt_enabled(self, hunt_id: str) -> bool:
+        """A runtime override on top of config.yaml's `enabled`.
+
+        It lives in the database rather than the config file so the dashboard
+        can flip it: config.yaml is committed and hand-edited, and having two
+        writers on it invites losing a comment or a whole want."""
+        return self.get_setting(f"hunt_disabled:{hunt_id}") != "1"
+
+    def set_hunt_enabled(self, hunt_id: str, enabled: bool) -> None:
+        self.set_setting(f"hunt_disabled:{hunt_id}", "0" if enabled else "1")
+
+    def disabled_hunts(self) -> set[str]:
+        return {r["key"].split(":", 1)[1] for r in self.conn.execute(
+            "SELECT key FROM settings WHERE key LIKE 'hunt_disabled:%' AND value='1'")}
+
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         r = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
         return r["value"] if r else default

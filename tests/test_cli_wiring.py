@@ -85,3 +85,34 @@ def test_notify_command_costs_nothing_and_drains_the_queue(tmp_path, monkeypatch
 
     assert cmd_notify(type("A", (), {"config": str(tmp_path / "config.yaml"),
                                      "hunt": None})()) == 0
+
+
+def test_a_paused_hunt_is_not_run(tmp_path):
+    """The dashboard switch has to actually stop the work, not just hide it."""
+    import shutil
+    from dealbot.cli import _hunts
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    st = Store(cfg.db_path)
+    sweep = next(h for h in cfg.hunts if h.kind == "sweep")
+
+    assert sweep.id in [h.id for h in _hunts(cfg, None, st)]
+    st.set_hunt_enabled(sweep.id, False)
+    running = [h.id for h in _hunts(cfg, None, st)]
+    assert sweep.id not in running
+    assert running, "want hunts must be unaffected"
+    st.set_hunt_enabled(sweep.id, True)
+    assert sweep.id in [h.id for h in _hunts(cfg, None, st)]
+
+
+def test_config_disabled_still_wins(tmp_path):
+    """The database switch is an override on top of config, not a replacement."""
+    from dataclasses import replace
+    import shutil
+    from dealbot.cli import _hunts
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    st = Store(cfg.db_path)
+    cfg = replace(cfg, hunts=tuple(replace(h, enabled=False) for h in cfg.hunts))
+    st.set_hunt_enabled(cfg.hunts[0].id, True)
+    assert _hunts(cfg, None, st) == []

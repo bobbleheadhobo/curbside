@@ -131,7 +131,15 @@ def create_app(cfg: Config) -> FastAPI:
     hunts = {h.id: h for h in cfg.hunts}
 
     def ctx(request: Request, **kw):
-        return {"request": request, "hunts": cfg.hunts, **kw}
+        # Every page carries the paused state. A bot that has been switched off
+        # and forgotten looks exactly like a broken one.
+        off = store.disabled_hunts()
+        return {"request": request, "hunts": cfg.hunts,
+                "paused_hunts": [h for h in cfg.hunts if h.id in off],
+                "sweeps_paused": all(h.id in off for h in cfg.hunts
+                                     if h.kind == "sweep")
+                                 and any(h.kind == "sweep" for h in cfg.hunts),
+                **kw}
 
     def _counts():
         return {r["status"]: r["n"] for r in store.conn.execute(
@@ -230,6 +238,22 @@ def create_app(cfg: Config) -> FastAPI:
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
             history=history, sparkline=_sparkline(history)))
+
+    @app.post("/hunts/toggle")
+    def toggle_hunts(kind: str = Form(...), enable: str = Form(...),
+                     back: str = Form("/")):
+        """Switch a whole class of hunt on or off.
+
+        Pausing a sweep stops the fetching as well as the judging, so nothing is
+        collected for it while it is off -- unlike the quota and spend pauses,
+        which deliberately keep collecting. That is the point: this exists to
+        stop spending on free stuff, not to quieten it.
+        """
+        want_on = enable == "1"
+        for h in cfg.hunts:
+            if kind in ("all", h.kind):
+                store.set_hunt_enabled(h.id, want_on)
+        return RedirectResponse(back, status_code=303)
 
     @app.post("/triage")
     def triage(hunt_id: str = Form(...), listing_id: str = Form(...),

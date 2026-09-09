@@ -39,10 +39,25 @@ form.inline{display:inline}
 button{font:inherit;font-size:.82rem;padding:.25rem .6rem;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
 button:hover{border-color:var(--dim)}
 .empty{color:var(--dim);padding:2rem 0;text-align:center}
+.paused{border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:.6rem .8rem;margin-bottom:1rem;font-size:.9rem}
+.switch{float:right;margin-top:-2.2rem}
 .wrap{overflow-x:auto}
 </style></head><body>
 <header><b><a href="/">Curbside</a></b>
 <nav><a href="/">wants</a> &nbsp; <a href="/free">free finds</a> &nbsp; <a href="/saved">saved</a> &nbsp; <a href="/near">near misses</a> &nbsp;
 {% for h in hunts %}<a href="/hunt/{{h.id}}">{{h.name}}</a> &nbsp;{% endfor %}
 <a href="/runs">runs</a></nav></header>
-<main>{% block content %}{% endblock %}</main></body></html>
+<main>
+{% if paused_hunts %}
+<div class="paused">
+  <b>Paused:</b> {{ paused_hunts | map(attribute='name') | join(', ') }} &mdash;
+  not being searched, so nothing new is collected for {{ 'them' if paused_hunts|length > 1 else 'it' }}.
+  <form class="inline" method="post" action="/hunts/toggle">
+    <input type="hidden" name="kind" value="all">
+    <input type="hidden" name="enable" value="1">
+    <input type="hidden" name="back" value="{{ request.url.path }}">
+    <button>resume everything</button>
+  </form>
+</div>
+{% endif %}
+{% block content %}{% endblock %}</main></body></html>

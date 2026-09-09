@@ -92,8 +92,12 @@ def _is_due(store, hunt, source_name: str) -> bool:
         minutes=hunt.interval_minutes)
 
 
-def _hunts(cfg: config_mod.Config, name: str | None):
+def _hunts(cfg: config_mod.Config, name: str | None, store=None):
+    """Enabled in config AND not switched off from the dashboard."""
     hunts = [h for h in cfg.hunts if h.enabled]
+    if store is not None:
+        off = store.disabled_hunts()
+        hunts = [h for h in hunts if h.id not in off]
     if name:
         hunts = [h for h in hunts if h.name == name or h.id == name]
         if not hunts:
@@ -107,7 +111,7 @@ def cmd_once(args) -> int:
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
     notifiers = _build_notifiers(cfg, store)
 
-    for hunt in _hunts(cfg, args.hunt):
+    for hunt in _hunts(cfg, args.hunt, store):
         for name, source in sources:
             if args.due and not _is_due(store, hunt, name):
                 continue
@@ -142,7 +146,7 @@ def cmd_notify(args) -> int:
     store = Store(cfg.db_path)
     notifiers = _build_notifiers(cfg, store)
     total = 0
-    for hunt in _hunts(cfg, args.hunt):
+    for hunt in _hunts(cfg, args.hunt, store):
         pending = store.pending_notifications(hunt.id)
         if not pending:
             continue
@@ -153,7 +157,8 @@ def cmd_notify(args) -> int:
             except Exception:                              # noqa: BLE001
                 log.exception("notifier %s failed", n.name)
         total += len(pending)
-    still = sum(len(store.pending_notifications(h.id)) for h in _hunts(cfg, args.hunt))
+    still = sum(len(store.pending_notifications(h.id))
+                for h in _hunts(cfg, args.hunt, store))
     print(f"queued {total}, {still} still pending (per-run caps defer the rest)")
     store.close()
     return 0
@@ -178,6 +183,7 @@ def cmd_prune_thumbs(args) -> int:
 def cmd_hunts(args) -> int:
     cfg = config_mod.load(args.config)
     store = Store(cfg.db_path)
+    off = store.disabled_hunts()
     print(f"{'hunt':28} {'kind':6} {'every':>6}  {'max$':>6}  last run")
     for h in cfg.hunts:
         row = store.conn.execute(
@@ -189,7 +195,8 @@ def cmd_hunts(args) -> int:
             last = f"{row['started_at']} surfaced={row['n_surfaced']}"
             if row["error"]:
                 last += f" ERROR: {row['error']}"
-        print(f"{h.id:28} {h.kind:6} {h.interval_minutes:>5}m  {cap:>6}  {last}")
+        state = "  [PAUSED]" if h.id in off else ""
+        print(f"{h.id:28} {h.kind:6} {h.interval_minutes:>5}m  {cap:>6}  {last}{state}")
     store.close()
     return 0
 
@@ -216,7 +223,7 @@ def cmd_run(args) -> int:
     try:
         while True:
             now = time.time()
-            for hunt in _hunts(cfg, args.hunt):
+            for hunt in _hunts(cfg, args.hunt, store):
                 if now < next_due.get(hunt.id, 0):
                     continue
                 for name, source in sources:
