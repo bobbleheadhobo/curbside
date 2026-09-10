@@ -1,10 +1,20 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
+{% block title %}Saved &middot; Curbside{% endblock %}
 {% block content %}
-<h1>Saved &mdash; {{total}}</h1>
-<p class="meta">Things you decided to act on. Saved and contacted both land here;
-nothing leaves except by being dismissed.</p>
-{% for i in items %}{{ card(i, '/saved') }}{% else %}
-<div class="empty">Nothing saved yet. Hit <b>saved</b> on anything in
-<a href="/">wants</a> or <a href="/free">free finds</a> and it will collect here.</div>
+<div class="pagehead">
+  <h1>Saved</h1>
+  <p class="stats">
+    <i><b>{{total}}</b> to act on</i>
+  </p>
+  <p>Things you decided to act on. Nothing leaves except by being dismissed.</p>
+</div>
+<div class="stack">
+{% for i in items %}{{ card(i, '/saved', ['dismissed']) }}{% else %}
+<div class="empty">
+  <svg class="i" aria-hidden="true"><use href="#i-saved"/></svg>
+  <b>Nothing saved yet</b>
+  <p>Hit <b>Save</b> in <a href="/">wants</a> or <a href="/free">free finds</a>.</p>
+</div>
 {% endfor %}
+</div>
 {% endblock %}

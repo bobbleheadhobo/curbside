@@ -347,3 +347,133 @@ def test_the_image_pass_honours_the_photo_limit(scorer, monkeypatch):
                   needs_images=True)
     sc.resolve_with_images(hunt, listing, score, Provider())
     assert asked["limit"] == 2
+
+
+# --- money already spent must survive every failure path --------------------
+
+def _hunt():
+    from dealbot.models import Hunt
+    want = type("W", (), {"name": "w", "requires": (), "description": "d",
+                          "max_price_cents": 100})()
+    return Hunt(id="h", name="h", kind="sweep", queries=(), max_price_cents=0,
+                exclude=(), wants=(want,), min_deal_score=7.0,
+                free_find_min_score=5.0, interval_minutes=15, max_results=60)
+
+
+def _cands(n):
+    from dealbot.models import Candidate, Listing
+    return [Candidate(Listing(id=f"x:{i}", source="x", source_id=str(i),
+                              title="t", description=None, price_cents=0,
+                              currency="USD", url="u"), "new")
+            for i in range(n)]
+
+
+class _Facts:
+    input_tokens = output_tokens = cache_read_tokens = 0
+    cost_usd = 0.01
+
+    def __init__(self, text):
+        self.text = text
+
+
+GOOD = '{"match":"no","deal_score":3,"worth_grabbing":true,"reasoning":"ok"}'
+
+
+def test_a_rate_limit_on_the_RETRY_still_hands_back_the_batch(scorer, monkeypatch):
+    """REGRESSION: the unparseable-output retry sat OUTSIDE the try that carries
+    `partial`, so a pause landing on the retry propagated with nothing attached
+    -- discarding every appraisal already bought in that batch and paying for
+    all of them again next run. The exact cost `partial` exists to prevent."""
+    sc, _ = scorer
+    calls = {"n": 0}
+
+    def fake_invoke(system, user, model, read_dir=None):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return _Facts(GOOD)
+        if calls["n"] == 3:
+            return _Facts("no json here at all")     # forces the retry
+        raise ScoringUnavailable("rate limited")     # ...and the retry is refused
+
+    monkeypatch.setattr(sc, "_invoke", fake_invoke)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    with pytest.raises(ScoringUnavailable) as ei:
+        sc.appraise(_hunt(), _cands(5))
+    assert len(ei.value.partial) == 2
+
+
+def test_the_plan_ceiling_is_rechecked_between_listings(scorer, monkeypatch):
+    """check_available() runs once, before the batch. A batch that starts just
+    under the ceiling used to run every appraisal in it -- so the standing-aside
+    that is supposed to happen BEFORE otter is refused happened after."""
+    from datetime import datetime, timezone
+    from dealbot.scoring.claude_code import UTIL_5H, UTIL_AT
+
+    sc, store = scorer
+
+    def fake_invoke(system, user, model, read_dir=None):
+        # What a real _invoke does: record the window it just saw.
+        store.set_setting(UTIL_5H, "0.99")
+        store.set_setting(UTIL_AT,
+                          datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        return _Facts(GOOD)
+
+    monkeypatch.setattr(sc, "_invoke", fake_invoke)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    with pytest.raises(ScoringUnavailable, match="5-hour"):
+        sc.appraise(_hunt(), _cands(4))
+
+
+def test_a_triage_outage_hands_back_the_chunks_already_paid_for(scorer, monkeypatch):
+    """REGRESSION: triage accumulated cost and verdicts across chunks and then
+    returned NOTHING if a later chunk was refused. The batched calls already
+    billed never reached `runs.cost_usd` -- which is what the daily ceiling
+    reads -- and every listing was triaged again from scratch next run."""
+    from dealbot.config import ScorerConfig
+    from dealbot.scoring.base import TriageResult
+
+    sc, _ = scorer
+    sc.cfg = ScorerConfig(backend="claude_code", batch_size=2)
+    calls = {"n": 0}
+
+    def fake_invoke(system, user, model, read_dir=None):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise ScoringUnavailable("rate limited")
+        return _Facts('{"id":"x:0","keep":false,"why":"a service ad"}\n'
+                      '{"id":"x:1","keep":true}')
+
+    monkeypatch.setattr(sc, "_invoke", fake_invoke)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    with pytest.raises(ScoringUnavailable) as ei:
+        sc.triage(_hunt(), _cands(6))
+    done = ei.value.partial
+    assert isinstance(done, TriageResult)
+    assert done.cost_usd == 0.01                    # the chunk we paid for
+    assert done.notes == {"x:0": "a service ad"}    # and what it decided
+    assert [c.listing.id for c in done.kept] == ["x:1"]
+
+
+def test_spend_already_in_the_runs_table_is_not_counted_twice(scorer, monkeypatch):
+    """REGRESSION: `check_available` added `_spent_this_process` to
+    `cost_since`, but `finish_run` had already written those same dollars to
+    `runs.cost_usd`. Over a `dealbot run` daemon the count converged on twice
+    the real spend, so judging stopped at about half `daily_cost_limit_usd`."""
+    from dealbot.config import ScorerConfig
+
+    sc, store = scorer
+    sc.cfg = ScorerConfig(backend="claude_code", daily_cost_limit_usd=1.0)
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+
+    run_id = store.start_run(_hunt(), "x")
+    store.finish_run(run_id, cost_usd=0.60)         # a finished run, recorded
+    sc._spent_this_process = 0.60                   # ...and still in memory
+
+    with pytest.raises(ScoringUnavailable, match="daily spend"):
+        sc.check_available()
+
+    sc.begin_run()                                  # a new run: the DB has it now
+    sc.check_available()                            # must not raise

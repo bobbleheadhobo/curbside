@@ -82,7 +82,8 @@ class StubScorer:
             score = max(0.0, min(10.0, score))
             # The stub cannot evaluate a hard requirement, so it never claims
             # "yes" for a want that has any -- it reports the honest "unknown"
-            # and lets the worth-a-look queue handle it.
+            # and lets the score decide where it lands: the wants bin if it
+            # clears the bar (flagged amber), /skipped if it does not.
             want = next((w for w in hunt.wants if w.name == matched), None)
             if matched is None:
                 match = "no" if score < 4 else "unknown"

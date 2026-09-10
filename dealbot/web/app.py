@@ -10,15 +10,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+import logging
 
+from fastapi import FastAPI, Form, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from .. import config as config_mod
+from .. import schedule as schedule_mod
 from ..config import Config
 from ..db import Store
+from ..models import WANT_NAME_RE, Want, slugify_want
 from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+STATIC = Path(__file__).parent / "static"
+log = logging.getLogger("dealbot.web")
 
 QUEUE_SQL = """
 SELECT m.hunt_id, m.status, l.*,
@@ -118,24 +128,89 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
         f"{x / last_x * (w - 2) + 1:.1f},{h - 1 - (p - lo) / span * (h - 2):.1f}"
         for x, p in pts)
     colour = "var(--good)" if pts[-1][1] < pts[0][1] else "var(--dim)"
-    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
-            f'role="img" aria-label="price history">'
+    # Spans whatever it is given rather than a fixed 160px, which left the plot
+    # stopping mid-air in a full-width panel. `preserveAspectRatio="none"` is
+    # what stretches it; `vector-effect` keeps the stroke an even weight while
+    # it does.
+    return (f'<svg width="100%" height="{h}" viewBox="0 0 {w} {h}" '
+            f'preserveAspectRatio="none" role="img" aria-label="price history">'
             f'<polyline fill="none" stroke="{colour}" stroke-width="1.5" '
-            f'points="{coords}"/></svg>')
+            f'vector-effect="non-scaling-stroke" points="{coords}"/></svg>')
 
 
-def create_app(cfg: Config) -> FastAPI:
+def create_app(base_cfg: Config) -> FastAPI:
     app = FastAPI(title="Curbside")
-    store = Store(cfg.db_path)
-    thumbs = ThumbnailStore(cfg.db_path.parent / "thumbs")
-    hunts = {h.id: h for h in cfg.hunts}
+    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    store = Store(base_cfg.db_path)
+    thumbs = ThumbnailStore(base_cfg.db_path.parent / "thumbs")
+
+    def _live() -> Config:
+        """The config as it stands right now, wants and cadences included.
+
+        Recomputed per request rather than captured at startup: this process
+        stays up for weeks, and a want added on the phone has to become a hunt
+        without an ssh session and a restart. It is two SELECTs.
+        """
+        return config_mod.with_store(base_cfg, store)
+
+    def _schedule():
+        return schedule_mod.load(store, base_cfg.schedule)
+
+    def _health(paused_all: bool, sched) -> dict:
+        """The state of the bot itself, on every page. `runs` already answers
+        "quiet day or broken scraper"; this is that answer compressed to a dot,
+        so the question gets asked without having to go and look."""
+        row = store.conn.execute(
+            "SELECT started_at, error, (julianday('now') - julianday(started_at))"
+            " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        if row is None:
+            return {"state": "idle", "label": "No runs yet",
+                    "detail": "Nothing has fetched yet."}
+        mins = int(row["mins"] or 0)
+        when = "just now" if mins < 1 else (
+            f"{mins}m ago" if mins < 60 else
+            f"{mins // 60}h ago" if mins < 2880 else f"{mins // 1440}d ago")
+        detail = f"Last run {row['started_at']}"
+        if row["error"]:
+            return {"state": "bad", "label": "Fetch failing",
+                    "detail": f"{detail} — {row['error']}"}
+        # Asleep on purpose is not quiet and is not broken, and it outranks
+        # both. A schedule the interface does not admit to is the same trap as
+        # a pause switch nobody can see: the bot looks dead for eight hours a
+        # day and you stop trusting the page.
+        if not sched.is_open():
+            return {"state": "idle",
+                    "label": f"Asleep till {schedule_mod.fmt_clock(sched.start_minute)}",
+                    "detail": f"Awake {sched.window_label}. {detail}"}
+        if paused_all:
+            return {"state": "warn", "label": "Paused", "detail": detail}
+        # The timer fires every 15 minutes, so an hour of silence is the timer,
+        # not a slow day -- unless it only just woke up, when the last run is
+        # legitimately as old as the night.
+        opened = sched.opened_at()
+        just_woke = opened is not None and (
+            sched.now() - opened).total_seconds() < 30 * 60
+        if mins > 60 and not just_woke:
+            return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
+        if just_woke and mins > 60:
+            return {"state": "ok", "label": "Just woke",
+                    "detail": f"Awake {sched.window_label}. {detail}"}
+        return {"state": "ok", "label": when, "detail": detail}
 
     def ctx(request: Request, **kw):
         # Every page carries the paused state. A bot that has been switched off
         # and forgotten looks exactly like a broken one.
+        cfg = kw.pop("cfg", None) or _live()
+        sched = kw.pop("sched", None) or _schedule()
         off = store.disabled_hunts()
+        paused = [h for h in cfg.hunts if h.id in off]
+        all_paused = bool(cfg.hunts) and len(paused) == len(cfg.hunts)
         return {"request": request, "hunts": cfg.hunts,
-                "paused_hunts": [h for h in cfg.hunts if h.id in off],
+                "paused_hunts": paused,
+                "all_paused": all_paused,
+                "bin_counts": _counts(),
+                "health": _health(all_paused, sched),
+                "schedule": sched,
                 "sweeps_paused": all(h.id in off for h in cfg.hunts
                                      if h.kind == "sweep")
                                  and any(h.kind == "sweep" for h in cfg.hunts),
@@ -171,8 +246,14 @@ def create_app(cfg: Config) -> FastAPI:
                 truncated=False))
 
     @app.get("/near")
-    def near_misses(request: Request, floor: float = 4.0):
-        """Judged, but under the bar. This is how you tell whether the bar is
+    def near_misses_legacy(floor: float = 4.0):
+        """The old name. "Near" read as "near me", which is the one thing it
+        never meant. Kept as a redirect so old bookmarks still land."""
+        return RedirectResponse(f"/skipped?floor={floor}", status_code=308)
+
+    @app.get("/skipped")
+    def skipped(request: Request, floor: float = 4.0):
+        """Judged, then passed over. This is how you tell whether the bar is
         in the right place."""
         items = _rows(store, NEAR_MISS_SQL, (floor, PAGE_LIMIT))
         total = store.conn.execute(
@@ -181,9 +262,34 @@ def create_app(cfg: Config) -> FastAPI:
             "listing_id=m.listing_id) WHERE m.status='scored' AND s.deal_score>=?",
             (floor,)).fetchone()["c"]
         return TEMPLATES.TemplateResponse(
-            request, "near.html",
+            request, "skipped.html",
             ctx(request, items=items, counts=_counts(), total=total,
                 floor=floor, truncated=total > len(items)))
+
+    # --- installable ------------------------------------------------------
+    # Android will offer to add this to a home screen given a manifest, an icon
+    # and a service worker at the root. It is worth having: the dashboard is
+    # read on a phone in spare moments, and a tab among forty tabs is not.
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        return FileResponse(STATIC / "manifest.webmanifest",
+                            media_type="application/manifest+json")
+
+    @app.get("/sw.js")
+    def service_worker():
+        """Served from the root, not /static, because a worker's scope cannot
+        rise above its own path -- at /static/sw.js it could only ever see
+        /static. `no-cache` so a fixed worker is picked up on the next load
+        rather than in a day's time."""
+        return FileResponse(
+            STATIC / "sw.js", media_type="text/javascript",
+            headers={"Cache-Control": "no-cache",
+                     "Service-Worker-Allowed": "/"})
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return FileResponse(STATIC / "favicon-32.png", media_type="image/png")
 
     @app.get("/thumb/{listing_id:path}")
     def thumb(listing_id: str):
@@ -198,7 +304,7 @@ def create_app(cfg: Config) -> FastAPI:
         urls = json.loads(row["images"]) if row and row["images"] else []
         if urls:
             return RedirectResponse(urls[0], status_code=307)
-        return RedirectResponse("/static-missing", status_code=404)
+        return Response(status_code=404)
 
     @app.get("/free")
     def free_finds(request: Request):
@@ -209,6 +315,7 @@ def create_app(cfg: Config) -> FastAPI:
     @app.get("/hunt/{hunt_id:path}")
     def hunt_view(request: Request, hunt_id: str, status: str | None = None):
         st = status or ""
+        hunts = {h.id: h for h in _live().hunts}
         items = _rows(store, HUNT_SQL, (hunt_id, st, st, PAGE_LIMIT))
         counts = {r["status"]: r["n"] for r in
                   store.conn.execute(HUNT_COUNTS_SQL, (hunt_id,))}
@@ -231,7 +338,10 @@ def create_app(cfg: Config) -> FastAPI:
         scores = [dict(r) for r in store.conn.execute(
             "SELECT * FROM scores WHERE listing_id=? ORDER BY id DESC", (listing_id,))]
         for s in scores:
-            s["red_flags"] = json.loads(s["red_flags"] or "[]")
+            # The detail page used to decode only red_flags, so the deepest view
+            # of a listing carried less of the model's output than the card did.
+            for col in ("red_flags", "unknowns", "requirements"):
+                s[col] = json.loads(s[col] or "[]")
         matches = [dict(r) for r in store.conn.execute(
             "SELECT * FROM hunt_matches WHERE listing_id=?", (listing_id,))]
         history = store.price_history(listing_id)
@@ -239,9 +349,47 @@ def create_app(cfg: Config) -> FastAPI:
             request, listing=listing, scores=scores, matches=matches,
             history=history, sparkline=_sparkline(history)))
 
+    def _error_page(request: Request, status: int, heading: str,
+                    detail: str, recovery: str) -> Response:
+        """Errors get the same shell as everything else. The nav still works,
+        so a wrong URL is a wrong turn rather than a dead end."""
+        try:
+            return TEMPLATES.TemplateResponse(
+                request, "error.html",
+                ctx(request, heading=heading, detail=detail, recovery=recovery),
+                status_code=status)
+        except Exception:            # the database itself may be the problem
+            log.exception("error page failed to render")
+            return PlainTextResponse(f"{status}: {detail}", status_code=status)
+
+    @app.exception_handler(StarletteHTTPException)
+    def _http_error(request: Request, exc: StarletteHTTPException) -> Response:
+        if exc.status_code == 404:
+            return _error_page(
+                request, 404, "Not found",
+                "There is no page at that address.",
+                "If you followed a bookmark, the view may have been renamed.")
+        return _error_page(request, exc.status_code, "Something went wrong",
+                           str(exc.detail), "Try again, or head back.")
+
+    @app.exception_handler(RequestValidationError)
+    def _bad_query(request: Request, exc: RequestValidationError) -> Response:
+        return _error_page(
+            request, 400, "Bad link",
+            "That address has a value this page cannot read.",
+            "Drop the query string and try again.")
+
+    @app.exception_handler(Exception)
+    def _unhandled(request: Request, exc: Exception) -> Response:
+        log.exception("unhandled error rendering %s", request.url.path)
+        return _error_page(
+            request, 500, "Something went wrong",
+            "The dashboard hit an error rendering this page.",
+            "It is logged. The other views should still work.")
+
     @app.post("/hunts/toggle")
-    def toggle_hunts(kind: str = Form(...), enable: str = Form(...),
-                     back: str = Form("/")):
+    def toggle_hunts(enable: str = Form(...), kind: str = Form(""),
+                     hunt_id: str = Form(""), back: str = Form("/")):
         """Switch a whole class of hunt on or off.
 
         Pausing a sweep stops the fetching as well as the judging, so nothing is
@@ -250,8 +398,8 @@ def create_app(cfg: Config) -> FastAPI:
         stop spending on free stuff, not to quieten it.
         """
         want_on = enable == "1"
-        for h in cfg.hunts:
-            if kind in ("all", h.kind):
+        for h in _live().hunts:
+            if h.id == hunt_id or (kind and kind in ("all", h.kind)):
                 store.set_hunt_enabled(h.id, want_on)
         return RedirectResponse(back, status_code=303)
 
@@ -261,6 +409,160 @@ def create_app(cfg: Config) -> FastAPI:
                back: str = Form("/")):
         if status in ("saved", "dismissed", "contacted", "wanted", "free_find"):
             store.set_status(hunt_id, listing_id, status, note or None)
+        return RedirectResponse(back, status_code=303)
+
+    # --- settings: waking hours, cadence, and the wants list ---------------
+    #
+    # PRODUCT.md said no settings screens, and meant it: a personal tool with
+    # one user does not need a preferences pane. What this is instead is the two
+    # things that used to require an ssh session and a service restart -- when
+    # the bot is awake, and what it is looking for. Both were already editable,
+    # just not from the device the dashboard is read on.
+
+    INTERVAL_CHOICES = ((15, "Every 15 minutes"), (30, "Every 30 minutes"),
+                        (60, "Hourly"), (120, "Every 2 hours"),
+                        (240, "Every 4 hours"), (480, "Every 8 hours"),
+                        (720, "Twice a day"), (1440, "Once a day"))
+
+    def _clean_interval(minutes: int) -> int:
+        """The timer only fires every 15 minutes, so anything under that is a
+        number with no effect -- and anything much under it would be a way to
+        hammer two sources that throttle silently."""
+        return max(15, min(int(minutes), 7 * 24 * 60))
+
+    def _lines(text: str) -> tuple[str, ...]:
+        return tuple(ln.strip() for ln in (text or "").splitlines() if ln.strip())
+
+    @app.get("/settings")
+    def settings_view(request: Request):
+        cfg, sched = _live(), _schedule()
+        off = store.disabled_hunts()
+        rows = []
+        for sw in store.wants(include_archived=True):
+            hunt = next((h for h in cfg.hunts if h.id == sw.hunt_id), None)
+            rows.append({
+                "w": sw.want, "stored": sw, "hunt": hunt,
+                "hunt_id": sw.hunt_id,
+                "paused": sw.hunt_id in off,
+                "matched": store.conn.execute(
+                    "SELECT COUNT(*) c FROM hunt_matches WHERE hunt_id=?",
+                    (sw.hunt_id,)).fetchone()["c"],
+            })
+        sweeps = [{"hunt": h, "paused": h.id in off}
+                  for h in cfg.hunts if h.kind == "sweep"]
+        return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
+            request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,
+            intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
+            start=schedule_mod.fmt_hhmm(sched.start_minute),
+            end=schedule_mod.fmt_hhmm(sched.end_minute)))
+
+    @app.post("/settings/hours")
+    def save_hours(enabled: str = Form("0"), start: str = Form(""),
+                   end: str = Form(""), back: str = Form("/settings")):
+        """The window the bot is awake. Stored in `settings`, so a hand edit of
+        config.yaml and a tap on the phone are never fighting over one file."""
+        current = _schedule()
+        start_m = schedule_mod.parse_hhmm(start)
+        end_m = schedule_mod.parse_hhmm(end)
+        schedule_mod.save(
+            store, enabled=enabled == "1",
+            start_minute=current.start_minute if start_m is None else start_m,
+            end_minute=current.end_minute if end_m is None else end_m)
+        return RedirectResponse(back, status_code=303)
+
+    @app.post("/settings/interval")
+    def save_interval(hunt_id: str = Form(...), minutes: int = Form(...),
+                      back: str = Form("/settings")):
+        store.set_hunt_interval(hunt_id, _clean_interval(minutes))
+        return RedirectResponse(back, status_code=303)
+
+    # --- wants -------------------------------------------------------------
+
+    def _want_form(request: Request, *, stored=None, values=None,
+                   error: str | None = None, status: int = 200):
+        """One template for new and edit. On a validation error it comes back
+        with what was typed still in it -- a description is a paragraph of
+        prose, and losing it to a bad price would be unforgivable on a phone."""
+        cfg = _live()
+        hunt_id = stored.hunt_id if stored else None
+        hunt = next((h for h in cfg.hunts if h.id == hunt_id), None)
+        return TEMPLATES.TemplateResponse(request, "want_form.html", ctx(
+            request, cfg=cfg, stored=stored, error=error,
+            intervals=INTERVAL_CHOICES,
+            interval=hunt.interval_minutes if hunt else 60,
+            v=values or {}), status_code=status)
+
+    @app.get("/wants/new")
+    def new_want(request: Request):
+        return _want_form(request)
+
+    @app.get("/wants/{name}")
+    def edit_want(request: Request, name: str):
+        stored = store.get_want(name)
+        if stored is None:
+            return RedirectResponse("/settings", status_code=303)
+        w = stored.want
+        return _want_form(request, stored=stored, values={
+            "name": w.name, "description": w.description,
+            "max_price": f"{w.max_price_cents / 100:.0f}",
+            "queries": "\n".join(w.queries),
+            "requires": "\n".join(w.requires)})
+
+    @app.post("/wants/save")
+    def save_want(request: Request, description: str = Form(""),
+                  max_price: str = Form(""), queries: str = Form(""),
+                  requires: str = Form(""), name: str = Form(""),
+                  existing: str = Form(""), interval: int = Form(60)):
+        """Create or edit one want.
+
+        The name is derived once and then frozen. It is the hunt id, the URL of
+        that hunt's view, and the key every score and every triage decision is
+        filed under -- renaming would orphan the lot, silently.
+        """
+        values = {"name": name, "description": description,
+                  "max_price": max_price, "queries": queries,
+                  "requires": requires}
+        stored = store.get_want(existing) if existing else None
+
+        def fail(msg):
+            return _want_form(request, stored=stored, values=values,
+                              error=msg, status=400)
+
+        slug = stored.want.name if stored else slugify_want(name)
+        if not slug or not WANT_NAME_RE.match(slug):
+            return fail("Give it a short name, letters and numbers.")
+        if not description.strip():
+            return fail("Say what you are looking for. This is what gets judged.")
+        try:
+            dollars = float((max_price or "").replace("$", "").replace(",", ""))
+        except ValueError:
+            return fail("Set a price cap, in dollars.")
+        if dollars < 1:
+            return fail("A price cap of zero would reject everything priced.")
+        if stored is None and (clash := store.get_want(slug)) and not clash.archived:
+            return fail(f"There is already a want called {slug}.")
+
+        store.save_want(Want(
+            name=slug, description=description.strip(),
+            max_price_cents=int(round(dollars * 100)),
+            queries=_lines(queries), requires=_lines(requires)))
+        # Re-adding a name that was deleted brings it back rather than
+        # colliding with it, and its old matches come back with it.
+        store.restore_want(slug)
+        store.set_hunt_interval(f"want:{slug}", _clean_interval(interval))
+        return RedirectResponse("/settings", status_code=303)
+
+    @app.post("/wants/archive")
+    def archive_want(name: str = Form(...), restore: str = Form("0"),
+                     back: str = Form("/settings")):
+        """Deleting a want stops its hunt. It does NOT delete anything: every
+        listing it matched, every score and every dismissal stays where it is,
+        readable at /hunt/want:<name>, because nothing in this project is ever
+        deleted."""
+        if restore == "1":
+            store.restore_want(name)
+        else:
+            store.archive_want(name)
         return RedirectResponse(back, status_code=303)
 
     @app.get("/runs")

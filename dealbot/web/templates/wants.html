@@ -1,13 +1,31 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
+{% block title %}Wants &middot; Curbside{% endblock %}
 {% block content %}
-<h1>Wants &mdash; {{total}}</h1>
-{% if truncated %}<p class="meta">showing the top {{items|length}}</p>{% endif %}
-<p class="meta">Matches for things on your list. A <span class="chip unk">name?</span>
-chip means the listing text could not confirm every requirement &mdash; the
-photos usually settle it in seconds.</p>
+{% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
+{% set gratis = items|selectattr('price_cents','equalto',0)|list|length %}
+<div class="pagehead">
+  <h1>Wants</h1>
+  <p class="stats">
+    <i><b>{{total}}</b> waiting</i>
+    {% if unsure %}
+      <i class="hi"><b>{{unsure}}</b> need checking</i>{% endif %}
+    {% if gratis %}
+      <i><b>{{gratis}}</b> free</i>{% endif %}
+    {% if truncated %}
+      <i>showing top {{items|length}}</i>{% endif %}
+  </p>
+  <p>Matches for things on your list. Amber means a requirement is unconfirmed.</p>
+</div>
+<div class="stack">
 {% for i in items %}{{ card(i, '/') }}{% else %}
-<div class="empty">Nothing matching your wants.
-{% if counts.get('free_find') %}<br><a href="/free">{{counts['free_find']}} free finds waiting</a>.{% endif %}
-<br><a href="/runs">Check the runs</a> to see whether that's a quiet day or a broken fetch.</div>
+<div class="empty">
+  <svg class="i" aria-hidden="true"><use href="#i-wants"/></svg>
+  <b>Nothing matching your wants</b>
+  <p>{% if counts.get('free_find') %}
+      <a href="/free">{{counts['free_find']}} free find{{ '' if counts['free_find'] == 1 else 's' }}</a>
+      waiting, though.<br>{% endif %}
+    <a href="/runs">Check the runs</a> to tell a quiet day from a broken fetch.</p>
+</div>
 {% endfor %}
+</div>
 {% endblock %}

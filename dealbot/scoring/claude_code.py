@@ -52,13 +52,15 @@ class ScoringUnavailable(RuntimeError):
     """Scoring cannot run right now. Fetching continues regardless -- it costs no
     quota -- so listings accumulate as `new` and get judged when this clears.
 
-    Carries `partial`: appraisals completed before the interruption. Those were
-    already paid for, and discarding them meant a pause partway through a batch
-    threw away real money and re-charged for the same listings next run."""
+    Carries `partial`: whatever the interrupted stage had already completed --
+    a list of Scores from `appraise`, a TriageResult from `triage`. That work
+    was already paid for, and discarding it meant a pause partway through a
+    batch threw away real money and re-charged for the same listings next
+    run."""
 
-    def __init__(self, message: str, partial: list | None = None):
+    def __init__(self, message: str, partial: Any = None):
         super().__init__(message)
-        self.partial = partial or []
+        self.partial = partial if partial is not None else []
 
 
 class ClaudeCodeScorer:
@@ -75,8 +77,22 @@ class ClaudeCodeScorer:
         self._spent_this_process = 0.0
         # Read once: an edit part-way through a run would change the cached
         # prefix mid-flight and cost a miss on every remaining call.
-        self._rubric = load_rubric()
+        self._rubric = (load_rubric(cfg.rubric_path) if cfg.rubric_path
+                        else load_rubric())
         self._negatives: dict[str, tuple[str, ...]] = {}
+
+    def begin_run(self) -> None:
+        """A new run starts, so the previous one's spend is now in the runs
+        table.
+
+        Without this the two counters overlap: `cost_since` reads what
+        `finish_run` wrote AND `_spent_this_process` still holds the same
+        dollars, so a long-lived `dealbot run` converges on counting every
+        dollar twice and stops judging at roughly half `daily_cost_limit_usd`.
+        The in-memory counter only has to cover the run in flight, which the
+        runs table cannot see yet.
+        """
+        self._spent_this_process = 0.0
 
     def _negative_examples(self, hunt: Hunt) -> tuple[str, ...]:
         """Dismissed titles for this hunt, SNAPSHOTTED DAILY.
@@ -375,18 +391,42 @@ class ClaudeCodeScorer:
         cost = tin = tout = 0.0
         batch = self.cfg.batch_size
 
+        def so_far() -> TriageResult:
+            return TriageResult(kept, notes, cost_usd=cost,
+                                input_tokens=int(tin), output_tokens=int(tout))
+
         for i in range(0, len(candidates), batch):
             chunk = candidates[i:i + batch]
             system = build_system_prompt(hunt, self._negative_examples(hunt),
                                 rubric=self._rubric)
             user = (TRIAGE_INSTRUCTION + "\n\n" +
                     "\n\n---\n\n".join(render_listing(c.listing) for c in chunk))
-            facts = self._invoke(system, user, self.cfg.triage_model)
+            try:
+                # Re-read the plan window between chunks. check_available() ran
+                # once, before the first one, so a batch that starts just under
+                # the ceiling would otherwise spend its way well past it -- and
+                # the whole point is to stand aside BEFORE otter is refused.
+                if i:
+                    self._check_utilization()
+                facts = self._invoke(system, user, self.cfg.triage_model)
+            except ScoringUnavailable as exc:
+                # Hand back the chunks already bought. Dropping them lost their
+                # cost from `runs.cost_usd` -- the column the daily ceiling
+                # reads -- and re-triaged every listing from scratch next run.
+                raise ScoringUnavailable(str(exc), partial=so_far()) from None
             cost += facts.cost_usd
             tin += facts.input_tokens
             tout += facts.output_tokens
 
             verdicts = {v.get("id"): v for v in self._json_objects(facts.text)}
+            if not verdicts:
+                # Fail-open below keeps every listing, which is right -- but a
+                # chunk that parses to nothing is a batched call that cost money
+                # and filtered nothing. Silent, and indistinguishable from a
+                # chunk the model genuinely kept, unless we say so here.
+                log.warning("triage parsed no verdicts from %d listings; "
+                            "keeping all of them (raw=%r)",
+                            len(chunk), facts.text[:200])
             for c in chunk:
                 v = verdicts.get(c.listing.id)
                 # No verdict parsed is not a rejection. Keep it and let appraise
@@ -395,8 +435,7 @@ class ClaudeCodeScorer:
                     kept.append(c)
                 else:
                     notes[c.listing.id] = str(v.get("why") or "")[:200]
-        return TriageResult(kept, notes, cost_usd=cost,
-                            input_tokens=int(tin), output_tokens=int(tout))
+        return so_far()
 
     def appraise(self, hunt: Hunt, candidates: Sequence[Candidate]) -> list[Score]:
         if not candidates:
@@ -408,20 +447,27 @@ class ClaudeCodeScorer:
         now = datetime.now(timezone.utc)
         scores: list[Score] = []
 
-        for c in candidates:
+        for n, c in enumerate(candidates):
             user = APPRAISE_INSTRUCTION + "\n\n" + render_listing(c.listing)
             try:
+                # Re-read the plan window between listings, for the same reason
+                # as triage: check_available() ran once, before the first.
+                if n:
+                    self._check_utilization()
                 facts = self._invoke(system, user, self.cfg.appraise_model)
+                data = self._json_object(facts.text)
+                if data is None:
+                    # One retry with a blunter instruction. INSIDE the try: a
+                    # rate limit landing on the retry used to propagate with an
+                    # empty `partial`, discarding every appraisal already bought
+                    # in this batch and re-charging for all of them next run.
+                    facts = self._invoke(
+                        system, user + "\n\nReturn ONLY the JSON object. No prose.",
+                        self.cfg.appraise_model)
+                    data = self._json_object(facts.text)
             except ScoringUnavailable as exc:
                 # Stop, but hand back what was already bought.
                 raise ScoringUnavailable(str(exc), partial=scores) from None
-            data = self._json_object(facts.text)
-            if data is None:
-                # One retry with a blunter instruction.
-                facts = self._invoke(
-                    system, user + "\n\nReturn ONLY the JSON object. No prose.",
-                    self.cfg.appraise_model)
-                data = self._json_object(facts.text)
             if data is None:
                 # Deliberately no Score row: the listing stays `new` and is
                 # retried next run, rather than being recorded as judged on the

@@ -1,13 +1,46 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
+{% block title %}{{ hunt.name if hunt else hunt_id }} &middot; Curbside{% endblock %}
 {% block content %}
-<h1>{{ hunt.name if hunt else hunt_id }}</h1>
-<p><a class="chip {{'on' if not active}}" href="/hunt/{{hunt_id}}">all ({{counts.values()|sum}})</a>
-{% for s, n in counts|dictsort %}<a class="chip {{'on' if active==s}}" href="/hunt/{{hunt_id}}?status={{s}}">{{s}} ({{n}})</a>{% endfor %}</p>
+<div class="pagehead">
+  <h1>{{ hunt.name if hunt else hunt_id }}</h1>
+  <p class="stats">
+    <i><b>{{total}}</b> matched</i>
+    {% if counts.get('filtered') %}
+      <i><b>{{counts['filtered']}}</b> rejected at the gate</i>{% endif %}
+    {% if truncated %}
+      <i>showing {{items|length}}</i>{% endif %}
+  </p>
+  <p>Everything this hunt matched, and what the gate rejected.</p>
+</div>
+
+<div class="filterchips">
+  <a class="chip" href="/hunt/{{hunt_id}}"{% if not active %} aria-current="true"{% endif %}>all
+    <span class="num">{{counts.values()|sum}}</span></a>
+  {% for s, n in counts|dictsort %}
+  <a class="chip" href="/hunt/{{hunt_id}}?status={{s}}"{% if active == s %} aria-current="true"{% endif %}>{{s}}
+    <span class="num">{{n}}</span></a>
+  {% endfor %}
+</div>
+
 {% if reasons %}
-<p class="meta">rejected, by reason &mdash; this is the tuning view:
-{% for reason, n in reasons %}<a class="chip" href="/hunt/{{hunt_id}}?status=filtered">{{reason}} ({{n}})</a>{% endfor %}</p>
+<div class="panel" style="margin-bottom:16px">
+  <h2>Rejected, by reason. This is the tuning view.</h2>
+  <div class="filterchips" style="padding:12px 15px;margin:0">
+    {% for reason, n in reasons %}
+    <a class="chip" href="/hunt/{{hunt_id}}?status=filtered">{{reason}}
+      <span class="num">{{n}}</span></a>
+    {% endfor %}
+  </div>
+</div>
 {% endif %}
-{% if truncated %}<p class="meta">showing {{items|length}} of {{total}}</p>{% endif %}
-{% for i in items %}{{ card(i, '/hunt/' ~ hunt_id) }}{% else %}
-<div class="empty">Nothing matched yet.</div>{% endfor %}
+
+<div class="stack">
+{% for i in items %}{{ card(i, '/hunt/' ~ hunt_id, show_status=true) }}{% else %}
+<div class="empty">
+  <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>
+  <b>Nothing matched yet</b>
+  <p><a href="/runs">The runs</a> will say whether it ran.</p>
+</div>
+{% endfor %}
+</div>
 {% endblock %}

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Curbside",
+  "short_name": "Curbside",
+  "description": "Free and underpriced things around Albuquerque, judged before you look.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f4f6",
+  "theme_color": "#f4f4f6",
+  "icons": [
+    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Free finds", "url": "/free"},
+    {"name": "Saved", "url": "/saved"}
+  ]
+}

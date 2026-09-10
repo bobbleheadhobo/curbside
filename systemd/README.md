@@ -19,6 +19,11 @@ start at boot without a login session.
 | `curbside.service` | oneshot; each hunt decides whether its own interval has elapsed |
 | `curbside-web.service` | dashboard on :8477, `Restart=always` |
 
+**Template edits are live; Python edits are not.** Jinja re-reads templates per
+request, uvicorn does not reload the module, so after changing anything under
+`dealbot/` you must `systemctl --user restart curbside-web` or the dashboard
+keeps serving new markup on old code.
+
 Watching it:
 
 ```bash

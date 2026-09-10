@@ -39,16 +39,22 @@ pipeline is provably fine and a Facebook change is a one-file repair.
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m dealbot.cli once      # one pass over every hunt
-.venv/bin/python -m dealbot.cli serve     # dashboard on :8080
+.venv/bin/python -m dealbot.cli serve     # dashboard on :8080, all interfaces
 .venv/bin/python -m pytest tests/ -q
 ```
 
 ```
 dealbot once --hunt free-nearby --dry-run   fetch and gate, write nothing
 dealbot once --no-score                     full pipeline, spend nothing
-dealbot hunts                               hunts and their last run
+dealbot once --due                          the timer's pass; respects the hours
+dealbot hunts                               hunts, their last run, the window
 dealbot run                                 poll on each hunt's cadence
 ```
+
+**It sleeps.** Noon to 8pm by default, editable at `/settings`. Outside the
+window a `--due` pass does nothing at all — no fetching, no judging, no
+re-checking — because nothing found at 3am can be collected at 3am. A hand-run
+`dealbot once` ignores the window, so you can always force a pass.
 
 ## How it works
 
@@ -72,6 +78,24 @@ it can surface things you never thought to search for.
 Wants need both `queries` and a `description` for a reason: keyword search cannot
 know that "media console" means "tv stand", and a description cannot be typed
 into a search box. The queries cast the net; the description does the judging.
+
+**`config.yaml` seeds the wants once and is then out of the loop.** After a
+database's first open, wants live in SQLite and are added, edited and removed
+at `/settings` — the file and the dashboard are never fighting over one file,
+which is the same reason the pause switches live where they do. A removed want
+is archived, not deleted: its hunt stops, its history stays.
+
+## On your phone
+
+The dashboard ships as an installable web app — manifest, icons and a service
+worker — so Chrome on Android offers **Add to home screen** and it opens
+without browser chrome. The worker caches the photos and the icons and
+deliberately **never a page**: half of what this finds is gone within the hour,
+and a stale card is worse than no card. Icons are generated:
+
+```bash
+.venv/bin/python tools/make_icons.py
+```
 
 ## Sources
 
@@ -174,10 +198,20 @@ single score, "I cannot verify this" collapses to about 4.5 — under the thresh
 never surfaced, silently gone. Since that is the *common* case, the feed would
 quietly contain only listings that happen to put a number in the title.
 
-So `unknown` routes to a separate **worth-a-look** queue instead. The model cannot
-see the photos; you can, in about five seconds. `deal_score` is scored as though
-the unknowns resolve favourably, so one threshold works for both queues and only
-the match field carries the uncertainty.
+`deal_score` is scored as though the unknowns resolve favourably, so one
+threshold does all the work and only the match field carries the uncertainty.
+An `unknown` is then routed by score like anything else:
+
+- **at or above the bar it stays in Wants**, flagged amber — a 9.0 unconfirmed
+  TV stand belongs next to a 9.0 confirmed one, not in a queue of its own;
+- **below the bar it lands in Skipped** (`/skipped`), alongside everything else
+  that was judged and passed over.
+
+So the two halves of "close, but not quite" live in different places on purpose:
+an unverified requirement on a promising listing is a *flag in Wants*, and
+anything that missed on value is a *row in Skipped*. The model cannot see the
+photos; you can, in about five seconds, which is what the amber flag is asking
+you to do.
 
 Hard requirements live in `requires:`, deliberately outside the prose — prose
 describes character, the list carries pass/fail, and the evidence strings are how

@@ -34,30 +34,150 @@ weeks to encounter naturally:
 
 Re-run `seed-demo` any time; it rebuilds from scratch.
 
+**Restart the server after touching Python. Jinja will lie to you.** Templates
+are re-read on every request, but uvicorn does not reload `app.py`. A
+long-running `dealbot serve` therefore shows your new templates running against
+the *old* module: context variables silently render empty and new routes 404,
+while the page looks broadly right. This bit twice in one session, once on the
+demo server and once on production, where `/skipped` had been 404ing from the
+nav for hours. `systemctl --user restart curbside-web` after any Python change.
+
 ## Layout
 
 ```
 dealbot/web/
   app.py            routes and the SQL behind them
   templates/
-    base.html       shell, nav, all CSS, the paused banner
+    base.html       shell, nav, all CSS, the icon sprite, the paused banner
     _card.html      the listing card macro — used by four views
     wants.html      /        matches for the wants list
-    free.html       /free    worth grabbing anyway; carries the pause switch
+    free.html       /free    worth grabbing anyway
     saved.html      /saved   what you decided to act on
-    near.html       /near    judged, but under the bar
+    skipped.html    /skipped judged, then passed over (/near redirects here)
     hunt.html       /hunt/<id>  everything one hunt matched, with rejections
     listing.html    /listing/<id>  detail, scores, price sparkline
-    runs.html       /runs    every fetch attempt
+    error.html      404 / 400 / 500, in the normal shell
+    runs.html       /runs    the Searching panel, every fetch attempt, the hunts
+    settings.html   /settings  waking hours, sweep cadence, the wants list
+    want_form.html  /wants/new and /wants/<name>  add or edit one want
+  static/           icons, manifest.webmanifest, sw.js, offline.html
 ```
 
+`static/` is generated except for `sw.js`, `offline.html` and the manifest —
+run `tools/make_icons.py` rather than editing an icon by hand.
+
 **All CSS lives in `base.html`** as custom properties on `:root`, with a
-`prefers-color-scheme` block. Both themes are real; check any change in both.
-There is a `viewport` meta and the layout is flex — it is used on a phone.
+`prefers-color-scheme` block *and* a `[data-theme=dark]` block carrying the
+same tokens. Both themes are real; check any change in both. To screenshot
+dark, temporarily add `data-theme="dark"` to the `<html>` tag — headless
+Chrome has no reliable flag for the media query.
+
+**Every page head is a live stat line, not prose.** `h1` carries the name
+alone; under it `.stats` states what is actually waiting — counts in tabular
+figures, the one that needs a decision tinted amber (`.stats .hi`). The
+explanatory sentence sits below that and stays short. A paragraph of teaching
+copy belongs in the empty state, where it is read, not above a list that is
+opened twenty times a day.
+
+**`/near` is `/skipped`.** "Near" read as "near me", which is the one thing it
+never meant. The route, the template, the nav label and the icon all changed;
+`/near` 308-redirects and is covered by a test so an old phone bookmark still
+lands.
+
+**Triage buttons must name a real status.** `/triage` accepts exactly
+`saved` / `dismissed` / `contacted` / `wanted` / `free_find`. The listing page
+used to offer a **Surface** button posting `surfaced`, which is not on that
+list, so it posted, redirected and changed nothing. If you add a button here,
+add the status to the endpoint in the same change. The panel carries a
+`.triage-help` line explaining what each button does, Dismiss in particular,
+because it teaches the hunt and that is not guessable from the word.
+
+**The UI offers Save and Dismiss only.** `contacted` is no longer surfaced
+anywhere: the user does not want to track whether they messaged a seller. The
+status still exists and is still accepted, because `filters.TRIAGED`,
+`recheck.KEEP_STATUS` and `db.TERMINAL_TRIAGE` all treat it as "already
+triaged, do not spend money judging this again", and `SAVED_SQL` still matches
+it so any row already carrying it stays visible. Do not add the button back.
+
+**Stranger-written text must never overflow.** `body` sets
+`overflow-wrap:anywhere`. Titles, descriptions, red flags and want names all
+come from sellers or from the model, and one unbroken 200-character token used
+to run out of the card, off the page, and through the score. Chips wrap rather
+than truncate: a chip is part of the reason a listing is on screen, so cutting
+it hides the reason.
+
+**Never fabricate a number to fill a slot.** `distance_mi` is often unknown, and
+`'%.0f'|format(i.distance_mi or 0)` rendered **"0 mi"**, which told you the item
+was at your front door. Print nothing instead. The same rule applies to any
+field the sources leave empty.
+
+**Colour is checked by arithmetic, not by eye.** Every foreground/background
+token pair meets WCAG AA (4.5:1) in *both* themes; `--faint` was 2.78:1 and was
+carrying real data, including every score under 5.0. If you change a colour
+token, recompute the ratios rather than judging by eye, and remember `--faint`
+is text, not decoration.
+
+**Touch targets come from `--tap` (44px).** Anything tappable below 560px meets
+it; the card's triage buttons, the disclosure row and the tab bar all do. Link
+chips get at least 26px. Compacting a row may take its padding, never its
+targets.
+
+**Reduced motion is not a blanket kill.** The block disables real movement only.
+Colour and background transitions stay, because they are the only feedback a tap
+gets on a server-rendered page and removing them makes the UI feel broken rather
+than calm.
+
+**Errors render in the normal shell.** `error.html` plus three handlers in
+`app.py` cover 404, a bad query string (400) and an unhandled exception (500).
+The nav and the paused banner keep working, so a wrong URL is a wrong turn
+rather than a dead end. `_error_page` falls back to plain text if the database
+is itself the problem, and the 500 handler logs the exception rather than
+swallowing it.
+
+**Copy rule: short, and no em dashes.** Page descriptions are one sentence,
+two at most. Long teaching copy belongs in the empty state, where it is read.
+Use a colon, a full stop or brackets where you reach for an em dash. The only
+surviving `&mdash;` is the "no value" marker in table cells, which is a data
+convention rather than prose.
+
+**Mobile is the design target, not the adaptation.** The primary scene is a
+phone in a spare moment, away from a desk. Navigation is a fixed bottom tab
+bar under 900px and moves into the top bar above it; the per-hunt views are
+reached from the Hunts panel on `/runs`, not from the tab bar.
+
+**The card is progressive disclosure by design.** Photo, price and place get
+the whole top row because they are the first gate; the model's judgement —
+reasoning, requirements, unknowns — lives in a `<details>` whose summary says
+what is inside ("Why it scored 8.4 · 3 things to check"). Nothing that
+explains a decision is hidden, but nothing pushes the next listing off the
+screen either. Do not un-fold it by default and do not drop fields into it
+without adding them to the summary count.
+
+**Icons are drawn, never typed.** `base.html` carries an inline SVG sprite
+(`#i-wants`, `#i-check`, `#i-alert`, …) at 24×24 with a 1.75 stroke. Use
+`<svg class="i"><use href="#i-name"/></svg>`. No emoji and no Unicode glyphs
+standing in for icons — ✓/✗/? in the requirements list are `#i-check`,
+`#i-x` and `#i-help`.
+
+**A photo that fails to load is a real state, not an edge case.** Facebook's
+image URLs expire after about four days, so the card renders the "photo
+expired" placeholder *underneath* the `<img>` and the image hides itself on
+`onerror`. `.shot[hidden]` needs its own rule — `.shot` sets `display:block`,
+which outranks the UA `[hidden]` stylesheet.
+
+**Wide tables stack on a phone.** `<table class="responsive">` with
+`data-label` on every `<td>` turns into label/value pairs in a two-column
+grid under 720px; `.lead` and `.span2` span the full width and `.empty-note`
+disappears. Runs and the listing's scores table both use it — the scores
+table's reasoning column used to sit off the right edge behind a scrollbar.
 
 **`_card.html` is the shared macro.** Four views render through it, so a change
-there lands everywhere. It takes `(item, back_url)`; `back_url` is where the
-triage buttons return to.
+there lands everywhere. It takes `(item, back_url, actions, show_status)`;
+`back_url` is where the triage buttons return to, `actions` are the triage
+statuses offered inline (`['saved','dismissed']`, except `/saved` which offers
+`['dismissed']` on `/saved`), and `show_status` is off everywhere but the hunt
+views — the bins are named after their status, so repeating it on every row is
+noise.
 
 ## What a card receives
 
@@ -96,12 +216,54 @@ titles become negative examples in that hunt's next prompt, so the button is
 part of how the bot learns.
 
 **`match == "unknown"` is a first-class state**, not an error. It means the
-listing plausibly matches but something could not be verified from the text, and
-it belongs *next to* confirmed matches rather than hidden — burying it is the
-bug the `/near` view was built to expose.
+listing plausibly matches but something could not be verified from the text.
+It is routed by score exactly like `yes`: over `min_deal_score` it sits in Wants
+flagged amber, next to confirmed matches rather than hidden; under it, it stays
+`scored` and appears in `/skipped`. Do not give it a bin of its own, and do not
+let it be filtered out of Wants: a 9.0 unconfirmed listing is worth the five
+seconds it takes to look at the photos.
+
+**The pause switches live on `/runs`.** Both of them: *Pause free-stuff
+searches* (`kind=sweep`) and *Pause all searching* (`kind=all`). They used to
+sit on `/free`, which was the wrong page. `/runs` is where you go to ask
+whether the bot is working, so it is where you answer it. `.control-row` is the
+same component as `.triage-row`; the row was generalised rather than copied.
 
 **Paused hunts are announced on every page.** Keep that banner wherever you move
-things; a bot switched off and forgotten looks exactly like a broken one.
+things; a bot switched off and forgotten looks exactly like a broken one. It
+says *that* something is paused, never *which* things: naming every hunt made
+the banner long on every page for no gain, and `/runs` already lists each hunt
+with its state. It has two forms, all-paused and partly-paused, off
+`all_paused`. The
+health pill in the top bar is the same idea compressed to a dot — last run, or
+"Fetch failing", or "Paused" — and it links to `/runs`.
+
+**`tests/test_web.py` asserts on markup.** The strikethrough treatment is
+found by the class name `strike`, the sweep switch by the words "pause
+free-stuff searches", and the empty-view check by `"count num">0`. Rename
+those and the tests tell you.
+
+**Asleep is a state the interface has to admit to.** The health pill reports
+it (`Asleep till 12pm`) ahead of "quiet" and behind "Fetch failing", and the
+first half hour after waking is never a warning. Without that, eight hours of
+deliberate silence looks exactly like a scraper that died on Tuesday, which is
+the one thing this dashboard exists to rule out.
+
+**Settings is a gear in the top bar, not a sixth tab.** Five tabs is what fits
+across a phone. Hours and wants are set once a month; the bins are skimmed
+daily. If you add another destination, it goes in the top bar too.
+
+**A want's name is frozen once it exists.** It is the hunt id, the URL of that
+hunt's view, and the key every score and triage decision is filed under.
+The edit form does not offer it, and `/wants/save` ignores a `name` field when
+`existing` is set. Renaming would orphan the lot, silently.
+
+**The form keeps what was typed when it rejects something.** A description is a
+paragraph of prose written on a phone; losing it to a mistyped price cap would
+be unforgivable. `_want_form` re-renders with `values`, and there is a test.
+
+**The service worker must never cache HTML.** Photos and icons only. Half of
+what this shows is gone within the hour.
 
 **Queries are capped at `PAGE_LIMIT`** with a "showing N of M" line. Do not
 remove the cap — this table grows forever by design.
@@ -114,3 +276,17 @@ database — there is a test for exactly that, because a fresh install shows emp
 views first and a crash there is the worst possible first impression.
 
 Keep every test offline.
+
+## When you change the look
+
+`DESIGN.md` at the repo root records the shipped design system: tokens, the type
+ramp, the spacing rhythm, components and their states, the icon scale, and the
+named rules. `.impeccable/design.json` is its machine-readable sidecar. **They
+are generated from the built code, not written by hand** — if you change a token
+or a component, regenerate them (`/impeccable document`) rather than editing
+them, or the two will disagree.
+
+`PRODUCT.md` holds product truth and the standing design preference: the
+category standard played straight, with Apple's structure and Stripe's
+discipline. That preference was a decision, not a default. Read it before
+proposing a new look.

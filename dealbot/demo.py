@@ -23,6 +23,7 @@ from .notify.dashboard import DashboardNotifier
 from .pipeline import run_hunt
 from .scoring.stub import StubScorer
 from .sources.fixture import FixtureSource
+from .thumbs import ThumbnailStore
 
 NOW = datetime.now(timezone.utc)
 PHOTO = ("https://images.craigslist.org/00E0E_dOPa29SsGT_0n90t2_600x450.jpg",)
@@ -138,8 +139,55 @@ def build(cfg: Config, path: str | Path) -> Store:
         store.save_score(_score(lid, hunt_id, **score_kw),
                          priced_at_cents=listing.previous_price_cents)
         store.set_status(hunt_id, lid, status)
-        # A couple of price observations so the sparkline has something to draw.
+        # A price history that spans weeks, not one instant. Two observations
+        # sharing a timestamp draw a sparkline that says nothing.
         if listing.previous_price_cents:
-            store.record_price(lid, listing.previous_price_cents)
-        store.record_price(lid, listing.price_cents)
+            store.record_price(lid, listing.previous_price_cents,
+                               _stamp(NOW - timedelta(days=24)))
+            store.record_price(lid, (listing.previous_price_cents
+                                     + listing.price_cents) // 2,
+                               _stamp(NOW - timedelta(days=11)))
+        store.record_price(lid, listing.price_cents, _stamp(NOW))
+
+    _seed_thumbnails(store, Path(path).parent / "thumbs")
     return store
+
+
+def _stamp(when: datetime) -> str:
+    return when.isoformat(timespec="seconds")
+
+
+# Palettes standing in for a photographed thing: enough to tell the cards apart
+# and to judge the layout, obviously not real photographs.
+SWATCHES = [((214, 199, 176), (120, 96, 68)), ((186, 199, 205), (72, 92, 104)),
+            ((205, 186, 186), (110, 74, 74)), ((190, 202, 186), (78, 100, 76)),
+            ((208, 196, 214), (96, 80, 110)), ((214, 205, 182), (128, 112, 72))]
+
+
+def _seed_thumbnails(store: Store, root: Path) -> None:
+    """Fill the thumbnail cache so the demo dashboard has pictures.
+
+    The real store downloads them; this one draws them, because every test and
+    every demo build has to work with no network. Without this, almost every
+    demo card renders the "photo expired" state and the photo -- which is the
+    first thing you judge a listing on -- cannot be designed against at all.
+    """
+    from PIL import Image, ImageDraw
+
+    thumbs = ThumbnailStore(root)
+    thumbs.root.mkdir(parents=True, exist_ok=True)
+    rows = store.conn.execute(
+        "SELECT id, images FROM listings WHERE images IS NOT NULL AND images != '[]'")
+    for n, row in enumerate(rows):
+        target = thumbs.path_for(row["id"])
+        if target.exists():
+            continue
+        ground, mark = SWATCHES[n % len(SWATCHES)]
+        img = Image.new("RGB", (512, 512), ground)
+        d = ImageDraw.Draw(img)
+        # a lit ground and one solid mass on it -- the shape of a photographed
+        # object, without pretending to be one
+        d.rectangle((0, 340, 512, 512), fill=tuple(int(c * 0.92) for c in ground))
+        d.rounded_rectangle((96 + (n % 3) * 24, 150, 400 + (n % 3) * 16, 380),
+                            radius=14, fill=mark)
+        img.save(target, "JPEG", quality=82)

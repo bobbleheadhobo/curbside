@@ -42,6 +42,41 @@ class Want:
     requires: tuple[str, ...] = ()
 
 
+WANT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def slugify_want(text: str) -> str:
+    """"TV Stand" -> "tv-stand". The name is structural, not decoration: it
+    becomes the hunt id (`want:tv-stand`), the URL of that hunt's view, and the
+    key everything already scored is filed under. So it is derived once, on
+    creation, and never edited afterwards -- renaming would orphan every match
+    and score the old name owns."""
+    out = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return out[:40].strip("-")
+
+
+@dataclass(frozen=True)
+class StoredWant:
+    """A want as the database holds it: the want itself plus its provenance.
+
+    `archived_at` is a soft delete -- the hunt stops running, everything it ever
+    matched stays readable, and the name stays taken so re-seeding cannot bring
+    a deleted want back."""
+    want: Want
+    origin: str = "web"              # "config" when seeded from config.yaml
+    archived_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    @property
+    def archived(self) -> bool:
+        return self.archived_at is not None
+
+    @property
+    def hunt_id(self) -> str:
+        return f"want:{self.want.name}"
+
+
 @dataclass(frozen=True)
 class Hunt:
     """One scheduled search. A sweep carries *every* want, so a free listing can
@@ -237,3 +272,5 @@ class RunResult:
     n_deferred: int = 0
     cost_usd: float = 0.0
     error: str | None = None
+    # Degraded but not failed: see the `warning` column on `runs`.
+    warning: str | None = None

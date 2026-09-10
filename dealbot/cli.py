@@ -8,14 +8,17 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from . import config as config_mod
+from . import schedule as schedule_mod
 from .db import Store
 from .env import load_env
 from .images import FixtureImageProvider, HttpImageProvider
 from .notify.dashboard import DashboardNotifier
 from .notify.discord import DiscordNotifier
 from .pipeline import dry_run, run_hunt
+from .recheck import recheck
 from .scoring.claude_code import ClaudeCodeScorer
 from .scoring.stub import StubScorer
 from .sources.craigslist import CraigslistSource
@@ -73,6 +76,18 @@ def _build_scorer(cfg: config_mod.Config, store):
     raise SystemExit(f"unknown scorer backend {cfg.scorer.backend!r}")
 
 
+def _open(args):
+    """Config from the file, with everything the dashboard owns laid over it.
+
+    `config.yaml` seeds the wants table on a database's first open and is not
+    consulted for wants again -- so this is the single point where a want added
+    on a phone becomes a hunt that runs. Every command goes through it.
+    """
+    cfg = config_mod.load(args.config)
+    store = Store(cfg.db_path)
+    return config_mod.with_store(cfg, store), store
+
+
 def _is_due(store, hunt, source_name: str) -> bool:
     """Cadence for timer-driven runs. The timer fires on a fixed period; each
     hunt decides for itself whether enough time has passed -- free sweeps every
@@ -107,17 +122,38 @@ def _hunts(cfg: config_mod.Config, name: str | None, store=None):
 
 
 def cmd_once(args) -> int:
-    cfg = config_mod.load(args.config)
-    store = Store(cfg.db_path)
+    cfg, store = _open(args)
+
+    # Outside its waking hours the timer's pass does NOTHING -- no fetch, no
+    # judgement, no re-check. Unlike the quota and rate-limit pauses, which
+    # keep collecting because collecting is free, this is a decision rather
+    # than an interruption: nothing found at 3am can be collected at 3am.
+    #
+    # Only `--due` is gated. A bare `dealbot once` is a person at a keyboard
+    # asking for a pass, and refusing that would be obstinate rather than
+    # thrifty.
+    sched = schedule_mod.load(store, cfg.schedule)
+    if args.due and not sched.is_open():
+        opens = sched.opens_at()
+        print(f"asleep until {schedule_mod.fmt_clock(sched.start_minute)}"
+              + (f" ({opens:%H:%M})" if opens else "")
+              + f"; awake {sched.window_label}")
+        store.close()
+        return 0
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
     notifiers = _build_notifiers(cfg, store)
+
+    # ONE budget for the whole pass. Reset per hunt, `max_requests_per_run: 25`
+    # quietly meant 25 PER HUNT -- 75 requests in a single `once` against a
+    # source that starts throttling, silently, after about five rapid ones.
+    for _, source in sources:
+        if hasattr(source, "reset_budget"):
+            source.reset_budget()
 
     for hunt in _hunts(cfg, args.hunt, store):
         for name, source in sources:
             if args.due and not _is_due(store, hunt, name):
                 continue
-            if hasattr(source, "reset_budget"):
-                source.reset_budget()
             if args.dry_run:
                 print(json.dumps(dry_run(store, hunt, source, cfg.location),
                                  indent=2))
@@ -133,6 +169,39 @@ def cmd_once(args) -> int:
                 f"scored={r.n_scored} wanted={r.n_wanted} free={r.n_free_find} "
                 f"imgs={r.n_image_checks} cost=${r.cost_usd:.4f}")
             print(f"{hunt.id:24} {name:11} {status}")
+
+    # Rides along with the pass that is already running, and is paced per
+    # listing, so most ticks it does nothing. It costs requests and no quota.
+    if cfg.recheck.enabled and not args.dry_run:
+        rc = recheck(store, sources, every_hours=cfg.recheck.every_hours,
+                     max_per_run=cfg.recheck.max_per_run)
+        if rc.n_checked or rc.error:
+            print(f"{'recheck':24} {'':11} checked={rc.n_checked} "
+                  f"sold={rc.n_sold} removed={rc.n_removed} "
+                  f"listed={rc.n_listed}" + (f" {rc.error}" if rc.error else ""))
+    store.close()
+    return 0
+
+
+def cmd_recheck(args) -> int:
+    """Ask each source whether the things in your bins are still there.
+
+    No search, no model calls: one detail fetch per listing, paced. `mark_gone`
+    only ever knew that a listing had stopped APPEARING, which for a 15-minute
+    sweep is 45 minutes off page one -- this is the difference between that and
+    a listing that actually sold."""
+    cfg, store = _open(args)
+    sources = _build_sources(cfg)
+    for _, source in sources:
+        if hasattr(source, "reset_budget"):
+            source.reset_budget()
+    rc = recheck(store, sources,
+                 every_hours=0.0 if args.all else cfg.recheck.every_hours,
+                 max_per_run=args.limit or cfg.recheck.max_per_run)
+    print(f"checked {rc.n_checked}: {rc.n_sold} sold, {rc.n_removed} removed, "
+          f"{rc.n_listed} still listed")
+    if rc.error:
+        print(f"  {rc.error}")
     store.close()
     return 0
 
@@ -143,8 +212,7 @@ def cmd_notify(args) -> int:
     Catch-up otherwise rides along with a hunt's own cadence, so something stuck
     under an hourly want search waits up to an hour. This costs nothing -- no
     requests, no model calls -- and is the way to drain a backlog on demand."""
-    cfg = config_mod.load(args.config)
-    store = Store(cfg.db_path)
+    cfg, store = _open(args)
     notifiers = _build_notifiers(cfg, store)
     total = 0
     for hunt in _hunts(cfg, args.hunt, store):
@@ -167,8 +235,6 @@ def cmd_notify(args) -> int:
 
 def cmd_seed_demo(args) -> int:
     """Build a dashboard-development database. Offline, free, deterministic."""
-    from pathlib import Path
-
     from .demo import build
     cfg = config_mod.load(args.config)
     store = build(cfg, args.db)
@@ -197,8 +263,7 @@ def cmd_seed_demo(args) -> int:
 
 def cmd_prune_thumbs(args) -> int:
     """Drop cached photos for listings no longer in a bin or triaged."""
-    cfg = config_mod.load(args.config)
-    store = Store(cfg.db_path)
+    cfg, store = _open(args)
     thumbs = ThumbnailStore(cfg.db_path.parent / "thumbs")
     keep = {r["listing_id"] for r in store.conn.execute(
         """SELECT listing_id FROM hunt_matches WHERE status IN
@@ -212,9 +277,13 @@ def cmd_prune_thumbs(args) -> int:
 
 
 def cmd_hunts(args) -> int:
-    cfg = config_mod.load(args.config)
-    store = Store(cfg.db_path)
+    cfg, store = _open(args)
     off = store.disabled_hunts()
+    sched = schedule_mod.load(store, cfg.schedule)
+    if not sched.always_on:
+        print(f"awake {sched.window_label}"
+              f"{' -- ASLEEP NOW' if not sched.is_open() else ''}"
+              f"{f' ({sched.tz_name})' if sched.tz_name else ''}\n")
     print(f"{'hunt':28} {'kind':6} {'every':>6}  {'max$':>6}  last run")
     for h in cfg.hunts:
         row = store.conn.execute(
@@ -244,22 +313,46 @@ def cmd_run(args) -> int:
     """Poll loop. Each hunt runs on its own cadence -- free sweeps every 15
     minutes because free items evaporate, want searches hourly because priced
     ones do not."""
-    cfg = config_mod.load(args.config)
-    store = Store(cfg.db_path)
+    cfg, store = _open(args)
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
     notifiers = _build_notifiers(cfg, store)
     next_due: dict[str, float] = {}
 
-    print("polling; ctrl-c to stop")
+    sched = schedule_mod.load(store, cfg.schedule)
+    print("polling; ctrl-c to stop"
+          + ("" if sched.always_on else f" (awake {sched.window_label})"))
+    asleep = False
     try:
         while True:
             now = time.time()
+            # Re-read every pass rather than caching: the hours and the want
+            # list are edited from the dashboard, and a loop that has been up
+            # for a week should not be running last week's hunts to last
+            # week's hours.
+            cfg = config_mod.with_store(cfg, store)
+            sched = schedule_mod.load(store, cfg.schedule)
+            if not sched.is_open():
+                if not asleep:
+                    print(f"asleep until "
+                          f"{schedule_mod.fmt_clock(sched.start_minute)}")
+                    asleep = True
+                time.sleep(30)
+                continue
+            asleep = False
+            # Reset once per pass, and only when a pass actually runs
+            # something: per hunt it multiplies the request budget by the
+            # number of hunts, and unconditionally every ten seconds it stops
+            # being a budget at all.
+            budget_is_fresh = False
             for hunt in _hunts(cfg, args.hunt, store):
                 if now < next_due.get(hunt.id, 0):
                     continue
+                if not budget_is_fresh:
+                    for _, s in sources:
+                        if hasattr(s, "reset_budget"):
+                            s.reset_budget()
+                    budget_is_fresh = True
                 for name, source in sources:
-                    if hasattr(source, "reset_budget"):
-                        source.reset_budget()
                     r = run_hunt(store, hunt, source, scorer, notifiers,
                                  cfg.location,
                                  image_provider=_build_image_provider(cfg, name),
@@ -300,6 +393,14 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--hunt")
     r.set_defaults(func=cmd_run)
 
+    rk = sub.add_parser("recheck",
+                        help="confirm bin listings are still for sale; no cost")
+    rk.add_argument("--limit", type=int, default=0,
+                    help="how many to check (default: config max_per_run)")
+    rk.add_argument("--all", action="store_true",
+                    help="ignore the per-listing interval and check the oldest")
+    rk.set_defaults(func=cmd_recheck)
+
     nt = sub.add_parser("notify", help="send pending alerts; no fetching, no cost")
     nt.add_argument("--hunt")
     nt.set_defaults(func=cmd_notify)
@@ -316,11 +417,21 @@ def main(argv: list[str] | None = None) -> int:
     h.set_defaults(func=cmd_hunts)
 
     s = sub.add_parser("serve", help="dashboard")
-    s.add_argument("--host", default="127.0.0.1")
+    # 0.0.0.0, not localhost: this is read on a phone, which is a different
+    # machine. The deployed unit already passes --host 0.0.0.0; this makes a
+    # manual `dealbot serve` behave the same way rather than being reachable
+    # only from the box it runs on. There is no auth in the app -- keep it on a
+    # trusted network, or behind the reverse proxy that provides one.
+    s.add_argument("--host", default="0.0.0.0")
     s.add_argument("--port", type=int, default=8080)
     s.set_defaults(func=cmd_serve)
 
     args = p.parse_args(argv)
+    # Next to the config file first, working directory second. Resolved only
+    # against the CWD, a run started from anywhere else silently loses the
+    # Discord webhooks and the home coordinates -- `load_env` uses setdefault,
+    # so the first file to define a key wins and this order is deliberate.
+    load_env(Path(args.config).resolve().parent / ".env")
     load_env()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")

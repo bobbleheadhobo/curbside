@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% from "_card.html" import card %}
+{% block title %}Skipped &middot; Curbside{% endblock %}
+{% block content %}
+{% set close = items|selectattr('deal_score')|selectattr('deal_score','ge',6)|list|length %}
+{# The rescuable ones. Everything else here the model actually judged and turned
+   down; these it could not confirm, and a glance at the photos settles them. #}
+{% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
+<div class="pagehead">
+  <h1>Skipped</h1>
+  <p class="stats">
+    <i><b>{{total}}</b> judged and passed over</i>
+    {% if unsure %}
+      <i class="hi"><b>{{unsure}}</b> unverified</i>{% endif %}
+    {% if close %}
+      <i><b>{{close}}</b> scored 6 or better</i>{% endif %}
+    {% if truncated %}
+      <i>showing top {{items|length}}</i>{% endif %}
+  </p>
+  <p>Judged, then passed over. Skim it now and then to check the bar is right.</p>
+</div>
+<div class="stack">
+{% for i in items %}{{ card(i, '/skipped') }}{% else %}
+<div class="empty">
+  <svg class="i" aria-hidden="true"><use href="#i-skipped"/></svg>
+  <b>Nothing has been passed over yet</b>
+  <p>Everything the scorer judges and decides against collects here.</p>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

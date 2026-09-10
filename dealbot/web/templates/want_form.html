@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ stored.want.name if stored else 'New want' }} &middot; Curbside{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>{{ stored.want.name if stored else 'New want' }}</h1>
+  <p>{% if stored %}What it looks for, and what you would pay.
+     {% else %}Something you actually want. It gets its own search, and the free
+     sweep starts watching for it too.{% endif %}</p>
+</div>
+
+<div class="panel">
+  {% if error %}
+  <p class="formerr" role="alert">
+    <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/wants/save">
+    <input type="hidden" name="existing" value="{{ stored.want.name if stored else '' }}">
+
+    {% if not stored %}
+    <div class="field">
+      <label for="f-name">Name</label>
+      <input type="text" id="f-name" name="name" value="{{ v.name or '' }}"
+             placeholder="tv stand" autocapitalize="none" required>
+      <p class="hint">Short. It becomes this hunt's address and cannot be
+        changed afterwards, because everything it judges is filed under it.</p>
+    </div>
+    {% endif %}
+
+    <div class="field">
+      <label for="f-desc">What you are looking for</label>
+      <textarea id="f-desc" name="description" required
+        placeholder="A large TV stand for a big TV. Width matters most.">{{ v.description or '' }}</textarea>
+      <p class="hint">This is what every listing gets judged against, in your
+        own words. Say what makes one good and what makes one useless.</p>
+    </div>
+
+    <div class="field">
+      <label for="f-price">Most you would pay</label>
+      <input type="text" inputmode="decimal" id="f-price" name="max_price"
+             value="{{ v.max_price or '' }}" placeholder="250">
+      <p class="hint">Dollars. Anything dearer is dropped before it costs
+        anything to judge.</p>
+    </div>
+
+    <div class="field">
+      <label for="f-queries">Search terms</label>
+      <textarea id="f-queries" name="queries"
+        placeholder="tv stand&#10;media console&#10;credenza">{{ v.queries or '' }}</textarea>
+      <p class="hint">One per line. Search cannot know that "media console"
+        means the same thing, so give it the words a seller would use. Leave it
+        empty and this want is only checked against free stuff.</p>
+    </div>
+
+    <div class="field">
+      <label for="f-req">Must be true</label>
+      <textarea id="f-req" name="requires"
+        placeholder="at least 70 inches wide&#10;not a corner unit">{{ v.requires or '' }}</textarea>
+      <p class="hint">One per line, optional. Each is answered separately with
+        its evidence, so a near miss shows up as a near miss instead of
+        disappearing into the score.</p>
+    </div>
+
+    <div class="field">
+      <label for="f-iv">How often to search</label>
+      <select id="f-iv" name="interval">
+        {% for mins, label in intervals %}
+        <option value="{{ mins }}" {% if mins == interval %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">Priced things sit for days, so hourly is plenty.</p>
+    </div>
+
+    <div class="formactions">
+      <button class="primary">{{ 'Save' if stored else 'Add want' }}</button>
+      <a class="btn" href="/settings">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% if stored %}
+{% set hid = stored.hunt_id %}
+{% set paused_ids = paused_hunts|map(attribute='id')|list %}
+<div class="panel" style="margin-top:18px">
+  <h2>This hunt</h2>
+  <div class="control-row">
+    <span class="who">{{ 'Paused' if hid in paused_ids else 'Searching' }}
+      <small>{% if hid in paused_ids %}Not being
+        searched for. The free sweep still matches against it.{% else %}Running
+        on its own clock.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/hunts/toggle">
+        <input type="hidden" name="hunt_id" value="{{ hid }}">
+        <input type="hidden" name="enable"
+               value="{{ '0' if hid not in paused_ids else '1' }}">
+        <input type="hidden" name="back" value="/wants/{{ stored.want.name }}">
+        <button>{% if hid in paused_ids %}Resume
+          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause{% endif %}</button>
+      </form>
+    </div>
+  </div>
+  <div class="control-row">
+    <span class="who">Everything it found
+      <small>Kept whatever happens to the want.</small></span>
+    <div class="triage-actions">
+      <a class="btn" href="/hunt/{{ hid }}">Open the hunt</a>
+    </div>
+  </div>
+  <div class="control-row">
+    <span class="who">Remove it
+      <small>Stops the search. Nothing is deleted.</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/wants/archive">
+        <input type="hidden" name="name" value="{{ stored.want.name }}">
+        <button class="danger">
+          <svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

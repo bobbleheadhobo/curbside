@@ -30,8 +30,12 @@ def rig():
     from dataclasses import replace as _replace
     with tempfile.TemporaryDirectory() as tmp:
         cfg = load(ROOT / "config.yaml")
-        cfg = _replace(cfg, hunts=tuple(_replace(h, max_results=1000)
-                                        for h in cfg.hunts))
+        cfg = _replace(
+            cfg,
+            defaults=_replace(cfg.defaults, max_results=1000),
+            sweeps=tuple(_replace(s, max_results=None) for s in cfg.sweeps),
+            want_hunts={n: _replace(w, max_results=None)
+                        for n, w in cfg.want_hunts.items()})
         store = Store(Path(tmp) / "t.db")
         source = FixtureSource(cfg.location, ROOT / "fixtures/listings")
         yield cfg, store, source, StubScorer(), [DashboardNotifier(store)]
@@ -49,9 +53,10 @@ def test_first_run_fetches_scores_and_routes(rig):
     assert r.error is None
     assert r.n_fetched == 10 and r.n_new == 10
     assert r.n_scored > 0
-    # The stub cannot judge a hard requirement, so it reports `unknown` and
-    # everything lands in the worth-a-look queue rather than the feed. That is
-    # the honest answer, and the routing must respect it.
+    # The stub cannot judge a hard requirement, so it reports `unknown`, and
+    # `unknown` is routed by score exactly like `yes`: over the bar it reaches a
+    # bin, under it stays `scored` and shows up in /skipped. That is the honest
+    # answer, and the routing must respect it.
     assert r.n_wanted + r.n_free_find > 0
 
 
@@ -245,7 +250,8 @@ def test_a_detail_outage_leaves_the_rest_for_next_run(rig):
 
     from dealbot.pipeline import run_hunt
     r = run_hunt(store, hunt, Flaky(source), scorer, notifiers, cfg.location)
-    assert "detail fetch stopped" in r.error
+    assert "detail fetch stopped" in r.warning
+    assert r.error is None                      # degraded, not failed
     assert r.n_fetched == 10                    # everything still stored
     assert r.n_candidates == 2                  # only the enriched ones judged
     left = [s for s in store.statuses(hunt.id).values() if s == "new"]
@@ -280,7 +286,12 @@ def test_enrichment_survives_a_later_index_only_refresh(rig):
 
 def test_a_degraded_run_says_so_in_the_runs_table(rig):
     """A partial enrichment must be visible on the dashboard, not only in a log
-    line nobody reads."""
+    line nobody reads.
+
+    In `warning`, not `error`. `last_success_at` reads `error IS NULL`, so a
+    degraded run recorded as a failure makes `--due` true on every tick -- and
+    the hourly want hunts would start fetching every 15 minutes against a
+    source that is already gating us, which is the opposite of backing off."""
     from dealbot.sources.facebook import SourceBlocked
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -294,8 +305,10 @@ def test_a_degraded_run_says_so_in_the_runs_table(rig):
     from dealbot.pipeline import run_hunt
     run_hunt(store, hunt, Stops(), scorer, notifiers, cfg.location, no_score=True)
     row = store.conn.execute(
-        "SELECT error FROM runs ORDER BY id DESC LIMIT 1").fetchone()
-    assert row["error"] and "budget" in row["error"]
+        "SELECT error, warning FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    assert row["warning"] and "budget" in row["warning"]
+    assert row["error"] is None
+    assert store.last_success_at(hunt.id, "stops") is None   # --no-score pass
 
 
 def test_a_large_first_run_is_capped_and_the_rest_deferred(rig):
@@ -709,6 +722,9 @@ def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
     cfg, *_ = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
 
+    from conftest import make_listing
+    free = make_listing(price_cents=0)
+
     def sc(match, score, grab=True):
         return Score(listing_id="x", hunt_id=hunt.id, model="m",
                      scored_at=datetime.now(timezone.utc), match=match,
@@ -717,11 +733,196 @@ def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
                      requirements=(), red_flags=(), reasoning="")
 
     # the case worth paying for: a high text score photos might demolish
-    assert _would_bin(sc("unknown", 9.0), hunt)
-    assert _would_bin(sc("yes", 7.0), hunt)
+    assert _would_bin(sc("unknown", 9.0), hunt, free)
+    assert _would_bin(sc("yes", 7.0), hunt, free)
     # a free find clearing its own, lower bar
-    assert _would_bin(sc("no", 5.0), hunt)
+    assert _would_bin(sc("no", 5.0), hunt, free)
     # and the two thirds that were pure waste
-    assert not _would_bin(sc("unknown", 3.0), hunt)
-    assert not _would_bin(sc("no", 4.0), hunt)
-    assert not _would_bin(sc("no", 9.0, grab=False), hunt)
+    assert not _would_bin(sc("unknown", 3.0), hunt, free)
+    assert not _would_bin(sc("no", 4.0), hunt, free)
+    assert not _would_bin(sc("no", 9.0, grab=False), hunt, free)
+
+
+# --- what the model was already paid for must not be lost -------------------
+
+def test_an_interrupted_appraisal_still_routes_what_it_bought(rig):
+    """REGRESSION: a pause partway through appraisal saved the finished scores
+    with status `scored` and then returned BEFORE routing. On the next run the
+    gate sees a score, no price drop, and rejects the listing as `unchanged` --
+    forever. It never reaches a bin, so `pending_notifications` never sees it
+    either. That is the silent loss that left two TV stands un-announced, and
+    the appraisal was paid for."""
+    from dataclasses import replace
+    from dealbot.scoring.claude_code import ScoringUnavailable
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Interrupted:
+        """Appraises all but the last, then the plan window closes."""
+        name = "stub"
+        def triage(self, hunt, cands):
+            return scorer.triage(hunt, cands)
+        def appraise(self, hunt, cands):
+            raise ScoringUnavailable("rate limited",
+                                     partial=scorer.appraise(hunt, cands[:-1]))
+
+    r = run_hunt(store, hunt, source, Interrupted(), notifiers, cfg.location)
+    assert "interrupted" in r.error
+    assert r.n_wanted + r.n_free_find > 0
+    binned = [s for s in store.statuses(hunt.id).values()
+              if s in ("wanted", "free_find")]
+    assert len(binned) == r.n_wanted + r.n_free_find
+    assert store.pending_notifications(hunt.id)      # and it can still be announced
+
+
+def test_a_triage_outage_records_the_chunks_it_paid_for(rig):
+    """The cost has to reach `runs.cost_usd` -- the only thing the daily ceiling
+    reads -- and a verdict already bought must not be bought again."""
+    from dealbot.scoring.base import TriageResult
+    from dealbot.scoring.claude_code import ScoringUnavailable
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    dropped = {}
+
+    class Stops:
+        name = "stub"
+        def triage(self, hunt, cands):
+            dropped[cands[0].listing.id] = "a service ad"
+            raise ScoringUnavailable(
+                "rate limited",
+                partial=TriageResult([], dict(dropped), cost_usd=0.05))
+        def appraise(self, hunt, cands):
+            raise AssertionError("must not appraise during an outage")
+
+    r = run_hunt(store, hunt, source, Stops(), notifiers, cfg.location)
+    assert r.cost_usd == 0.05
+    row = store.conn.execute(
+        "SELECT cost_usd FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    assert row["cost_usd"] == 0.05
+    lid = next(iter(dropped))
+    assert lid in store.last_scores(hunt.id)         # not re-triaged next run
+
+
+# --- one bad payload is not an outage ---------------------------------------
+
+def test_one_unparsable_detail_does_not_strand_every_listing_behind_it(rig):
+    """REGRESSION: the enrichment loop caught bare Exception and BROKE, which is
+    right for "the site is gating us" and wrong for "this one payload would not
+    parse". An image entry that is not a string used to leave every candidate
+    behind it unenriched and unjudged."""
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class OneBadPayload:
+        name = "fixture"
+        def search(self, hunt): return source.search(hunt)
+        def parse(self, raw): return source.parse(raw)
+        def detail(self, listing):
+            if listing.id.endswith("1001"):
+                raise AttributeError("'int' object has no attribute 'split'")
+            return listing
+
+    r = run_hunt(store, hunt, OneBadPayload(), scorer, notifiers, cfg.location)
+    assert r.n_fetched == 10
+    assert r.n_candidates == 7              # a clean run gates 8 through
+    assert r.n_scored == 7                  # the eight behind it still judged
+    assert store.statuses(hunt.id)["fixture:1001"] == "new"   # deferred, not lost
+    assert r.error is None                  # degraded, not failed
+    assert "1 detail fetches failed" in r.warning
+
+
+# --- exclude terms only become visible after enrichment ---------------------
+
+def test_an_exclude_term_in_the_description_is_caught_before_it_is_paid_for(rig):
+    """The gate only ever sees the search feed, where Facebook supplies no
+    description and Craigslist hardcodes None -- so an exclude term that appears
+    only in the body could never fire there, and the listing was paid for at
+    triage AND at appraisal."""
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    hunt = replace(hunt, exclude=("free estimate",))
+
+    class BodySaysService:
+        name = "fixture"
+        def search(self, hunt): return source.search(hunt)
+        def parse(self, raw): return source.parse(raw)
+        def detail(self, listing):
+            return replace(listing, description="Free estimate, licensed crew")
+
+    r = run_hunt(store, hunt, BodySaysService(), scorer, notifiers, cfg.location)
+    assert r.n_candidates == 0
+    reasons = {r["filter_reason"] for r in store.conn.execute(
+        "SELECT filter_reason FROM hunt_matches WHERE hunt_id=?", (hunt.id,))}
+    assert "excluded_kw:free estimate" in reasons
+
+
+# --- the free bin asks more of a listing that costs money --------------------
+
+def test_a_fairly_priced_listing_is_not_a_free_find(rig):
+    """`worth_grabbing` asks "would a sensible person collect this at this
+    price?", which for a fairly priced thing is a low bar. A $140 meditation
+    chair the model valued at $160 cleared it and was announced -- "fair value,
+    nothing special", in the model's own words, in a tab called free finds.
+    Free costs a drive; a price costs the price, so the bin asks for a margin.
+    """
+    from datetime import datetime, timezone
+    from dealbot.pipeline import _is_a_bargain
+    from dealbot.models import Score
+    from conftest import make_listing
+
+    def sc(est):
+        return Score(listing_id="x", hunt_id="h", model="m",
+                     scored_at=datetime.now(timezone.utc), match="no",
+                     deal_score=6.0, est_value_cents=est, condition=None,
+                     matched_want=None, worth_grabbing=True, unknowns=(),
+                     requirements=(), red_flags=(), reasoning="")
+
+    pipersong = make_listing(price_cents=14000)
+    assert not _is_a_bargain(sc(16000), pipersong)       # 1.14x -- a purchase
+    assert _is_a_bargain(sc(28000), pipersong)           # 2.0x  -- a find
+
+    # Free is unaffected: free costs a drive, not money.
+    assert _is_a_bargain(sc(3000), make_listing(price_cents=0))
+    # And it fails open on both kinds of missing information.
+    assert _is_a_bargain(sc(None), pipersong)
+    assert _is_a_bargain(sc(None), make_listing(price_cents=None))
+
+
+def test_a_priced_bargain_still_reaches_the_free_bin(rig):
+    """The rule must not cost you the $60 credenza worth $300."""
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from dealbot.models import Score
+    from dealbot.scoring.base import TriageResult
+
+    cfg, store, source, _, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "stacked-ottoman")
+
+    class Valuer:
+        """Everything is a non-match worth grabbing; only the value moves."""
+        name = "valuer"
+        def __init__(self, multiple): self.multiple = multiple
+        def triage(self, hunt, cands):
+            return TriageResult(list(cands), {})
+        def appraise(self, hunt, cands):
+            now = datetime.now(timezone.utc)
+            return [Score(listing_id=c.listing.id, hunt_id=hunt.id, model="m",
+                          scored_at=now, match="no", deal_score=6.0,
+                          est_value_cents=int((c.listing.price_cents or 0)
+                                              * self.multiple),
+                          condition=None, matched_want=None, worth_grabbing=True,
+                          unknowns=(), requirements=(), red_flags=(),
+                          reasoning="") for c in cands]
+
+    fair = run_hunt(store, hunt, source, Valuer(1.15), notifiers, cfg.location)
+    assert fair.n_candidates > 0 and fair.n_free_find == 0
+
+    # Same listings, same scores, a real margin: the bin takes them.
+    store2 = Store(Path(store.path).parent / "again.db")
+    bargain = run_hunt(store2, hunt, source, Valuer(3.0), notifiers, cfg.location)
+    assert bargain.n_free_find == bargain.n_candidates
+    store2.close()

@@ -21,13 +21,17 @@ dealbot/
   config.py       config.yaml -> Hunt objects; secrets come from .env
   models.py       the dataclasses everything passes around
   db.py           SQLite. All schema lives here
+  schedule.py     waking hours: when the bot is allowed to run at all
   filters.py      the gate: what is worth spending money on
   pipeline.py     run_hunt() — the whole flow, stage by stage
   sources/        facebook, craigslist, fixture
   scoring/        base (prompts+protocols), claude_code, stub, stream parser
   notify/         dashboard (no-op), discord
   web/            FastAPI dashboard + Jinja templates
+  web/static/     icons, the manifest and the service worker (installable)
 prompts/rubric.md how listings are judged. Editable, no code change needed
+tools/make_icons.py  draws the app icon into every size. SVG and PNG from one
+                  geometry, so the favicon and the home-screen tile cannot drift
 fixtures/         recorded real responses — the offline test suite
 docs/             DESIGN (why), FLOW (features+types), ARCHITECTURE (as built)
 systemd/          the deployed units
@@ -50,15 +54,57 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --no-score     # full pipeline, spends nothing
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
-.venv/bin/python -m pytest tests/ -q                # 172 tests, all offline
+.venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
+.venv/bin/python -m pytest tests/ -q                # 247 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
 `config.yaml`, point `db_path` somewhere else and set `scorer.backend: stub`.
 
+### Watching the live service
+
+The deployed units are **user** units, so none of this needs sudo:
+
+```bash
+systemctl --user list-timers curbside.timer          # when it next fires
+systemctl --user status curbside.service
+journalctl --user -u curbside.service -n 50          # what the last pass did
+journalctl --user -u curbside-web.service -f
+systemctl --user restart curbside-web.service        # after changing web code
+```
+
+The dashboard is a long-lived process: **web code changes need that restart.**
+The timer does not — each `dealbot once` is a fresh process.
+
+**You have passwordless `sudo` for `systemctl` and `journalctl`**, for the
+system manager and the full journal. You will rarely need it, since everything
+Curbside runs is a user unit. Nothing else is passwordless.
+
 **Every test must stay offline.** Sources are tested against recorded responses
 in `fixtures/` — including a captured *throttled* Facebook page, which is the
 failure mode that matters most. Never add a test that hits the network.
+
+## The dashboard owns some of the config now
+
+Three things used to require an ssh session and a service restart, and are set
+from `/settings` instead:
+
+* **the waking hours** — outside them a timer tick does *nothing*
+* **each hunt's cadence** — `settings` rows keyed `hunt_interval:<hunt_id>`
+* **the wants themselves** — a `wants` table, which `config.yaml` **seeds once**
+
+The seed is a one-shot, remembered as `settings['wants.seeded']`. Seeding per
+start would revert every edit made on the phone at the next tick, and seeding
+per missing name would resurrect a want deleted from the web. After the first
+open the table is the truth and the file is history.
+
+`Config.hunts` is therefore a **computed property**, not a field. The web
+process stays up for weeks; adding a want has to produce its hunt without a
+restart. Every CLI command goes through `cli._open()`, and the dashboard
+recomputes per request (`app._live()`).
+
+A deleted want is archived, never dropped — its hunt stops, and everything it
+ever matched stays readable at `/hunt/want:<name>`.
 
 ## Invariants — break these and it fails quietly
 
@@ -71,6 +117,11 @@ turns a cheap loop into an expensive one, and nothing will look broken.
 spend ceiling, connectivity — stops the *judging* and lets the *collecting*
 continue. Listings pile up as `new` and get judged when the window reopens. You
 lose judgement for a few hours, never data.
+
+**The two deliberate exceptions are the pause switches and the waking hours.**
+Both stop the fetching as well, and both are *decisions* rather than
+interruptions: nothing found at 3am can be collected at 3am. Only `once --due`
+is gated by the hours, so a hand-run `dealbot once` always runs.
 
 **Nothing is deleted.** Rejected listings keep their reason; listings keep their
 raw source payload. Three separate parser bugs have been repaired from data
@@ -159,5 +210,5 @@ wall-clock time, not with effort.
 
 Most tuning is `prompts/rubric.md`, which is prose and needs no code change.
 Check there first. If you do change the prompt shape, keep the stable-first
-ordering, and remember the near-misses view (`/near`) exists so the threshold
-can be judged rather than guessed at.
+ordering, and remember the skipped view (`/skipped`, renamed from `/near`)
+exists so the threshold can be judged rather than guessed at.

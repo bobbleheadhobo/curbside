@@ -27,7 +27,14 @@ PRICE_DROP_THRESHOLD = 0.15
 TRIAGED = ("saved", "dismissed", "contacted")
 
 
-def _matches_any(listing: Listing, terms: Sequence[str]) -> str | None:
+def matches_any(listing: Listing, terms: Sequence[str]) -> str | None:
+    """The first excluded term found in the title or description, if any.
+
+    Public because the pipeline runs it AGAIN after enrichment. The gate only
+    ever sees the search feed, where Facebook supplies no description and
+    Craigslist hardcodes `description=None` -- so an exclude term that appears
+    only in the body cannot fire here, and the listing gets paid for twice.
+    """
     haystack = f"{listing.title}\n{listing.description or ''}".lower()
     for term in terms:
         if term.lower() in haystack:
@@ -88,7 +95,7 @@ def gate(
                              "too_far_by_city" if approx else "too_far"))
             continue
 
-        if hunt.exclude and (hit := _matches_any(listing, hunt.exclude)):
+        if hunt.exclude and (hit := matches_any(listing, hunt.exclude)):
             rejected.append((listing.id, f"excluded_kw:{hit}"))
             continue
 

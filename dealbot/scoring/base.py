@@ -26,12 +26,15 @@ arrangement. Verify it is working by watching `cache_read_input_tokens`.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
 from ..models import Candidate, Hunt, Listing, Score, Want
+
+log = logging.getLogger("dealbot.scoring")
 
 # Anchored so the number means something. Without anchors the model drifts and a
 # threshold of 7 silently changes meaning week to week.
@@ -236,10 +239,16 @@ def load_rubric(path: str | Path = "prompts/rubric.md") -> str:
     mean editing Python. Falls back to the built-in default when absent.
 
     HTML comments are stripped so the file can carry instructions to a human
-    without spending tokens or confusing the model."""
+    without spending tokens or confusing the model.
+
+    The fallback is LOGGED. Judging by different criteria than the file you
+    just edited is invisible otherwise -- and a relative path resolved against
+    the working directory is exactly how that happens, which is why the config
+    hands us an absolute one."""
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError:
+        log.info("no rubric at %s; using the built-in default", path)
         return RUBRIC
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()
     return text or RUBRIC

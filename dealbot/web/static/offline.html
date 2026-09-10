@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Offline &middot; Curbside</title>
+<style>
+:root{--bg:#f4f4f6;--card:#fff;--fg:#101014;--dim:#5f5f6a;--line:#e5e5ea;--accent:#2b64d6}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1012;--card:#17181b;--fg:#edeef1;--dim:#9b9daa;--line:#26272c;--accent:#6f9dff}}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);color:var(--fg);padding:24px;
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif}
+.box{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:32px 24px;max-width:22rem;text-align:center;
+  box-shadow:0 1px 2px rgba(16,16,20,.06)}
+h1{font-size:19px;font-weight:650;letter-spacing:-.02em;margin:0 0 8px}
+p{margin:0 0 18px;color:var(--dim);font-size:13.5px}
+a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;
+  padding:0 18px;border-radius:8px;background:var(--accent);color:#fff;
+  text-decoration:none;font-weight:550;font-size:14px}
+</style></head><body>
+<div class="box">
+  <h1>No connection</h1>
+  <p>Nothing is shown from a cache here. Half of what Curbside finds is gone
+    within the hour, and an out of date card is worse than none.</p>
+  <a href="/">Try again</a>
+</div>
+</body></html>

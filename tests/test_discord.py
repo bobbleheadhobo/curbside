@@ -159,15 +159,17 @@ def test_the_cap_defers_rather_than_drops(rig):
         store.save_score(make_score(listing_id=f"fb:{i}", deal_score=6.0 + i * 0.1),
                          priced_at_cents=0)
 
+    # The counter is NOT reset by hand between these. It used to have to be:
+    # `_sent_this_run` was set once in __init__, so the "per-run" cap was really
+    # per process -- a `dealbot run` daemon builds one notifier and loops
+    # forever, and went permanently silent after ten messages with nothing but
+    # an INFO line to show for it.
     n.notify(hunt, [])                      # nothing surfaced THIS run
     assert len(sent) == 2                   # cap respected
-    n._sent_this_run = 0
     n.notify(hunt, [])
     assert len(sent) == 4                   # the rest are picked up next run
-    n._sent_this_run = 0
     n.notify(hunt, [])
     assert len(sent) == 5
-    n._sent_this_run = 0
     n.notify(hunt, [])
     assert len(sent) == 5                   # ...and never announced twice
 

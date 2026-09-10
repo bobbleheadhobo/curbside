@@ -23,6 +23,21 @@ defaults:
 
 db_path: data/dealbot.db
 
+# Waking hours. Outside this window `dealbot once --due` does nothing at all --
+# no fetching, no judging, no re-checks -- because nothing found at 3am can be
+# collected at 3am, and every hour awake is requests against two sources that
+# throttle. A bare `dealbot once` ignores the window, so you can always run one
+# by hand.
+#
+# These are STARTING values. The window is edited from /settings and lives in
+# the database from then on, so the dashboard and a hand edit never fight over
+# this file. The timezone is the exception -- it belongs here.
+schedule:
+  enabled: true
+  timezone: America/Denver
+  start: "12:00"
+  end: "20:00"
+
 sources: [facebook, craigslist]   # any of: fixture, facebook, craigslist
                              # each source gets its own run per hunt, so one
                              # being throttled is visible rather than silent
@@ -59,6 +74,15 @@ craigslist:
   area_id: 50                # 50 = albuquerque (its own coords match ours exactly)
   min_interval_seconds: 4    # friendlier than Facebook, but still polite
   max_requests_per_run: 40
+
+recheck:
+  # `gone` only ever meant "stopped appearing in results" -- 45 minutes off page
+  # one on the free sweep. This asks the source outright whether the things in
+  # your bins are still for sale. One detail fetch per listing per interval,
+  # no model call, so it costs requests and no quota.
+  enabled: true
+  every_hours: 6           # per listing, not per run
+  max_per_run: 10          # keeps it inside the source request budget
 
 discord:
   # Webhooks live in .env (gitignored), not here, so this file stays shareable:

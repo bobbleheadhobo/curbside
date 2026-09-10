@@ -35,6 +35,9 @@ import requests
 
 from ..geo import haversine_miles
 from ..models import Hunt, Listing, Location, RawListing
+# Defined in sources/base so the pipeline can tell "Craigslist is gating us"
+# from "this one payload would not parse" without importing every adapter.
+from .base import BudgetExhausted, SourceBlocked      # noqa: F401  re-exported
 
 log = logging.getLogger("dealbot.sources.craigslist")
 
@@ -49,10 +52,6 @@ F_IMAGES, F_SLUG, F_PRICE_STR, F_UUID = 4, 6, 10, 13
 
 # "zip" is free stuff; "sss" is everything for sale.
 PATH_FREE, PATH_ALL = "zip", "sss"
-
-
-class SourceBlocked(RuntimeError):
-    pass
 
 
 def _fields(item: list) -> dict[int, list]:

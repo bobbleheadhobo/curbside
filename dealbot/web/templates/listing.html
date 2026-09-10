@@ -1,44 +1,135 @@
 {% extends "base.html" %}
+{% block title %}{{listing.title}} &middot; Curbside{% endblock %}
 {% block content %}
-<h1>{{listing.title}}</h1>
-<p class="meta">
-  {% if listing.previous_price_cents is not none and listing.price_cents is not none
-        and listing.price_cents < listing.previous_price_cents %}
-    <span class="strike">${{ '%.0f'|format(listing.previous_price_cents/100) }}</span>
-    <span class="drop">{% if listing.price_cents == 0 %}now FREE{% else %}${{ '%.0f'|format(listing.price_cents/100) }}{% endif %} ↓</span>
-  {% elif listing.price_cents == 0 %}<b>free</b>{% elif listing.price_cents is none %}no price
-  {% else %}${{ '%.0f'|format(listing.price_cents/100) }}{% endif %}
-  &middot; {{ '%.0f'|format(listing.distance_mi or 0) }} mi &middot; {{listing.city or '?'}}
-  &middot; seller {{listing.seller_name or '?'}}
-  &middot; <a href="{{listing.url}}" target="_blank" rel="noopener">open on marketplace ↗</a>
+<div class="pagehead">
+  <h1>{{listing.title}}</h1>
+</div>
+
+<p class="price" style="margin:0 0 12px">
+  {% set was = listing.previous_price_cents %}
+  {% if was is not none and listing.price_cents is not none and listing.price_cents < was %}
+    <span class="now num {{ 'free' if listing.price_cents == 0 }}">
+      {% if listing.price_cents == 0 %}free{% else %}${{ '{:,.0f}'.format(listing.price_cents/100) }}{% endif %}</span>
+    <span class="strike num">${{ '{:,.0f}'.format(was/100) }}</span>
+    <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
+      {{ ((was - listing.price_cents) / was * 100) | round | int }}%</span>
+  {% elif listing.price_cents == 0 %}<span class="now free">free</span>
+  {% elif listing.price_cents is none %}<span class="none">no price</span>
+  {% else %}<span class="now num">${{ '{:,.0f}'.format(listing.price_cents/100) }}</span>{% endif %}
 </p>
-{% if listing.images %}<p>{% for im in listing.images %}<img class="thumb" src="{{im}}" alt="">{% endfor %}</p>{% endif %}
-<p>{{listing.description or ''}}</p>
 
-<h1>Scores</h1>
-<div class="wrap"><table><tr><th>when</th><th>hunt</th><th>model</th><th>score</th><th>want</th><th>flags</th><th>reasoning</th></tr>
-{% for s in scores %}<tr><td>{{s.scored_at}}</td><td>{{s.hunt_id}}</td><td>{{s.model}}</td>
-<td>{{ '%.1f'|format(s.deal_score) }}</td><td>{{s.matched_want or '-'}}</td>
-<td>{{ s.red_flags|join(', ') or '-' }}</td><td style="white-space:normal">{{s.reasoning}}</td></tr>
-{% else %}<tr><td colspan="7">not scored yet</td></tr>{% endfor %}</table></div>
+<p class="detail-meta">
+  {% if listing.distance_mi is not none %}
+  <span class="num">{{ '%.0f'|format(listing.distance_mi) }} mi</span>{% endif %}
+  <span>{{listing.city or 'unknown city'}}</span>
+  <span>seller {{listing.seller_name or 'unknown'}}</span>
+  <a class="btn" href="{{listing.url}}" target="_blank" rel="noopener">
+    <svg class="i" aria-hidden="true"><use href="#i-open"/></svg>Open on the marketplace</a>
+</p>
 
-<h1>Price history</h1>
-{% if sparkline %}<p>{{ sparkline|safe }}</p>{% endif %}
-<div class="wrap"><table><tr><th>observed</th><th>price</th></tr>
-{% for when, cents in history %}<tr><td>{{when}}</td>
-<td>{% if cents is none %}-{% elif cents == 0 %}free{% else %}${{ '%.0f'|format(cents/100) }}{% endif %}</td></tr>{% endfor %}
-</table></div>
+{% if listing.images %}
+<div class="gallery">
+  {% for im in listing.images %}<img src="{{im}}" alt="" loading="lazy" decoding="async">{% endfor %}
+</div>
+{% endif %}
 
-<h1>Triage</h1>
-{% for m in matches %}
-<p>{{m.hunt_id}} &mdash; <b>{{m.status}}</b>{% if m.filter_reason %} ({{m.filter_reason}}){% endif %}
-{% for s in ['saved','dismissed','contacted','surfaced'] %}
-<form class="inline" method="post" action="/triage">
-  <input type="hidden" name="hunt_id" value="{{m.hunt_id}}">
-  <input type="hidden" name="listing_id" value="{{listing.id}}">
-  <input type="hidden" name="status" value="{{s}}">
-  <input type="hidden" name="back" value="/listing/{{listing.id}}">
-  <button>{{s}}</button></form>
-{% endfor %}</p>
-{% endfor %}
+{% if listing.description %}<p class="prose">{{listing.description}}</p>{% endif %}
+
+<div class="section">
+  <h2>Scores</h2>
+  <div class="panel"><div class="wrap"><table class="responsive">
+    <thead><tr><th>When</th><th>Hunt</th><th>Model</th><th class="n">Score</th>
+      <th>Want</th><th>Flags</th><th>Reasoning</th></tr></thead>
+    <tbody>
+    {% for s in scores %}
+    <tr><td class="lead num" data-label="When">{{ (s.scored_at or '')[:16]|replace('T',' ') }}</td>
+      <td data-label="Hunt">{{s.hunt_id}}</td><td data-label="Model">{{s.model}}</td>
+      <td class="n num" data-label="Score">{{ '%.1f'|format(s.deal_score) }}</td>
+      <td data-label="Want">{{s.matched_want or '—'}}</td>
+      <td class="wide" data-label="Flags">{{ s.red_flags|join(', ') or '—' }}</td>
+      <td class="span2 reason" data-label="Reasoning"
+          style="white-space:normal;min-width:280px">{{s.reasoning}}</td></tr>
+    {% else %}
+    <tr><td colspan="7" style="color:var(--dim)">Not scored yet.</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% set latest = scores[0] if scores else none %}
+    {% if latest and (latest.unknowns or latest.requirements or latest.images_checked) %}
+    <div class="whybody" style="padding:13px 15px;border-top:1px solid var(--line-soft)">
+      {% if latest.unknowns %}
+      <p class="unknowns"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
+        <span><b>Needs checking:</b> {{ latest.unknowns|join('; ') }}</span></p>
+      {% endif %}
+      {% if latest.requirements %}
+      <ul class="reqs">
+        {% for r in latest.requirements %}
+        <li>
+          {% if r.met == 'yes' %}<svg class="i yes" aria-hidden="true"><use href="#i-check"/></svg>
+          {% elif r.met == 'no' %}<svg class="i no" aria-hidden="true"><use href="#i-x"/></svg>
+          {% else %}<svg class="i maybe" aria-hidden="true"><use href="#i-help"/></svg>{% endif %}
+          <span>{{r.req}}{% if r.evidence %}: <i>{{r.evidence}}</i>{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if latest.images_checked %}
+      <p class="tags"><span class="chip">
+        <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>photos checked</span></p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
+  <h2>Price history</h2>
+  <div class="panel">
+    {% if sparkline %}<div class="spark">{{ sparkline|safe }}</div>{% endif %}
+    <div class="wrap"><table>
+      <thead><tr><th>Observed</th><th class="n">Price</th></tr></thead>
+      <tbody>
+      {% for when, cents in history %}
+      <tr><td class="num">{{ (when or '')[:16]|replace('T',' ') }}</td>
+        <td class="n num">{% if cents is none %}—{% elif cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}</td></tr>
+      {% else %}
+      <tr><td colspan="2" style="color:var(--dim)">No observations yet.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Triage</h2>
+  <div class="panel">
+    {% for m in matches %}
+    <div class="triage-row">
+      <span class="who">{{m.hunt_id}}
+        <small>currently <b>{{m.status}}</b>{% if m.filter_reason %} ({{m.filter_reason}}){% endif %}</small></span>
+      {# `surfaced` used to be offered here. /triage does not accept it, so the
+         button posted, redirected, and changed nothing. #}
+      <div class="triage-actions">
+        {% for s, label in [('saved','Save'), ('dismissed','Dismiss')] %}
+        <form method="post" action="/triage">
+          <input type="hidden" name="hunt_id" value="{{m.hunt_id}}">
+          <input type="hidden" name="listing_id" value="{{listing.id}}">
+          <input type="hidden" name="status" value="{{s}}">
+          <input type="hidden" name="back" value="/listing/{{listing.id}}">
+          <button {% if m.status == s %}disabled{% endif %}>{{label}}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
+      This listing has not matched a hunt.</div>
+    {% endfor %}
+    {% if matches %}
+    <p class="triage-help">
+      <b>Save</b> moves it to Saved. <b>Dismiss</b> takes it out of the bin and
+      teaches the hunt: dismissed titles become examples of what you do not want
+      in its next prompt.
+    </p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

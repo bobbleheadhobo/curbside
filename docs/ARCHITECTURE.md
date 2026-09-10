@@ -4,6 +4,32 @@ What actually runs, as built. DESIGN.md covers *why*; this covers *what*.
 
 ## 1. The clock
 
+### Waking hours
+
+The bot is asleep outside a window, **noon to 8pm** by default. Outside it,
+`dealbot once --due` does **nothing at all** — no fetch, no judgement, no
+re-check — and leaves no `runs` row.
+
+That makes it the one pause here that can lose data, which is deliberate.
+Nothing found at 3am can be collected at 3am, and every hour awake is requests
+against two sources that throttle silently. Every *other* pause (quota, rate
+limit, spend, connectivity) stops the judging and keeps collecting, because
+those are interruptions rather than decisions.
+
+Three rules keep it from becoming a mystery:
+
+* Only `--due` is gated. A hand-run `dealbot once` always runs.
+* `start == end` means **always on**, not never on — it fails open like every
+  other filter here.
+* Being asleep is stated in the health pill on every page (`Asleep till 12pm`),
+  and the first half hour after waking never reads as "quiet", because the last
+  run is legitimately as old as the night.
+
+The window lives in `settings` and is edited at `/settings`; `config.yaml`
+supplies the starting values and the timezone.
+
+### The timer
+
 A systemd **user** timer fires every **15 minutes** and runs one command:
 
 ```
@@ -18,6 +44,10 @@ is due, so one timer serves every cadence:
 | `sweep:free-nearby` | 15 min | free things evaporate in minutes |
 | `want:tv-stand` | 60 min | priced items sit for days |
 | `want:stacked-ottoman` | 60 min | same |
+
+Those are defaults. Each cadence is editable from `/settings` (a
+`hunt_interval:<hunt_id>` settings row) and clamped to 15 minutes at the low
+end, since the timer cannot fire faster than that anyway.
 
 Each hunt runs **once per source**, so there are 6 hunt×source combinations. A
 run counts toward the cadence only if it finished, had no error, and actually
@@ -150,14 +180,38 @@ split the cache. Missing or empty falls back to the built-in default.
 ## 5. Routing — two bins, two bars
 
 ```
-match = no,  worth_grabbing, score ≥ 5.0   → free finds
-match = yes or unknown,      score ≥ 7.0   → wants
-everything else                            → filed, still searchable
+match = no,  worth_grabbing, score ≥ 5.0, and a bargain   → free finds
+match = yes or unknown,      score ≥ 7.0                  → wants
+everything else                                           → filed, still searchable
 ```
 
 `unknown` lands in **wants**, flagged — a 9.0 unconfirmed TV stand belongs next
 to a confirmed one. `deal_score` is judged *as if* unknowns resolve favourably,
 so one threshold serves both bins and the match field carries the uncertainty.
+
+**"A bargain" only bites on things that cost money.** `worth_grabbing` asks
+whether a sensible person would collect this at this price, which for a fairly
+priced thing is a low bar — a $140 chair the model valued at $160 cleared it and
+was announced in a tab called free finds. A priced listing now needs
+`est_value ≥ 1.4 × price` (`FREE_FIND_VALUE_MULTIPLE`); free listings and ones
+the model would not value pass untouched. In the live bin the genuine finds ran
+3–5×, the filler sat at 1.1–1.2×.
+
+### Leaving a bin
+
+Two different facts, deliberately kept apart:
+
+| | what it means | how |
+|---|---|---|
+| `gone` | stopped **appearing** in results | `mark_gone`, after 3 consecutive misses of that same source — 45 min on the free sweep, 3 h on an hourly want hunt. Reversible: seen again, the status is restored. |
+| `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source: Facebook's item payload carries `is_sold` and `is_live`, and a removed Craigslist posting stops returning a detail payload at all. `sold` is the source saying so; `removed` is only the page no longer resolving. |
+
+The re-check costs requests and no model quota, so it rides along with `once`:
+one detail fetch per bin listing every 6 hours, capped per run, and only for
+statuses you might act on. It fails open — an unreadable answer retires nothing
+and a gated source stops the pass — and a `saved` listing is *marked*, never
+un-saved. Seeing a sold listing again does not resurrect it, in either the
+upsert or the miss counter: Facebook keeps showing sold items in search.
 
 ## 6. Guards
 
@@ -213,27 +267,31 @@ All of this was collected and none of it was visible:
 | `/` wants | matches for your list, unverified ones flagged |
 | `/free` free finds | worth collecting regardless of the list |
 | `/saved` | what you decided to act on (saved + contacted) |
-| `/near` near misses | judged, but under the bar |
+| `/skipped` | judged, then passed over. `/near` 308-redirects here |
 | `/hunt/<id>` | everything one hunt matched, including rejections and why |
 | `/listing/<id>` | detail, score history, price sparkline |
 | `/runs` | every fetch attempt: counts, cost, errors |
+| `/settings` | waking hours, cadences, and the wants list |
+| `/wants/<name>` | one want: what it looks for, its budget, its cadence |
 
-The free page carries a **pause switch** for the sweeps. Unlike every other
-pause here, this one stops the *fetching* too — nothing is collected for a
-paused hunt. That is deliberate: it exists to stop spending on free stuff, not
-to quieten it. The switch lives in the `settings` table rather than in
-`config.yaml`, so the dashboard and a hand edit are never fighting over one
-file, and it is an override *on top of* config — a hunt disabled in config stays
-disabled.
+The runs page carries two **pause switches**: one for the sweeps, one for
+everything. Unlike every other pause here, they stop the *fetching* as well as
+the judging, so nothing at all is collected for a paused hunt. That is
+deliberate — the sweep switch exists to stop spending on free stuff rather than
+to quieten it, and the second one exists for when you want the whole thing to
+stop. They live in the `settings` table rather than in `config.yaml`, so the
+dashboard and a hand edit are never fighting over one file, and they are an
+override *on top of* config: a hunt disabled in config stays disabled.
 
 A paused hunt is announced in a banner on **every** page, and marked `[PAUSED]`
 in `dealbot hunts`. A bot switched off and forgotten looks exactly like a broken
 one.
 
-**Near misses exist so the threshold is falsifiable.** `deal_score` assumes
+**The skipped view exists so the threshold is falsifiable.** `deal_score` assumes
 anything unverified resolves favourably, so a 6 means "even at its best,
 mediocre" -- but a bar you can never see over cannot be calibrated. If good
-things keep appearing there, 7.0 is too high.
+things keep appearing there, 7.0 is too high. It was called "near misses" at
+`/near` until that read as "near me", which is the one thing it never meant.
 
 **Photos are cached locally** for listings that reach a bin, at 512px and around
 34KB each. Facebook's image URLs carry an expiry token and die after roughly
@@ -242,7 +300,46 @@ built on the source URLs would rot a third of its images every week. `/thumb/<id
 serves the local copy and falls back to the source while one exists.
 `dealbot prune-thumbs` drops copies for listings no longer in a bin or triaged.
 
-## 11. Known gaps
+## 11. Where configuration lives
+
+Two writers on one committed file is how you lose a comment, or a whole want.
+So anything the dashboard can change lives in SQLite and `config.yaml` is
+either the seed or is not consulted at all:
+
+| thing | home | file's role |
+|---|---|---|
+| wants | `wants` table | **seeds it once**, then never again |
+| cadences | `settings` `hunt_interval:<id>` | default |
+| waking hours | `settings` `schedule.*` | starting values |
+| timezone | `config.yaml` | the only home. It is a fact, not a preference |
+| pause switches | `settings` `hunt_disabled:<id>` | `enabled:` still wins if false |
+
+The wants seed is a **one-shot**, remembered as `settings['wants.seeded']`.
+Seeding on every start would revert every phone edit at the next tick; seeding
+per missing name would resurrect a want deleted from the web. A deleted want is
+archived rather than dropped, so its name stays taken and its history stays
+readable at `/hunt/want:<name>`.
+
+Because of this, `Config.hunts` is a **computed property** rather than a field:
+the web process stays up for weeks and adding a want has to produce its hunt
+without a restart.
+
+## 12. Installable
+
+Manifest, three icon sizes (including a maskable one), and a service worker
+served from the root so its scope covers the whole site. Android then offers to
+add it to the home screen; the reverse proxy already provides the HTTPS that
+requires.
+
+The worker caches `/static/` and `/thumb/` and **never any HTML**. Half of what
+this bot surfaces is gone within the hour, and a cached card claiming a free
+sofa is still on the kerb sends someone across town for nothing — so pages are
+network-only, with a plain offline notice when there is no connection.
+
+The icon is drawn by `tools/make_icons.py`, which emits the SVG and every PNG
+from one geometry so the browser tab and the home-screen tile cannot drift.
+
+## 13. Known gaps
 
 - **Relist detection** is inert without seller ids.
 - **Comparables from our own price history** need a month of observations; that

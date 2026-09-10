@@ -1,15 +1,107 @@
 {% extends "base.html" %}
+{% block title %}Runs &middot; Curbside{% endblock %}
+{% block mainclass %}wide{% endblock %}
 {% block content %}
-<h1>Runs</h1>
-<p class="meta">Every fetch attempt, success or failure. A quiet feed is only good news if these look healthy.</p>
-<div class="wrap"><table>
-<tr><th>started</th><th>hunt</th><th>source</th><th>fetched</th><th>new</th><th>cand</th><th>scored</th><th>wanted</th><th>free</th><th>imgs</th><th>cost</th><th>error</th></tr>
-{% for r in runs %}
-<tr class="{{'err' if r.error}}">
-<td>{{r.started_at}}</td><td>{{r.hunt_id}}</td><td>{{r.source}}</td>
-<td>{{r.n_fetched}}</td><td>{{r.n_new}}</td><td>{{r.n_candidates}}</td>
-<td>{{r.n_scored}}</td><td>{{r.n_wanted}}</td><td>{{r.n_free_find}}</td><td>{{r.n_image_checks}}</td><td>${{ '%.4f'|format(r.cost_usd) }}</td>
-<td style="white-space:normal">{{r.error or ''}}</td></tr>
-{% else %}<tr><td colspan="11">no runs yet</td></tr>{% endfor %}
-</table></div>
+<div class="pagehead">
+  <h1>Runs</h1>
+  <p class="stats">
+    <i><b>{{runs|length}}</b> fetch attempts</i>
+    {% set failed = runs|selectattr('error')|list|length %}
+    {% if failed %}
+      <i class="hi"><b>{{failed}}</b> failed</i>{% endif %}
+    <i><b>${{ '%.2f'|format(runs|map(attribute='cost_usd')|reject('none')|sum) }}</b> spent</i>
+  </p>
+  <p>Every fetch attempt, success or failure.</p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Searching</h2>
+  <div class="control-row">
+    <span class="who">Free-stuff sweeps
+      <small>{% if sweeps_paused %}Off. Want hunts still run and can still put
+        things here.{% else %}Running every 15 minutes.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/hunts/toggle">
+        <input type="hidden" name="kind" value="sweep">
+        <input type="hidden" name="enable" value="{{ '1' if sweeps_paused else '0' }}">
+        <input type="hidden" name="back" value="/runs">
+        <button {% if sweeps_paused %}class="primary"{% endif %}>
+          {%- if sweeps_paused %}Resume free-stuff searches
+          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause free-stuff searches{% endif -%}
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="control-row">
+    <span class="who">Everything
+      <small>{% if all_paused %}All {{hunts|length}} hunts are off. Nothing is
+        being collected.{% else %}{{hunts|length}} hunt{{ '' if hunts|length == 1 else 's' }},
+        wants and sweeps.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/hunts/toggle">
+        <input type="hidden" name="kind" value="all">
+        <input type="hidden" name="enable" value="{{ '1' if all_paused else '0' }}">
+        <input type="hidden" name="back" value="/runs">
+        <button {% if all_paused %}class="primary"{% endif %}>
+          {%- if all_paused %}Resume all searching
+          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause all searching{% endif -%}
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <div class="wrap"><table class="responsive">
+    <thead><tr>
+      <th>Started</th><th>Hunt</th><th>Source</th>
+      <th class="n">Fetched</th><th class="n">New</th><th class="n">Cand</th>
+      <th class="n">Scored</th><th class="n">Wanted</th><th class="n">Free</th>
+      <th class="n">Imgs</th><th class="n">Cost</th><th>Note</th>
+    </tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr class="{{'err' if r.error}}">
+      <td class="lead num" data-label="Started">{{ (r.started_at or '')[:16]|replace('T',' ') }}</td>
+      <td data-label="Hunt">{{r.hunt_id}}</td>
+      <td data-label="Source">{{r.source}}</td>
+      <td class="n num {{'zero' if not r.n_fetched}}" data-label="Fetched">{{r.n_fetched}}</td>
+      <td class="n num {{'zero' if not r.n_new}}" data-label="New">{{r.n_new}}</td>
+      <td class="n num {{'zero' if not r.n_candidates}}" data-label="Cand">{{r.n_candidates}}</td>
+      <td class="n num {{'zero' if not r.n_scored}}" data-label="Scored">{{r.n_scored}}</td>
+      <td class="n num {{'zero' if not r.n_wanted}}" data-label="Wanted">{{r.n_wanted}}</td>
+      <td class="n num {{'zero' if not r.n_free_find}}" data-label="Free">{{r.n_free_find}}</td>
+      <td class="n num {{'zero' if not r.n_image_checks}}" data-label="Imgs">{{r.n_image_checks}}</td>
+      <td class="n num" data-label="Cost">${{ '%.4f'|format(r.cost_usd or 0) }}</td>
+      {% if r.error %}<td class="errtext span2" data-label="Error">{{r.error}}</td>
+      {% elif r.warning %}<td class="warntext span2" data-label="Warning">{{r.warning}}</td>
+      {% else %}<td class="span2 zero empty-note" data-label="Note">&mdash;</td>{% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="12" class="nostack">
+      <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
+        <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+        <b>No runs yet</b>
+        <p>Nothing has fetched. Run <code>dealbot once --no-score</code> to
+          test the pipeline without spending anything.</p>
+      </div></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="panel">
+  <h2>Hunts</h2>
+  <div class="huntlist">
+    {% for h in hunts %}
+    <a href="/hunt/{{h.id}}">
+      <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>{{h.name}}
+      <span class="kind">{{ 'paused' if h in paused_hunts else h.kind }}</span>
+    </a>
+    {% else %}
+    <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
+      No hunts configured. Add one to <code>config.yaml</code>.</div>
+    {% endfor %}
+  </div>
+</div>
 {% endblock %}

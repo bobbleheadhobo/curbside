@@ -199,6 +199,13 @@ class DiscordNotifier:
         # what this run produced. Otherwise the per-run cap DROPS rather than
         # defers, and anything that landed in a bin while notifications were off
         # is never revisited -- next run it is `unchanged` and never surfaces.
+        # Per RUN. Set only in __init__, this was really per process: one
+        # `dealbot run` daemon builds a single notifier and loops forever, so
+        # after ten messages it went permanently silent with nothing but an INFO
+        # line to show for it. In `once` the budget was shared across every
+        # hunt, so a busy free sweep left the want hunts nothing.
+        self._sent_this_run = 0
+
         pending = self.store.pending_notifications(hunt.id)
         seen = {l.id for l, _ in pending}
         queue = list(pending) + [(l, s) for l, s in surfaced if l.id not in seen]

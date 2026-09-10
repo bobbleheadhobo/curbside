@@ -18,24 +18,79 @@ from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 from .db import Store
-from .filters import gate
+from .filters import gate, matches_any
 from .models import GateResult
 from dataclasses import replace
 
-from .models import Hunt, Listing, Location, RunResult, Score
+from .models import Candidate, Hunt, Listing, Location, RunResult, Score
 from .notify.base import Notifier
-from .scoring.base import Scorer
+from .scoring.base import Scorer, TriageResult
 from .scoring.claude_code import ScoringUnavailable
-from .sources.base import Source, validate
+from .sources.base import Source, SourceBlocked, validate
 
 log = logging.getLogger("dealbot.pipeline")
 
+# How far under its value a PRICED listing has to be before the free-finds bin
+# will take it. `worth_grabbing` asks "would a sensible person collect this at
+# this price?", which for a fairly priced thing is a low bar -- a $140 chair
+# estimated at $160 cleared it, and "fair value, nothing special" is not a find.
+# The estimate is the model's, so this is a floor rather than a judgement:
+# genuine bargains in the live bin run 3-5x, the filler sits at 1.1-1.2x.
+# Free listings are unaffected -- free costs a drive, not money.
+FREE_FIND_VALUE_MULTIPLE = 1.4
 
-def _would_bin(score: Score, hunt: Hunt) -> bool:
-    """Whether this score alone puts a listing in front of you."""
+
+def _is_a_bargain(score: Score, listing: Listing) -> bool:
+    """Whether a priced listing is far enough under its value to be a find.
+
+    Fails OPEN, twice over: a free listing (or one with no price shown) and a
+    listing the model would not put a value on both pass. An unpriced find is
+    the thing this bot exists for, and a missing estimate is not evidence
+    against a listing.
+    """
+    price = listing.price_cents
+    if not price:                       # free, or no price shown
+        return True
+    if score.est_value_cents is None:   # no estimate: not a reason to drop it
+        return True
+    return score.est_value_cents >= FREE_FIND_VALUE_MULTIPLE * price
+
+
+def _would_bin(score: Score, hunt: Hunt, listing: Listing) -> bool:
+    """Whether this score alone puts a listing in front of you.
+
+    Must agree with the routing in stage 6, or the image pass is spent looking
+    at things that will not be shown either way.
+    """
     if score.match in ("yes", "unknown"):
         return score.deal_score >= hunt.min_deal_score
-    return bool(score.worth_grabbing) and score.deal_score >= hunt.free_find_min_score
+    return (bool(score.worth_grabbing)
+            and score.deal_score >= hunt.free_find_min_score
+            and _is_a_bargain(score, listing))
+
+
+def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
+                         notes: dict[str, str], model_name: str) -> int:
+    """Record a triage drop as a SCORE, not as a filter rejection.
+
+    Without this the gate has no memory of it -- `last_scores` stays empty, the
+    listing is re-admitted as "new" on the very next run, and it is re-triaged
+    forever. Storing it also means a later price drop reopens it, which is
+    exactly what should happen.
+    """
+    now = datetime.now(timezone.utc)
+    model = f"{model_name}:triage"
+    for cand in dropped:
+        score = Score(
+            listing_id=cand.listing.id, hunt_id=hunt.id, model=model,
+            scored_at=now, match="no", deal_score=0.0,
+            est_value_cents=None, condition=None, matched_want=None,
+            worth_grabbing=False, unknowns=(), requirements=(), red_flags=(),
+            reasoning="dropped in triage: "
+                      + (notes.get(cand.listing.id) or "no reason given"))
+        store.save_score(score, priced_at_cents=cand.listing.price_cents)
+        store.set_status(hunt.id, cand.listing.id, "scored")
+    return len(dropped)
 
 
 def run_hunt(
@@ -71,6 +126,13 @@ def run_hunt(
     """
     run_id = store.start_run(hunt, source.name)
     result = RunResult(run_id=run_id, hunt_id=hunt.id)
+
+    # The previous run's spend is in the runs table by now, so the scorer's
+    # in-memory counter must start over -- otherwise `cost_since` and that
+    # counter hold the same dollars and the daily ceiling arrives at twice the
+    # real spend, stopping judgement at about half the configured limit.
+    if hasattr(scorer, "begin_run"):
+        scorer.begin_run()
 
     # --- 1. fetch -----------------------------------------------------------
     # A dead source must fail LOUDLY in the runs table. Silently returning zero
@@ -150,17 +212,27 @@ def run_hunt(
     # keeps the request count low enough to stay unremarkable.
     if hasattr(source, "detail") and gr.candidates:
         enriched: list = []
+        failed = 0
         for cand in gr.candidates:
             try:
                 full = source.detail(cand.listing)
-            except Exception as exc:                      # noqa: BLE001
+            except SourceBlocked as exc:
                 # Blocked or out of request budget. Stop enriching, but do NOT
                 # kill the run: what was already enriched is good, and the rest
                 # simply stay `new` and are retried next time. Same principle as
                 # a scoring outage -- lose progress, never data.
                 log.warning("detail fetch stopped at %s: %s", cand.listing.id, exc)
-                result.error = f"detail fetch stopped: {type(exc).__name__}: {exc}"
+                result.warning = f"detail fetch stopped: {type(exc).__name__}: {exc}"
                 break
+            except Exception as exc:                      # noqa: BLE001
+                # ONE payload we could not parse -- an image entry that is not a
+                # string, an attribute that is not a dict. Skipping costs this
+                # listing a deferral; breaking used to cost every candidate
+                # behind it, which is the difference between one listing waiting
+                # and a whole run going unjudged.
+                log.warning("detail failed for %s: %s", cand.listing.id, exc)
+                failed += 1
+                continue
             if full is None:
                 # Detail unavailable (removed, or the parser missed it). Judging
                 # the index-level record means judging a title like "Free" with
@@ -177,6 +249,8 @@ def run_hunt(
         skipped = len(gr.candidates) - len(enriched)
         if skipped:
             log.info("%d candidates left unenriched for next run", skipped)
+        if failed and result.warning is None:
+            result.warning = f"{failed} detail fetches failed"
 
         # Distance is only knowable after enrichment, so the radius check has to
         # run again here rather than in the gate.
@@ -209,6 +283,24 @@ def run_hunt(
                      hunt.max_age_days)
         gr = GateResult(candidates=fresh, rejected=gr.rejected + stale)
 
+    # --- 4b3. exclude keywords, now that there is a description --------------
+    # The gate only ever sees the search feed, where Facebook supplies no
+    # description at all and Craigslist hardcodes None -- so an exclude term
+    # that appears only in the body cannot fire there, and the listing gets
+    # paid for at triage AND at appraisal. Same reason `too_far` and `too_old`
+    # are re-checked here.
+    if hunt.exclude and gr.candidates:
+        keep, excluded = [], []
+        for cand in gr.candidates:
+            if (hit := matches_any(cand.listing, hunt.exclude)):
+                excluded.append((cand.listing.id, f"excluded_kw:{hit}"))
+            else:
+                keep.append(cand)
+        if excluded:
+            store.record_rejections(hunt.id, excluded)
+            log.info("%d listings excluded on their description", len(excluded))
+        gr = GateResult(candidates=keep, rejected=gr.rejected + excluded)
+
     # --- 4c. cross-source duplicates -----------------------------------------
     # People post the same thing to both marketplaces. This runs for EVERY
     # source, not only ones with a detail fetch -- it lived inside the
@@ -236,10 +328,12 @@ def run_hunt(
     result.n_candidates = len(gr.candidates)
 
     if no_score or not gr.candidates:
-        # result.error may already be set by a partial enrichment. The runs table
-        # is the only place a degraded run is visible, so it has to go in.
+        # result.warning may already be set by a partial enrichment. The runs
+        # table is the only place a degraded run is visible, so it has to go in
+        # -- in `warning`, because `error` is what last_success_at reads.
         store.finish_run(run_id, n_fetched=result.n_fetched, n_new=result.n_new,
                          n_candidates=result.n_candidates, error=result.error,
+                         warning=result.warning,
                          full_pass=0 if no_score else 1)
         return result
 
@@ -249,39 +343,32 @@ def run_hunt(
     # so a rate limit or an outage costs judgement for a few hours, never data.
     try:
         triaged = scorer.triage(hunt, gr.candidates)
-        survivors, triage_notes = triaged.kept, triaged.notes
-        result.cost_usd += triaged.cost_usd
     except ScoringUnavailable as exc:
         log.warning("scoring unavailable for %s: %s", hunt.id, exc)
+        # Chunks that completed before the pause were BILLED. Their cost has to
+        # reach `runs.cost_usd`, which is the only thing the daily ceiling
+        # reads, and their verdicts have to be recorded or those listings are
+        # triaged and charged for a second time on the next run.
+        done = getattr(exc, "partial", None)
+        if isinstance(done, TriageResult):
+            result.cost_usd += done.cost_usd
+            result.n_scored += _record_triage_drops(
+                store, hunt,
+                [c for c in gr.candidates if c.listing.id in done.notes],
+                done.notes, scorer.name)
+        result.error = f"scoring skipped: {exc}"
         store.finish_run(run_id, n_fetched=result.n_fetched, n_new=result.n_new,
                          n_candidates=result.n_candidates,
-                         error=f"scoring skipped: {exc}")
-        result.error = f"scoring skipped: {exc}"
+                         n_scored=result.n_scored, cost_usd=result.cost_usd,
+                         error=result.error, warning=result.warning)
         return result
 
+    survivors, triage_notes = triaged.kept, triaged.notes
+    result.cost_usd += triaged.cost_usd
     kept_ids = {c.listing.id for c in survivors}
-
-    # A triage drop is a judgement, not a filter outcome, so it is recorded as a
-    # score. Without this the gate has no memory of it -- `last_scores` stays
-    # empty, the listing is re-admitted as "new" on the very next run, and it is
-    # re-triaged forever. Storing it also means a later price drop reopens it,
-    # which is exactly what should happen.
-    now = datetime.now(timezone.utc)
-    triage_model = f"{scorer.name}:triage"
-    dropped_scores = [
-        Score(listing_id=c.listing.id, hunt_id=hunt.id, model=triage_model,
-              scored_at=now, match="no", deal_score=0.0,
-              est_value_cents=None, condition=None, matched_want=None,
-              worth_grabbing=False, unknowns=(), requirements=(), red_flags=(),
-              reasoning="dropped in triage: "
-                        + (triage_notes.get(c.listing.id) or "no reason given"))
-        for c in gr.candidates if c.listing.id not in kept_ids
-    ]
-    for score in dropped_scores:
-        listing = next(c.listing for c in gr.candidates
-                       if c.listing.id == score.listing_id)
-        store.save_score(score, priced_at_cents=listing.price_cents)
-        store.set_status(hunt.id, score.listing_id, "scored")
+    n_dropped = _record_triage_drops(
+        store, hunt, [c for c in gr.candidates if c.listing.id not in kept_ids],
+        triage_notes, scorer.name)
 
     interrupted = None
     try:
@@ -297,20 +384,23 @@ def run_hunt(
         store.save_score(score, priced_at_cents=by_id[score.listing_id].price_cents)
         store.set_status(hunt.id, score.listing_id, "scored")
         result.cost_usd += score.cost_usd
-    result.n_scored = len(scores) + len(dropped_scores)
+    result.n_scored = len(scores) + n_dropped
 
     if interrupted is not None:
+        # Recorded, but NOT returned on. Everything appraised before the pause
+        # is saved with status `scored`; if it never reaches a bin, the gate
+        # rejects it as `unchanged` on every later run and it is never surfaced
+        # and never announced -- the same silent loss that left two TV stands
+        # sitting un-announced. So routing and notification below still run,
+        # and only the image pass is skipped.
         result.error = f"scoring interrupted: {interrupted}"
-        store.finish_run(run_id, error=result.error, n_fetched=result.n_fetched,
-                         n_new=result.n_new, n_candidates=result.n_candidates,
-                         n_scored=result.n_scored, cost_usd=result.cost_usd)
-        return result
 
     # --- 5b. image pass, only where the model asked for one -----------------
     # Both scores are kept. The text judgement stays in the history next to the
     # one that looked, so "the photos changed my mind" is visible rather than
     # overwritten.
-    if image_provider is not None and hasattr(scorer, "resolve_with_images"):
+    if (interrupted is None and image_provider is not None
+            and hasattr(scorer, "resolve_with_images")):
         for i, score in enumerate(scores):
             if not score.needs_images or result.n_image_checks >= max_image_checks:
                 continue
@@ -320,11 +410,11 @@ def run_hunt(
             # scoring 3/10 are indeed poor. Its real value is at the top -- a 9
             # that photos reveal to be junk saves a wasted trip -- and that case
             # is preserved, because such a listing is in a bin already.
-            if not _would_bin(score, hunt):
+            listing = by_id[score.listing_id]
+            if not _would_bin(score, hunt, listing):
                 log.debug("skipping image pass for %s (scored %.0f)",
                           score.listing_id, score.deal_score)
                 continue
-            listing = by_id[score.listing_id]
             try:
                 better = scorer.resolve_with_images(hunt, listing, score,
                                                     image_provider)
@@ -350,7 +440,8 @@ def run_hunt(
               and s.deal_score >= hunt.min_deal_score]
     free_finds = [s for s in scores
                   if s.match == "no" and s.worth_grabbing
-                  and s.deal_score >= hunt.free_find_min_score]
+                  and s.deal_score >= hunt.free_find_min_score
+                  and _is_a_bargain(s, by_id[s.listing_id])]
 
     for s in wanted:
         store.set_status(hunt.id, s.listing_id, "wanted")
@@ -371,7 +462,7 @@ def run_hunt(
             log.exception("notifier %s failed", notifier.name)
     result.n_surfaced = len(surfaced)
 
-    store.finish_run(run_id, error=result.error,
+    store.finish_run(run_id, error=result.error, warning=result.warning,
                      n_fetched=result.n_fetched, n_new=result.n_new,
                      n_candidates=result.n_candidates, n_scored=result.n_scored,
                      n_surfaced=result.n_surfaced, n_wanted=result.n_wanted,

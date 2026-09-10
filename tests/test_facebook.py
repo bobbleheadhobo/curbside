@@ -184,3 +184,58 @@ def test_the_state_is_kept_on_the_city_label(src):
     raws = src.parse_search_html((HTML / "search-free-abq.html").read_text(errors="replace"))
     cities = {l.city for r in raws if (l := src.parse(r)) and l.city}
     assert any(c.endswith(", NM") for c in cities)
+
+
+# --- photos ------------------------------------------------------------------
+
+def test_photos_come_from_the_listing_not_from_the_page_around_it(src):
+    """REGRESSION: photos were regex-scraped from the whole item page -- every
+    `scontent` URI on it, first six in document order. An item page carries
+    ~32 of those (recommendation carousels, "more like this", the seller's
+    other items), so other people's listings were stored as this one's photos:
+    one file ended up filed against 71 different listings, and the image pass
+    was shown a mini bike as a TV stand's second photo. On this very page, all
+    six stored photos belonged to something else."""
+    raws = src.parse_search_html((HTML / "search-free-abq.html").read_text(errors="replace"))
+    stub = next(src.parse(r) for r in raws if r.source_id == "1354512002236671")
+    full = src.parse_detail_html(
+        (HTML / "item-1354512002236671.html").read_text(errors="replace"), stub)
+
+    assert len(full.images) == 6
+    # The seller's own six, in their order, from `listing_photos`.
+    assert "589577616_1370775094546670" in full.images[0]
+    # ...and the carousel image this page shares with every other item page.
+    assert not any("789580349_1950363825919734" in u for u in full.images)
+    # Full size, not the 260px crop the carousel uses: the downscale to 512
+    # was a no-op on what we used to send.
+    assert all("s960x960" in u for u in full.images)
+
+
+def test_photos_fall_back_to_the_primary_one_rather_than_to_the_page(src):
+    """One right photo beats six that may belong to somebody else. A listing
+    with no photo set simply gets no image pass."""
+    from dealbot.models import Listing
+    stub = Listing(id="facebook:9", source="facebook", source_id="9",
+                   title="Couch", description=None, price_cents=0,
+                   currency="USD", url="u")
+    html = ('<script type="application/json">'
+            '{"x":{"id":"9","marketplace_listing_title":"Couch",'
+            '"primary_listing_photo":{"image":{"uri":"https://scontent/mine.jpg"}}}}'
+            '</script>')
+    assert src.parse_detail_html(html, stub).images == ("https://scontent/mine.jpg",)
+
+
+def test_another_listings_photo_set_on_the_same_page_is_ignored(src):
+    """The id check is the whole safeguard: a product-details target for some
+    OTHER listing is exactly what the carousel is made of."""
+    from dealbot.models import Listing
+    stub = Listing(id="facebook:9", source="facebook", source_id="9",
+                   title="Couch", description=None, price_cents=0,
+                   currency="USD", url="u")
+    html = ('<script type="application/json">'
+            '{"a":{"id":"9","marketplace_listing_title":"Couch",'
+            '"primary_listing_photo":{"image":{"uri":"https://scontent/mine.jpg"}}},'
+            '"b":{"id":"77","listing_photos":['
+            '{"image":{"uri":"https://scontent/somebody-elses.jpg"}}]}}'
+            '</script>')
+    assert src.parse_detail_html(html, stub).images == ("https://scontent/mine.jpg",)

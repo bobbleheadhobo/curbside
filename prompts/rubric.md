@@ -45,9 +45,17 @@ For free items price cannot be wrong, so judge usefulness and legitimacy instead
 is it actually worth hauling, and is it real?
 
 `worth_grabbing` is INDEPENDENT of the wants. Setting the wants aside entirely:
-would a sensible person go and collect this at this price? A working appliance,
-solid furniture, usable tools or materials given away free are worth grabbing
-even though they match nothing on the list. Broken things and junk are not.
+is this worth going out of your way for? A working appliance, solid furniture,
+usable tools or materials given away free are worth grabbing even though they
+match nothing on the list. Broken things and junk are not.
+
+**What that asks depends on the price.** Free costs a drive, so the question is
+only whether the thing is worth hauling and whether it is real. Anything with a
+price costs the price, so `worth_grabbing` means a BARGAIN -- clearly less than
+the thing is worth, enough that passing it up would be a mistake. Fairly priced
+is not worth grabbing. A $140 chair worth $160 is a fine purchase and a bad
+find; say so and set `worth_grabbing` false. Judge the same thing free, and it
+is obviously worth grabbing.
 
 Flag red flags rather than silently discounting them: stock photos, a price too
 good for the model, a description that is really a service ad, dealer spam.

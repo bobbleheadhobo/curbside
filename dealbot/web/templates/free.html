@@ -1,20 +1,31 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
+{% block title %}Free finds &middot; Curbside{% endblock %}
 {% block content %}
-<form class="switch" method="post" action="/hunts/toggle">
-  <input type="hidden" name="kind" value="sweep">
-  <input type="hidden" name="enable" value="{{ '1' if sweeps_paused else '0' }}">
-  <input type="hidden" name="back" value="/free">
-  <button>{{ 'resume free-stuff searches' if sweeps_paused else 'pause free-stuff searches' }}</button>
-</form>
-<h1>Free finds &mdash; {{total}}</h1>
-{% if truncated %}<p class="meta">showing the top {{items|length}}</p>{% endif %}
-{% if sweeps_paused %}
-<p class="meta">Free sweeps are off. Want hunts still run, and they can still
-put things here &mdash; a free ottoman found by the ottoman hunt is a free find.</p>
-{% endif %}
-<p class="meta">Nothing here matches a want. It is here because it is worth
-collecting anyway &mdash; which is the whole reason to sweep for free listings
-rather than only searching for what you already know you want.</p>
+{% set dists = items|map(attribute='distance_mi')|reject('none')|list %}
+{% set sitting = items|selectattr('age_days')|selectattr('age_days','ge',21)|list|length %}
+<div class="pagehead">
+  <h1>Free finds</h1>
+  <p class="stats">
+    <i><b>{{total}}</b> waiting</i>
+    {% if dists %}
+      <i>nearest <b>{{ dists|min|round|int }}</b> mi</i>{% endif %}
+    {% if sitting %}
+      <i><b>{{sitting}}</b> sitting 3wk+</i>{% endif %}
+    {% if truncated %}
+      <i>showing top {{items|length}}</i>{% endif %}
+  </p>
+  <p>Nothing here matches a want. It is worth grabbing anyway.</p>
+</div>
+
+<div class="stack">
 {% for i in items %}{{ card(i, '/free') }}{% else %}
-<div class="empty">Nothing worth grabbing right now.</div>{% endfor %}
+<div class="empty">
+  <svg class="i" aria-hidden="true"><use href="#i-free"/></svg>
+  <b>Nothing worth grabbing right now</b>
+  <p>Only listings worth the drive get this far.{% if sweeps_paused %}
+    Sweeps are paused, so nothing new is coming in. Resume them in
+    <a href="/runs">runs</a>.{% endif %}</p>
+</div>
+{% endfor %}
+</div>
 {% endblock %}

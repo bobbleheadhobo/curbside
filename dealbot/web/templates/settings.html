@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Settings &middot; Curbside{% endblock %}
+{% block content %}
+{% set live = wants|rejectattr('stored.archived')|list %}
+{% set gone = wants|selectattr('stored.archived')|list %}
+<div class="pagehead">
+  <h1>Settings</h1>
+  <p class="stats">
+    <i><b>{{ live|length }}</b> want{{ '' if live|length == 1 else 's' }}</i>
+    <i><b>{{ schedule.window_label if schedule.enabled else 'Always' }}</b>
+      {{ 'awake' if schedule.enabled else 'on' }}</i>
+  </p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Hours</h2>
+  <div class="state-line">
+    <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
+    <span><b>{{ schedule.state_label() }}</b>{% if schedule.tz_name %} &middot; {{ schedule.tz_name }}{% endif %}</span>
+  </div>
+  <form method="post" action="/settings/hours">
+    <div class="field inline-check">
+      <input type="checkbox" id="sched-on" name="enabled" value="1"
+             {% if schedule.enabled %}checked{% endif %}>
+      <div>
+        <label class="lbl" for="sched-on">Sleep outside these hours</label>
+        <p class="hint">Off means it runs around the clock.</p>
+      </div>
+    </div>
+    <div class="field">
+      <div class="row">
+        <label><span class="lbl">From</span>
+          <input type="time" name="start" value="{{ start }}"></label>
+        <label><span class="lbl">To</span>
+          <input type="time" name="end" value="{{ end }}"></label>
+      </div>
+      <p class="hint">Asleep it does nothing at all. No searching, no judging,
+        no checking whether saved things are still there.</p>
+    </div>
+    <div class="formactions"><button class="primary">Save hours</button></div>
+  </form>
+</div>
+
+{% if sweeps %}
+<div class="panel" style="margin-bottom:18px">
+  <h2>Free stuff</h2>
+  {% for s in sweeps %}
+  <form method="post" action="/settings/interval">
+    <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
+    <div class="field">
+      <label class="lbl" for="iv-{{ loop.index }}">How often to sweep</label>
+      <select id="iv-{{ loop.index }}" name="minutes">
+        {% for mins, label in intervals %}
+        <option value="{{ mins }}"
+          {% if mins == s.hunt.interval_minutes %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">Free things go in minutes, so this one is worth checking
+        often.{% if s.paused %} Paused right now.{% endif %}</p>
+    </div>
+    <div class="formactions"><button>Save</button></div>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Wants</h2>
+  {% for r in live %}
+  <div class="wantrow {{ 'off' if r.paused }}">
+    <a class="grow" href="/wants/{{ r.w.name }}">
+      <b>{{ r.w.name }}</b>
+      <small>
+        Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}
+        {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,
+              r.hunt.interval_minutes ~ ' min')|lower }}
+        {%- else %} &middot; free stuff only{% endif %}
+        {%- if r.matched %} &middot; {{ r.matched }} matched{% endif %}
+        {%- if r.paused %} &middot; paused{% endif %}
+      </small>
+    </a>
+    <svg class="i go" aria-hidden="true"><use href="#i-open"/></svg>
+  </div>
+  {% else %}
+  <div style="padding:16px 15px;color:var(--dim);font-size:13.5px">
+    Nothing on the list. The free sweep still runs and still finds things.
+  </div>
+  {% endfor %}
+  <div class="formactions">
+    <a class="btn primary" href="/wants/new">
+      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add a want</a>
+  </div>
+  <p class="settings-note">A new want is judged against listings found
+    <b>from now on</b>. Things already in the archive were judged against the
+    list as it stood then, and are not judged again.</p>
+</div>
+
+{% if gone %}
+<div class="panel" style="margin-top:18px">
+  <h2>Removed</h2>
+  {% for r in gone %}
+  <div class="wantrow off">
+    <a class="grow" href="/hunt/{{ r.hunt_id }}">
+      <b>{{ r.w.name }}</b>
+      <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
+        still readable.</small>
+    </a>
+    <form method="post" action="/wants/archive">
+      <input type="hidden" name="name" value="{{ r.w.name }}">
+      <input type="hidden" name="restore" value="1">
+      <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

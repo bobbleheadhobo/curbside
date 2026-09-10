@@ -1,0 +1,689 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-09T00:00:00Z",
+  "title": "Design System: Curbside",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Marketplace Blue",
+        "canonical": "#2b64d6",
+        "dark": "#6f9dff",
+        "tonalRamp": [
+          "#0b1d47",
+          "#12306e",
+          "#1b4499",
+          "#2559c6",
+          "#2b64d6",
+          "#6f9dff",
+          "#a9c3ff",
+          "#eaf0fe"
+        ],
+        "derivation": "Hover/pressed states are mixed from the token: color-mix(in srgb, var(--accent) 88%, #000). #000 is a mixing operand, not a palette entry.",
+        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better."
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Blue Wash",
+        "canonical": "#eaf0fe",
+        "dark": "#1a2237",
+        "tonalRamp": [
+          "#0f1626",
+          "#1a2237",
+          "#26355b",
+          "#3a5089",
+          "#5679c4",
+          "#8aa6e8",
+          "#c3d4f7",
+          "#eaf0fe"
+        ]
+      },
+      "good": {
+        "role": "tertiary",
+        "displayName": "Confirmation Green",
+        "canonical": "#0f7040",
+        "dark": "#4bd08a",
+        "tonalRamp": [
+          "#062418",
+          "#0a3f26",
+          "#0f7040",
+          "#159257",
+          "#2bb478",
+          "#4bd08a",
+          "#93e6bb",
+          "#e6f4ec"
+        ],
+        "note": "Score of 7 or better, the word FREE, and the want check glyph. Its --good-soft companion is unreferenced since the want and drop chips turned neutral, and is kept as a recorded reserve completing the semantic soft-fill triad."
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Attention Amber",
+        "canonical": "#8a5300",
+        "dark": "#e8b155",
+        "tonalRamp": [
+          "#2c2213",
+          "#4a2f00",
+          "#6b4100",
+          "#8a5300",
+          "#b47200",
+          "#e8b155",
+          "#f4d29a",
+          "#fdf1de"
+        ]
+      },
+      "bad": {
+        "role": "tertiary",
+        "displayName": "Problem Red",
+        "canonical": "#b52424",
+        "dark": "#f08b84",
+        "tonalRamp": [
+          "#301a19",
+          "#5c1414",
+          "#8a1c1c",
+          "#b52424",
+          "#d64b45",
+          "#f08b84",
+          "#f7bab5",
+          "#fdeceb"
+        ]
+      },
+      "bg": {
+        "role": "neutral",
+        "displayName": "Tinted Ground",
+        "canonical": "#f4f4f6",
+        "dark": "#0f1012",
+        "tonalRamp": [
+          "#0f1012",
+          "#17181b",
+          "#1d1e22",
+          "#26272c",
+          "#5f5f6a",
+          "#6d6d78",
+          "#e5e5ea",
+          "#f4f4f6"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "dark": "#17181b",
+        "tonalRamp": [
+          "#0f1012",
+          "#17181b",
+          "#1d1e22",
+          "#26272c",
+          "#eeeef2",
+          "#f4f4f6",
+          "#fafafb",
+          "#ffffff"
+        ]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Surface",
+        "canonical": "#ffffff",
+        "dark": "#1d1e22",
+        "tonalRamp": [
+          "#0f1012",
+          "#17181b",
+          "#1d1e22",
+          "#26272c",
+          "#eeeef2",
+          "#f4f4f6",
+          "#fafafb",
+          "#ffffff"
+        ]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#101014",
+        "dark": "#edeef1",
+        "tonalRamp": [
+          "#101014",
+          "#26272c",
+          "#4a4a55",
+          "#5f5f6a",
+          "#6d6d78",
+          "#c9c9d2",
+          "#e5e5ea",
+          "#edeef1"
+        ]
+      },
+      "dim": {
+        "role": "neutral",
+        "displayName": "Dim",
+        "canonical": "#5f5f6a",
+        "dark": "#9b9daa",
+        "tonalRamp": [
+          "#101014",
+          "#26272c",
+          "#4a4a55",
+          "#5f5f6a",
+          "#6d6d78",
+          "#9b9daa",
+          "#c9c9d2",
+          "#eeeef2"
+        ],
+        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better."
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Faint",
+        "canonical": "#6d6d78",
+        "dark": "#8b8d99",
+        "tonalRamp": [
+          "#101014",
+          "#26272c",
+          "#4a4a55",
+          "#6d6d78",
+          "#8b8d99",
+          "#c9c9d2",
+          "#e5e5ea",
+          "#f4f4f6"
+        ],
+        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better.",
+        "note": "Carries text, not decoration: the /10 unit, struck-through prices, 'no photo', 'no price', and every score under 5.0."
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e5e5ea",
+        "dark": "#26272c",
+        "tonalRamp": [
+          "#0f1012",
+          "#1f2024",
+          "#26272c",
+          "#4a4a55",
+          "#6d6d78",
+          "#e5e5ea",
+          "#eeeef2",
+          "#f4f4f6"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Soft Hairline",
+        "canonical": "#eeeef2",
+        "dark": "#1f2024",
+        "tonalRamp": [
+          "#0f1012",
+          "#1f2024",
+          "#26272c",
+          "#4a4a55",
+          "#6d6d78",
+          "#e5e5ea",
+          "#eeeef2",
+          "#fafafb"
+        ]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "On Accent",
+        "canonical": "#ffffff",
+        "dark": "#0f1012",
+        "tonalRamp": [
+          "#0f1012",
+          "#26272c",
+          "#5f5f6a",
+          "#6d6d78",
+          "#e5e5ea",
+          "#eeeef2",
+          "#f4f4f6",
+          "#ffffff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "Page Title",
+        "purpose": "One per page in .pagehead, plain and unaccompanied; the old count beside it moved into the stats line."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Price and deal score — the two numbers that decide, set as a matched pair with tabular figures."
+      },
+      "row-title": {
+        "displayName": "Row Title",
+        "purpose": "Listing title inside a card, clamped to two lines."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Document default."
+      },
+      "prose": {
+        "displayName": "Prose",
+        "purpose": "Seller descriptions on the detail page; capped at 68ch, preserves source whitespace."
+      },
+      "secondary": {
+        "displayName": "Secondary",
+        "purpose": "Page-head explanations (62ch cap), buttons, notices, disclosure bodies."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Distance, city, age, disclosure summaries."
+      },
+      "chip": {
+        "displayName": "Chip",
+        "purpose": "All state chips."
+      },
+      "section-label": {
+        "displayName": "Section Label",
+        "purpose": "Uppercase detail-page section headings."
+      },
+      "table-header": {
+        "displayName": "Table Header",
+        "purpose": "Column headers and the data-label captions they become below 720px."
+      },
+      "tab-label": {
+        "displayName": "Tab Label",
+        "purpose": "The five bottom tabs: Wants, Free, Saved, Skipped, Runs."
+      },
+      "page-title-desktop": {
+        "displayName": "Page Title (desktop)",
+        "purpose": "The page title at 900px and up."
+      },
+      "stat-value": {
+        "displayName": "Stat Value",
+        "purpose": "The tabular figure in a page-head stats group; amber via .hi when the count needs a decision."
+      },
+      "stat-label": {
+        "displayName": "Stat Label",
+        "purpose": "The word following a stat value."
+      },
+      "brand": {
+        "displayName": "Wordmark",
+        "purpose": "\"Curbside\" in the top bar. The only place this step appears."
+      },
+      "score-unit": {
+        "displayName": "Score Unit",
+        "purpose": "The /10 beside a deal score."
+      }
+    },
+    "shadows": [
+      {
+        "name": "resting",
+        "value": "0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)",
+        "purpose": "Every card, panel and empty state. Grounds the surface against the tinted page; never used to signal a boundary."
+      },
+      {
+        "name": "resting-dark",
+        "value": "0 1px 2px rgba(0,0,0,.5),0 1px 1px rgba(0,0,0,.35)",
+        "purpose": "Dark-theme equivalent of resting."
+      },
+      {
+        "name": "lift",
+        "value": "0 4px 12px rgba(16,16,20,.08),0 1px 2px rgba(16,16,20,.06)",
+        "purpose": "The system's one step up, reserved for a genuinely floating surface."
+      },
+      {
+        "name": "lift-dark",
+        "value": "0 6px 18px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4)",
+        "purpose": "Dark-theme equivalent of lift."
+      },
+      {
+        "name": "error-row-marker",
+        "value": "inset 1px 0 0 var(--bad)",
+        "purpose": "A 1px red bar inside the first cell of a failed table row."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "0.15s",
+        "purpose": "Background, border-color and color transitions on hover/press. Survives prefers-reduced-motion: colour is not motion, and it is the only feedback a tap gets."
+      },
+      {
+        "name": "chevron",
+        "value": "0.2s ease",
+        "purpose": "The disclosure chevron's 180 degree rotation on open. Disabled under prefers-reduced-motion."
+      },
+      {
+        "name": "reduced",
+        "value": "animation:none, chevron transition and card-press transform disabled",
+        "purpose": "prefers-reduced-motion: reduce disables animation and the two real movements only, not the colour transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "card-grow",
+        "value": "560px"
+      },
+      {
+        "name": "table-stack",
+        "value": "719px"
+      },
+      {
+        "name": "desktop",
+        "value": "900px"
+      }
+    ],
+    "iconSystem": {
+      "grid": "24x24",
+      "strokeWidth": 1.75,
+      "caps": "round",
+      "sizing": "em-based via svg.i (font-size sets the icon size)",
+      "delivery": "inline SVG sprite of <symbol> defs in base.html, referenced by <use href=\"#i-name\">",
+      "names": [
+        "i-wants",
+        "i-free",
+        "i-saved",
+        "i-skipped",
+        "i-runs",
+        "i-check",
+        "i-x",
+        "i-help",
+        "i-open",
+        "i-down",
+        "i-camera",
+        "i-alert",
+        "i-clock",
+        "i-pause",
+        "i-noimg",
+        "i-chev",
+        "i-gone",
+        "i-hunt",
+        "i-near"
+      ],
+      "strokeExceptions": "2.0 on chip icons and 2.1 on requirement marks so small icons do not go grey; 1.5 on the empty-photo placeholder and 1.4 on empty-state icons so large icons stay quiet.",
+      "sizeScale": [
+        {
+          "name": "chip",
+          "value": "12px",
+          "strokeWidth": 2.0,
+          "purpose": "Inside a state or filter chip."
+        },
+        {
+          "name": "inline",
+          "value": "15px",
+          "strokeWidth": "1.75-2.1",
+          "purpose": "Buttons, requirement marks (2.1), flag rows, the unknowns callout, a hunts-list row."
+        },
+        {
+          "name": "notice",
+          "value": "17px",
+          "strokeWidth": "1.5-1.75",
+          "purpose": "The paused banner and the empty-photo placeholder (1.5)."
+        },
+        {
+          "name": "tab",
+          "value": "22px",
+          "strokeWidth": 1.7,
+          "purpose": "A bottom tab."
+        },
+        {
+          "name": "empty",
+          "value": "30px",
+          "strokeWidth": 1.4,
+          "purpose": "An empty state, including the error page."
+        }
+      ],
+      "mechanism": "svg.i is 1em square, so font-size on it is the icon size control, not a type step.",
+      "unreferenced": [
+        "i-near — the bullseye replaced by i-skipped when /near became /skipped; a recorded reserve.",
+        "i-empty was deleted rather than reserved once nothing referenced it: the sprite is pruned, and only what is recorded here survives unused."
+      ]
+    },
+    "themes": {
+      "strategy": "Both themes are first-class. Every colour is a custom property declared three times: :root (light), a prefers-color-scheme:dark block scoped :root:not([data-theme=light]), and :root[data-theme=dark] carrying identical values. meta theme-color is set per scheme.",
+      "darkOverride": "Add data-theme=\"dark\" to <html> to force it; that is also how dark is screenshotted, since headless Chrome has no reliable media-query flag."
+    },
+    "text": {
+      "overflowWrap": "body { overflow-wrap: anywhere } is global. Every string on screen is written by a marketplace seller or by the model, and an unbroken 200-character token must break rather than escape its card."
+    }
+  },
+  "components": [
+    {
+      "name": "Page Head Stats",
+      "kind": "custom",
+      "refersTo": "stats",
+      "description": "The head of every list view: a plain title over a wrapping line of live counts. The separator belongs to the item that follows it, so it wraps with that item instead of stranding at a line end.",
+      "html": "<div class=\"ds-pagehead\"><h1>Wants</h1><p class=\"ds-stats\"><i><b>11</b> waiting</i><i class=\"ds-hi\"><b>10</b> need checking</i><i><b>2</b> free</i></p><p class=\"ds-lede\">Everything the bot judged a match for something on your wants list.</p></div>",
+      "css": ".ds-pagehead{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-pagehead h1{font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;margin:0;text-wrap:balance}.ds-stats{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;margin:9px 0 0;font-size:13.5px;color:var(--dim,#5f5f6a);font-weight:450}.ds-stats i{font-style:normal;display:inline-flex;align-items:baseline;gap:5px}.ds-stats b{color:var(--fg,#101014);font-weight:640;font-size:15px;letter-spacing:-.01em;font-variant-numeric:tabular-nums}.ds-stats i + i::before{content:\"\\00B7\";color:var(--line,#e5e5ea);margin-right:10px}.ds-stats .ds-hi b{color:var(--warn,#8a5300)}.ds-lede{margin:9px 0 0;color:var(--dim,#5f5f6a);font-size:13.5px;line-height:1.55;max-width:62ch}@media (min-width:900px){.ds-pagehead h1{font-size:34px}}"
+    },
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The default control: bordered, raised, 34px, tonal feedback only.",
+      "html": "<button class=\"ds-btn\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4.5 12.5 5 5 10-11\"/></svg>Contacted</button>",
+      "css": ".ds-btn{font:550 13.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s,color .15s;-webkit-tap-highlight-color:transparent}.ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}.ds-btn:active{background:var(--line,#e5e5ea)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-btn .ds-i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Solid accent. Reserved for the one action that resumes or restores something.",
+      "html": "<button class=\"ds-btn-primary\">Resume everything</button>",
+      "css": ".ds-btn-primary{font:550 13.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--accent,#2b64d6);background:var(--accent,#2b64d6);color:var(--on-accent,#fff);cursor:pointer;transition:background .15s,border-color .15s}.ds-btn-primary:hover{background:color-mix(in srgb,var(--accent,#2b64d6) 88%,#000);border-color:color-mix(in srgb,var(--accent,#2b64d6) 88%,#000)}.ds-btn-primary:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-btn-primary[disabled]{opacity:.45;cursor:not-allowed}"
+    },
+    {
+      "name": "State Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A fact about the listing. Neutral by default — the want chip carries only a green check glyph — with amber for unverified and red for a flag. Chips wrap rather than clip, because a chip is part of the reason a listing is on screen.",
+      "html": "<span class=\"ds-chip ds-chip-want\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4.5 12.5 5 5 10-11\"/></svg>bookshelf</span> <span class=\"ds-chip ds-chip-unk\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9.2\"/><path d=\"M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.4-2.6 4\"/><path d=\"M12 17.4h.01\"/></svg>unverified</span> <span class=\"ds-chip ds-chip-flag\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z\"/><path d=\"M12 9.5v4\"/><path d=\"M12 17h.01\"/></svg><span>seller mentions a crack in the frame that the photos do not show</span></span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:2px 7px;font:550 11.5px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--line-soft,#eeeef2);color:var(--dim,#5f5f6a);white-space:normal;max-width:100%;text-align:left}.ds-chip .ds-i{width:12px;height:12px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.ds-chip-want .ds-i{color:var(--good,#0f7040)}.ds-chip-unk{background:var(--warn-soft,#fdf1de);color:var(--warn,#8a5300)}.ds-chip-flag{background:var(--bad-soft,#fdeceb);color:var(--bad,#b52424)}.ds-chip-flag{align-items:flex-start;line-height:1.4;padding:3px 7px}.ds-chip-flag span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ds-chip-flag .ds-i{margin-top:2px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip-selected",
+      "description": "A chip that is a link, so it is a tap target at 32px — the one named exception to the 44px floor, because a chip is inline in a wrapping row rather than a control in a control row.",
+      "html": "<a class=\"ds-chip-filter\" href=\"#\">All</a> <a class=\"ds-chip-filter\" href=\"#\" aria-current=\"true\">Free</a>",
+      "css": ".ds-chip-filter{display:inline-flex;align-items:center;gap:4px;border-radius:6px;padding:8px 10px;min-height:32px;box-sizing:border-box;font:550 11.5px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--line-soft,#eeeef2);color:var(--dim,#5f5f6a);text-decoration:none;transition:background .15s,color .15s}.ds-chip-filter:hover{background:var(--line,#e5e5ea);color:var(--fg,#101014)}.ds-chip-filter[aria-current=true]{background:var(--accent,#2b64d6);color:var(--on-accent,#fff)}.ds-chip-filter:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
+    },
+    {
+      "name": "Listing Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The signature component. Three clipped bands: a tappable main row (photo, h2 title, price, place, chips, score), the folded judgement, and the action footer whose controls are var(--tap) tall.",
+      "html": "<article class=\"ds-card\"><a class=\"ds-card-main\" href=\"#\"><div class=\"ds-shot-wrap\"><div class=\"ds-shot ds-shot-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z\"/><path d=\"m4 17 5-5 4 4\"/><path d=\"m14 14 2-2 4 4\"/><circle cx=\"15\" cy=\"8.5\" r=\"1.3\"/></svg>no photo</div></div><div class=\"ds-info\"><h2>Solid oak bookshelf, six shelves, must go this weekend</h2><p class=\"ds-price\"><span class=\"ds-now ds-num\">$199</span><span class=\"ds-strike ds-num\">$450</span></p><p class=\"ds-where\"><span class=\"ds-num\">7 mi</span><span>Nob Hill</span><span>listed 21d ago</span></p></div><p class=\"ds-score ds-hi\"><b class=\"ds-num\">8.4</b><span class=\"ds-num\">/10</span></p></a><details class=\"ds-why\"><summary>Why it scored 8.4 &middot; 2 things to check<svg class=\"ds-i ds-chev\" viewBox=\"0 0 24 24\"><path d=\"m6 9.5 6 6 6-6\"/></svg></summary><div class=\"ds-whybody\"><p>Priced well under comparable oak units and the seller has already dropped it once.</p></div></details><div class=\"ds-actions\"><button class=\"ds-btn\">Save</button><button class=\"ds-btn\">Dismiss</button></div></article>",
+      "css": ".ds-card{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-card-main{display:flex;gap:13px;padding:12px;align-items:flex-start;text-decoration:none;color:inherit;transition:background .15s}.ds-card-main:hover{background:var(--line-soft,#eeeef2)}.ds-shot-wrap{position:relative;width:128px;height:128px;flex:none}.ds-shot{position:absolute;inset:0;width:100%;height:100%;border-radius:10px;object-fit:cover;background:var(--line-soft,#eeeef2);display:block}.ds-shot-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--faint,#6d6d78);font-size:10.5px;font-weight:550;border:1px dashed var(--line,#e5e5ea);text-align:center;line-height:1.25}.ds-shot-empty .ds-i{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.ds-info{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}.ds-info h2{margin:0;font-size:15px;line-height:1.32;font-weight:600;letter-spacing:-.012em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ds-num{font-variant-numeric:tabular-nums}.ds-price{margin:0;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}.ds-now{font-size:17px;font-weight:680;letter-spacing:-.02em}.ds-strike{font-size:13px;color:var(--faint,#6d6d78);text-decoration:line-through}.ds-where{margin:0;font-size:12.5px;color:var(--dim,#5f5f6a);display:flex;gap:2px 12px;flex-wrap:wrap;line-height:1.5}.ds-score{flex:none;margin:0;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:1px}.ds-score b{font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1}.ds-score span{font-size:10.5px;font-weight:600;color:var(--faint,#6d6d78);letter-spacing:.03em}.ds-hi b{color:var(--good,#0f7040)}.ds-why{border-top:1px solid var(--line-soft,#eeeef2)}.ds-why>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:var(--tap,44px);padding:7px 12px;font-size:12.5px;font-weight:550;color:var(--dim,#5f5f6a);transition:background .15s}.ds-why>summary::-webkit-details-marker{display:none}.ds-why>summary:hover{background:var(--line-soft,#eeeef2);color:var(--fg,#101014)}.ds-chev{margin-left:auto;width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease}.ds-why[open]>summary .ds-chev{transform:rotate(180deg)}.ds-whybody{padding:2px 12px 13px;font-size:13.5px;line-height:1.55}.ds-whybody p{margin:0}.ds-actions{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line-soft,#eeeef2);background:var(--raised,#fff)}.ds-actions .ds-btn{flex:1;min-height:var(--tap,44px)}@media (min-width:560px){.ds-shot-wrap{width:148px;height:148px}.ds-actions .ds-btn{flex:none;min-height:36px}}@media (prefers-reduced-motion:reduce){.ds-card *{animation:none!important}.ds-why[open]>summary .ds-chev{transition:none}}"
+    },
+    {
+      "name": "Bottom Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-item",
+      "description": "Primary navigation under 900px: Wants, Free, Saved, Skipped, Runs in five equal columns, colour-only current state, a count pip on the icon.",
+      "html": "<nav class=\"ds-tabbar\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8Z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\"1.2\"/></svg>Wants<span class=\"ds-pip\">3</span></a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8\"/><path d=\"M2 8h20v4H2z\"/><path d=\"M12 21V8\"/></svg>Free</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z\"/></svg>Saved</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M4 8.5h16\"/><path d=\"M12 13v6\"/><path d=\"m9 16 3 3 3-3\"/></svg>Skipped</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M3 12h4l3 8 4-16 3 8h4\"/></svg>Runs</a></nav>",
+      "css": ".ds-tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--card,#fff);border-top:1px solid var(--line,#e5e5ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:56px;font-size:10.5px;font-weight:550;color:var(--faint,#6d6d78);letter-spacing:.005em;position:relative;text-decoration:none;-webkit-tap-highlight-color:transparent}.ds-tabbar .ds-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.ds-tabbar a[aria-current=page]{color:var(--accent,#2b64d6)}.ds-tabbar a:active{background:var(--line-soft,#eeeef2)}.ds-tabbar a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:-2px}.ds-pip{position:absolute;top:6px;left:calc(50% + 7px);min-width:16px;height:16px;border-radius:99px;background:var(--accent,#2b64d6);color:var(--on-accent,#fff);font-size:10px;line-height:16px;font-weight:700;text-align:center;padding:0 4px;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Control Row",
+      "kind": "custom",
+      "refersTo": "button-triage-row",
+      "description": "A control row inside a panel. The label takes its own line and the actions share the width evenly, so buttons never break two-and-two. .control-row is the general form (pause switches, 180px forms); .triage-row carries a listing's triage actions (110px forms).",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-triage-row\"><span class=\"ds-who\">Free-stuff sweeps<small>Running every 15 minutes.</small></span><div class=\"ds-triage-actions\"><form><button class=\"ds-btn\">Save</button></form><form><button class=\"ds-btn\">Dismiss</button></form><form><button class=\"ds-btn\">Contacted</button></form><form><button class=\"ds-btn\">Pause</button></form></div></div><p class=\"ds-triage-help\"><b>Dismissing is not cosmetic.</b> Dismissed titles become negative examples in the next prompt for this hunt.</p></div>",
+      "css": ".ds-panel{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-triage-row{display:flex;flex-wrap:wrap;gap:11px;align-items:center;padding:13px 15px}.ds-who{font-size:13.5px;font-weight:600;flex:1 1 100%}.ds-who small{display:block;font-weight:450;color:var(--dim,#5f5f6a);font-size:12px}.ds-triage-actions{display:flex;gap:8px;flex:1 1 100%;flex-wrap:wrap}.ds-triage-actions form{flex:1 1 0;min-width:110px;display:flex;margin:0}.ds-control-row .ds-triage-actions form{min-width:180px}.ds-triage-actions .ds-btn{width:100%;min-height:var(--tap,44px);font:550 13.5px/1 inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-triage-actions .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}.ds-triage-actions .ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-triage-help{margin:0;padding:13px 15px;font-size:12.5px;line-height:1.6;color:var(--dim,#5f5f6a);background:var(--bg,#f4f4f6);border-top:1px solid var(--line-soft,#eeeef2)}.ds-triage-help b{color:var(--fg,#101014);font-weight:600}@media (min-width:560px){.ds-who{flex:1 1 auto}.ds-triage-actions{flex:0 0 auto}.ds-triage-actions form{flex:0 0 auto;min-width:0}.ds-triage-actions .ds-btn{width:auto;min-height:36px}}"
+    },
+    {
+      "name": "Health Pill",
+      "kind": "custom",
+      "refersTo": "health-pill",
+      "description": "The bot's state compressed to a dot, in the top bar of every page: ok, quiet or paused, fetch failing, no runs yet.",
+      "html": "<a class=\"ds-health\" href=\"#\"><span class=\"ds-dot\"></span>4m ago</a> <a class=\"ds-health ds-warn\" href=\"#\"><span class=\"ds-dot\"></span>Paused</a> <a class=\"ds-health ds-bad\" href=\"#\"><span class=\"ds-dot\"></span>Fetch failing</a>",
+      "css": ".ds-health{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--line,#e5e5ea);border-radius:99px;background:var(--card,#fff);font:500 12.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--dim,#5f5f6a);text-decoration:none;transition:border-color .15s}.ds-health:hover{border-color:var(--faint,#6d6d78)}.ds-health .ds-dot{width:7px;height:7px;border-radius:50%;background:var(--good,#0f7040);flex:none}.ds-health.ds-warn{color:var(--warn,#8a5300)}.ds-health.ds-warn .ds-dot{background:var(--warn,#8a5300)}.ds-health.ds-bad{color:var(--bad,#b52424)}.ds-health.ds-bad .ds-dot{background:var(--bad,#b52424)}.ds-health:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
+    },
+    {
+      "name": "Notice",
+      "kind": "custom",
+      "refersTo": "notice",
+      "description": "The paused banner. Amber fill, a mixed-alpha amber border, an icon and an inline recovery action. Appears on every page while anything is switched off.",
+      "html": "<div class=\"ds-notice\" role=\"status\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9.5 5v14M14.5 5v14\"/></svg><div><b>Paused:</b> Free sweeps &mdash; not being searched, so nothing new is collected for it.<div class=\"ds-notice-act\"><button class=\"ds-btn\">Resume everything</button></div></div></div>",
+      "css": ".ds-notice{display:flex;gap:11px;align-items:flex-start;background:var(--warn-soft,#fdf1de);border:1px solid color-mix(in srgb,var(--warn,#8a5300) 28%,transparent);border-radius:var(--r,14px);padding:13px 15px;font:400 13.5px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--warn,#8a5300)}.ds-notice b{font-weight:650}.ds-notice .ds-i{width:17px;height:17px;flex:none;margin-top:1px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}.ds-notice-act{display:flex;margin-top:10px}.ds-notice .ds-btn{font:550 13.5px/1 inherit;display:inline-flex;align-items:center;min-height:34px;padding:0 13px;border-radius:8px;border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-notice .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Every view has one, and it explains what would put content here. Faint 30px icon, ink headline, dim explanation at 44ch.",
+      "html": "<div class=\"ds-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3.5 7.5 12 2l8.5 5.5v9L12 22l-8.5-5.5z\"/><path d=\"M3.5 7.5 12 13l8.5-5.5\"/><path d=\"M12 13v9\"/></svg><b>Nothing worth grabbing right now</b><p>The sweep judges every free listing it finds and only the ones worth the drive get this far.</p></div>",
+      "css": ".ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6d6d78);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}"
+    },
+    {
+      "name": "Error Page",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "404, a query string the route cannot parse (400) and an unhandled 500 all render in the normal shell with working nav, built from .pagehead and .empty. No new visual vocabulary.",
+      "html": "<div class=\"ds-pagehead\"><h1>Not found</h1></div><div class=\"ds-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z\"/><path d=\"M12 9.5v4\"/><path d=\"M12 17h.01\"/></svg><b>There is no page at that address.</b><p>If you followed a bookmark, the view may have been renamed.</p><p class=\"ds-back\"><a href=\"/\">Back to wants</a></p></div>",
+      "css": ".ds-pagehead{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-pagehead h1{font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;margin:0 0 18px;text-wrap:balance}.ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6d6d78);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}.ds-empty .ds-back{margin-top:14px}.ds-empty a{color:var(--accent,#2b64d6);font-weight:550}.ds-empty a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
+    },
+    {
+      "name": "Responsive Table",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Wide data inside a panel. Below 720px the head is hidden and each row becomes a two-column grid of data-label/value pairs.",
+      "html": "<div class=\"ds-panel\"><h2>Runs</h2><table class=\"ds-table\"><thead><tr><th>When</th><th>Hunt</th><th class=\"ds-n\">Found</th><th class=\"ds-n\">Scored</th></tr></thead><tbody><tr><td class=\"ds-lead ds-num\" data-label=\"When\">2026-09-09 14:15</td><td data-label=\"Hunt\">bookshelf</td><td class=\"ds-n ds-num\" data-label=\"Found\">24</td><td class=\"ds-n ds-num\" data-label=\"Scored\">3</td></tr><tr class=\"ds-err\"><td class=\"ds-lead ds-num\" data-label=\"When\">2026-09-09 14:00</td><td data-label=\"Hunt\">free sweep</td><td class=\"ds-n ds-num\" data-label=\"Found\">0</td><td class=\"ds-n ds-num\" data-label=\"Scored\">0</td></tr></tbody></table></div>",
+      "css": ".ds-panel{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-panel h2{margin:0;padding:13px 15px;font-size:13px;font-weight:620;letter-spacing:-.005em;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table{width:100%;border-collapse:collapse;font-size:13px}.ds-table th,.ds-table td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft,#eeeef2);white-space:nowrap}.ds-table tr:last-child td{border-bottom:0}.ds-table th{color:var(--dim,#5f5f6a);font-weight:550;font-size:11px;letter-spacing:.03em;text-transform:uppercase;background:var(--bg,#f4f4f6)}.ds-num{font-variant-numeric:tabular-nums}.ds-table .ds-n{text-align:right}.ds-table tr.ds-err td{background:var(--bad-soft,#fdeceb)}.ds-table tr.ds-err td:first-child{box-shadow:inset 1px 0 0 var(--bad,#b52424)}@media (max-width:719px){.ds-table,.ds-table tbody,.ds-table tr,.ds-table td{display:block;width:100%}.ds-table thead{display:none}.ds-table tr{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;padding:12px 14px;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table td{border:0;padding:2px 0;white-space:normal;display:flex;gap:10px;align-items:baseline;justify-content:space-between}.ds-table td::before{content:attr(data-label);color:var(--dim,#5f5f6a);font-size:11px;font-weight:550;letter-spacing:.03em;text-transform:uppercase;flex:none}.ds-table td.ds-lead{grid-column:1/-1;font-weight:600;font-size:14px;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table td.ds-lead::before{content:none}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Standard, Played Straight",
+    "overview": "Curbside is a phone held in a spare moment, deciding in two seconds whether a thing is worth driving across town for. The system does not have a point of view about itself — it spends all of its character on legibility and none on personality. That is the commitment, not a compromise: the category standard executed at full fidelity. Apple decides the layout because the surface is a phone (a tinted ground, inset white cards, thumb-sized rows, a fixed five-tab bar at the bottom). Stripe decides the typography because the content is data (the platform system sans, tabular figures everywhere a number can be compared, hairlines instead of shadows, one restrained blue).\n\nDensity is medium and honest. A card is a 128px photo, a title clamped to two lines, a price, a place, a row of state chips and a score — everything the first gate needs, and nothing else. The page head above it is built the same way: a large plain title and a line of live facts about what is waiting, not a paragraph explaining what the view is. The model's judgement is real content but it is read second, so it folds behind a disclosure whose summary counts what is inside. Colour carries no decoration at all: blue means \"this is current or this is the primary action\", green/amber/red mean a state the data is in, and every other surface is grey.\n\nBoth themes are real and equally weighted — this is opened outdoors in daylight and in bed at night. Every colour is a custom property with a `prefers-color-scheme` override and a matching `[data-theme=dark]` block, and neither theme is a filter over the other.",
+    "keyCharacteristics": [
+      "Grouped inset cards on a tinted ground; the ground is never white",
+      "One accent (`#2b64d6` light, `#6f9dff` dark) for current-tab, primary action and selection only",
+      "Semantic green/amber/red used exclusively for state, never for emphasis",
+      "Tabular figures on every comparable number",
+      "Hairlines (1px `--line`) do the structural work; shadow is a whisper",
+      "Drawn 24×24 SVG icons at 1.75 stroke; no emoji, no glyph stand-ins",
+      "Phone-first: bottom tab bar under 900px, top-bar nav above it",
+      "Page heads report state, not identity: a title and a live stats line"
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Rule",
+        "body": "Blue means current, primary, or selected. If an element is blue and it is neither the active tab, the primary action, a link, nor a selection, it is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The State-Only Rule",
+        "body": "Green, amber and red describe a fact about the data — free, unverified, flagged, failing. They are never used to make something look important. Green is the narrowest of the three: a score of 7 or better, the word FREE, and the check glyph on a matched want. The want and price-drop chips are neutral fills, because a chip that is merely present is not a state worth colouring.",
+        "section": "colors"
+      },
+      {
+        "name": "The Faint-Is-Text Rule",
+        "body": "--faint carries real content — the /10 unit, struck-through prices, \"no photo\", every score under 5.0 — so it is held to a text contrast ratio, not a decoration one. Every foreground/background pair in both themes clears WCAG AA, verified by computing the ratio rather than judging it by eye. A colour change is not shipped until it has been recomputed; the palette drifted to 2.78:1 once by looking fine.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Real Themes Rule",
+        "body": "Every colour is a custom property with both a prefers-color-scheme and a [data-theme=dark] value. No hardcoded hex may enter a template, and any change is checked in both themes before it ships.",
+        "section": "colors"
+      },
+      {
+        "name": "The Derive-Don't-Declare Rule",
+        "body": "A pressed or hovered variant of a token is mixed from that token, never declared as a new literal. The primary button darkens with color-mix(in srgb, var(--accent) 88%, #000); #000 there is a mixing operand, not a palette entry, and the result stays correct in both themes because the accent it derives from differs per theme. A separate --accent-strong would be a second value to keep in sync for one state, so the mix is the system's way to shade a token.",
+        "section": "colors"
+      },
+      {
+        "name": "The Icons-Are-Sized-Not-Typeset Rule",
+        "body": "An svg.i font-size is an icon size, never a new type step. Pick from the icon scale to match the adjacent text; do not introduce a new step to split a difference.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Any number a person might compare down a column or across a state change carries .num (font-variant-numeric: tabular-nums). Prices, scores, distances, counts, timestamps, pips. Prose numbers do not.",
+        "section": "typography"
+      },
+      {
+        "name": "The Uppercase-Is-For-Labels Rule",
+        "body": "Uppercase with positive tracking marks a label about content — table headers, section headings, the word \"free\". It is never applied to content itself and never to a heading a person reads as a sentence.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Line Clamp Rule",
+        "body": "Listing titles clamp at two lines, as does a red flag on the card — the flag is shown in full inside the disclosure, so a warning is shortened but never silently cut. A 140-character seller title must not change the height of its row.",
+        "section": "typography"
+      },
+      {
+        "name": "The Stranger-Text Rule",
+        "body": "Every string on screen — titles, descriptions, want names, red flags, the model's own sentences — was written by a marketplace seller or by the model, and none of it is length-checked or space-checked. body { overflow-wrap: anywhere } is therefore global: one unbroken 200-character token must break rather than run out of the card, off the page or through the score. Any new container inherits this and must not opt out.",
+        "section": "typography"
+      },
+      {
+        "name": "The Head-Reports-State Rule",
+        "body": "A page head states what is waiting, not what the view is: a plain title, then a stats line of live counts, then at most one or two lines of explanation. Teaching copy belongs in the empty state, where a person has time to read it. If a fact in the head does not change between visits, it does not belong there.",
+        "section": "layout"
+      },
+      {
+        "name": "The Thumb-Reach Rule",
+        "body": "Primary navigation lives at the bottom of the screen under 900px, and every triage control sits inside the card it acts on. Nothing a person taps repeatedly is placed in the top bar.",
+        "section": "layout"
+      },
+      {
+        "name": "The 44px Minimum Rule",
+        "body": "--tap: 44px is the floor for a tappable control on a phone, and controls reference the token rather than a literal. The card's Save, Dismiss and open-on-marketplace buttons, every triage- and control-row button, and the card's disclosure summary are all var(--tap) tall; the open button is var(--tap) wide. Compacting a row may take its padding, never its targets: at 560px and up, where the surface is a cursor, they relax to 36px. One exception is named rather than assumed — a filter chip is an inline element in a wrapping row of chips, not a control in a control row, and sits at 32px on 8px 10px padding. It is the only target under the floor, and adding a second requires the same kind of argument.",
+        "section": "layout"
+      },
+      {
+        "name": "The Every-Target-Has-A-Height Rule",
+        "body": "Anything tappable gets a deliberate minimum height, never whatever its text happens to give it. A 12.5px summary line and a 11.5px chip label are the two places this is easiest to forget, and both were once sized by their text alone. Measure a new target before shipping it; a height that arrived by accident is not a height.",
+        "section": "layout"
+      },
+      {
+        "name": "The Mobile-Is-The-Target Rule",
+        "body": "The phone layout is the design; the ≥900px layout is the adaptation. A new component is drawn at 390px first, and it may grow at 560/900px — never the reverse.",
+        "section": "layout"
+      },
+      {
+        "name": "The Hairline-Over-Shadow Rule",
+        "body": "If a boundary needs to be visible, draw a 1px line. Shadow is never the thing that communicates a boundary; if the border were removed and the card became hard to find, the fix is the border, not a bigger shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Feedback-Is-Tonal Rule",
+        "body": "Hover and press change background tone (--line-soft, then --line), never elevation, never scale, never translate. Transitions are 0.15s on background/border/colour and 0.2s on the disclosure chevron rotation.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Colour-Is-Not-Motion Rule",
+        "body": "prefers-reduced-motion: reduce is not a blanket transition kill. It disables animation and the two real movements — the chevron's rotation and the card's press transform — and leaves colour and background transitions running, because on a server-rendered page with no client JS they are the only feedback a tap gets. Removing them makes the interface feel broken rather than calm. Anything a future rule adds under reduced motion must be actual movement.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Earned-Expansion Rule",
+        "body": "The photo, price, place and score get the whole top row because they are the first gate. Anything that explains a decision is one tap away, never removed — and never open by default. A new field added inside the disclosure must also be reflected in the summary's count.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do put every colour through a custom property with both a prefers-color-scheme override and a [data-theme=dark] value, and check any change in both themes.",
+      "Do mark every comparable number with .num so tabular figures line up.",
+      "Do use <svg class=\"i\"><use href=\"#i-name\"/></svg> from the sprite in base.html; add a new 24×24, 1.75-stroke symbol there when an icon is missing.",
+      "Do separate surfaces with a 1px hairline (--line to bound, --line-soft to divide inside).",
+      "Do render <table class=\"responsive\"> with a data-label on every cell whenever a table has more than three columns.",
+      "Do design the 390px view first and let 560px and 900px add room.",
+      "Do size every phone-tappable control from var(--tap) (44px), never a literal.",
+      "Do give every view an empty state that says what would fill it, and put the long teaching copy there rather than in the page head.",
+      "Do open a list view with a title and a .stats line of live counts, marking at most one group .hi when it needs a decision.",
+      "Do size icons from the icon scale via font-size on svg.i, matching the text beside them.",
+      "Do derive a hover or pressed colour with color-mix from the token it shades, rather than declaring a new one.",
+      "Do recompute contrast for both themes when any colour changes; --dim and --faint carry text and are held to AA.",
+      "Do let chips wrap. A want name or a flag is part of the reason a listing is on screen.",
+      "Do give every tappable element a deliberate minimum height from var(--tap), filter chips excepted at 32px.",
+      "Do render errors in the normal shell with the nav intact, using .pagehead and .empty.",
+      "Do delete a symbol or token that nothing references, unless it is recorded here as a reserve.",
+      "Do keep the accent under a tenth of any screen — current tab, primary action, links, selection, focus ring."
+    ],
+    "donts": [
+      "Don't introduce a second typeface, a webfont, or a monospace face. The platform system sans is the whole type system.",
+      "Don't use emoji or Unicode glyphs (✓ ✗ ? ⚠) as icons; they are #i-check, #i-x, #i-help and #i-alert.",
+      "Don't communicate structure with shadow. If a boundary is hard to see, the answer is a border or a tone step, never a larger shadow.",
+      "Don't use green, amber or red for emphasis, ranking or decoration — only to name a state the data is in.",
+      "Don't open the judgement disclosure by default, and don't add a field inside it without adding it to the summary's count.",
+      "Don't hardcode a hex value in a template.",
+      "Don't animate position, scale or elevation on interaction; feedback is a background-tone change at 0.15s.",
+      "Don't put a repeatedly-tapped control in the top bar on a phone; the bottom tab bar and the in-card footer are where the thumb is.",
+      "Don't let buttons in a control row wrap into an uneven group; give the label its own line and let the actions share the width (flex: 1 1 0, min-width: 110px).",
+      "Don't state what a view *is* in its page head when you could state what is *waiting* in it.",
+      "Don't read an svg.i font-size as a type step, and don't add a new one to split a difference between existing icon sizes.",
+      "Don't kill colour and background transitions under prefers-reduced-motion; disable animation and real movement only.",
+      "Don't colour a chip that is merely present. Green is a score of 7+, the word FREE, and the want check glyph — nothing else.",
+      "Don't assume any on-screen string is short or space-separated; it was written by a stranger and overflow-wrap: anywhere is what keeps it inside its card.",
+      "Don't skip a heading level: the card title is an <h2> under the page's <h1>."
+    ]
+  }
+}

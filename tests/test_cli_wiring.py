@@ -113,6 +113,68 @@ def test_config_disabled_still_wins(tmp_path):
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
     st = Store(cfg.db_path)
-    cfg = replace(cfg, hunts=tuple(replace(h, enabled=False) for h in cfg.hunts))
+    from dealbot.config import WantHuntSpec
+    cfg = replace(
+        cfg,
+        sweeps=tuple(replace(s, enabled=False) for s in cfg.sweeps),
+        want_hunts={w.name: replace(cfg.want_hunts.get(w.name) or WantHuntSpec(),
+                                    enabled=False) for w in cfg.wants})
     st.set_hunt_enabled(cfg.hunts[0].id, True)
     assert _hunts(cfg, None, st) == []
+
+
+def test_the_rubric_resolves_against_the_config_file_not_the_cwd(tmp_path, store):
+    """`db_path` was made config-relative because per-CWD resolution split the
+    data across three databases. The rubric had the same bug with a quieter
+    failure: it falls back to the built-in default, so the bot judges by
+    criteria other than the ones in the file you edited and nothing looks
+    wrong."""
+    import shutil
+    from dealbot.scoring.claude_code import ClaudeCodeScorer
+
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "rubric.md").write_text(
+        "<!-- a note to a human -->\nJUDGE EVERYTHING AS A SEVEN.\n")
+
+    cfg = load(tmp_path / "config.yaml")
+    assert cfg.scorer.rubric_path.is_absolute()
+    sc = ClaudeCodeScorer(cfg.scorer, store)
+    assert "JUDGE EVERYTHING AS A SEVEN." in sc._rubric
+    assert "a note to a human" not in sc._rubric        # comments still stripped
+
+
+def test_the_request_budget_is_reset_once_per_pass_not_once_per_hunt(tmp_path,
+                                                                     monkeypatch):
+    """REGRESSION: `reset_budget()` sat inside the hunt loop, so
+    `max_requests_per_run: 25` really meant 25 PER HUNT -- 75 requests in one
+    `once` against a source documented to throttle, silently, after about five
+    rapid ones."""
+    import shutil
+    from dealbot import cli
+    from dealbot.config import load as load_cfg
+
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load_cfg(tmp_path / "config.yaml")
+    assert len(cfg.hunts) > 1                          # or this proves nothing
+
+    resets = {"n": 0}
+
+    class Counting:
+        name = "fixture"
+        def __init__(self, inner): self.inner = inner
+        def search(self, hunt): return self.inner.search(hunt)
+        def parse(self, raw): return self.inner.parse(raw)
+        def reset_budget(self): resets["n"] += 1
+
+    from dealbot.sources.fixture import FixtureSource
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(cli, "_build_sources", lambda c: [
+        ("fixture", Counting(FixtureSource(c.location, root / "fixtures/listings")))])
+
+    args = type("A", (), {"config": str(tmp_path / "config.yaml"), "hunt": None,
+                          "dry_run": False, "no_score": True, "no_images": True,
+                          "due": False})()
+    assert cli.cmd_once(args) == 0
+    assert resets["n"] == 1

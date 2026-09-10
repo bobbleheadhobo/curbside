@@ -16,7 +16,16 @@ Three things had to be learned by trying:
    a TWO-STAGE fetch: search is a cheap index, detail is fetched only for
    listings that survive the gate. Same funnel shape as the scoring.
 
-3. **Throttling is SILENT.** After roughly five rapid requests the server keeps
+3. **Photos must be read from `listing_photos`, never scraped off the page.**
+   An item page carries ~32 `scontent` image URIs -- recommendation carousels,
+   "more like this", the seller's other items. Taking the first six in document
+   order stored other people's listings as this one's photos: one file ended up
+   filed against 71 different listings, and the image pass was shown a mini
+   bike as a TV stand's second photo. The item's OWN photos live in
+   `listing_photos` on the product-details target, whose `id` is the listing
+   id -- and at 960px rather than the 260px crop the carousel uses.
+
+4. **Throttling is SILENT.** After roughly five rapid requests the server keeps
    answering 200 with ~590KB of perfectly valid HTML that simply contains no
    listing data at all. A naive adapter reads that as "quiet day" forever. The
    `feed_units` key is the discriminator: present means a real feed (possibly
@@ -37,6 +46,9 @@ import requests
 
 from ..geo import haversine_miles
 from ..models import Hunt, Listing, Location, RawListing
+# Defined in sources/base so the pipeline can tell "Facebook is gating us" from
+# "this one payload would not parse" without importing every adapter.
+from .base import BudgetExhausted, SourceBlocked      # noqa: F401  re-exported
 
 log = logging.getLogger("dealbot.sources.facebook")
 
@@ -70,17 +82,6 @@ CATEGORY_SLUGS = {
 }
 
 SCRIPT_JSON = re.compile(r'<script type="application/json"[^>]*>(.*?)</script>', re.S)
-PHOTO_URI = re.compile(r'"uri":"(https:\\?/\\?/scontent[^"]{40,}?)"')
-
-
-class SourceBlocked(RuntimeError):
-    """Facebook answered, but withheld the data. Distinct from an empty result:
-    this must fail the run loudly rather than look like a quiet day."""
-
-
-class BudgetExhausted(SourceBlocked):
-    """Our own politeness limit, not Facebook's. Trying another surface cannot
-    help, and reporting it as "all surfaces gated" blames the wrong thing."""
 
 
 def _json_blocks(html: str) -> Iterator[dict[str, Any]]:
@@ -103,6 +104,34 @@ def _find_listings(obj: Any) -> Iterator[dict[str, Any]]:
     elif isinstance(obj, list):
         for v in obj:
             yield from _find_listings(v)
+
+
+def _photo_sets(obj: Any) -> Iterator[dict[str, Any]]:
+    """Depth-first walk for the node carrying `listing_photos`.
+
+    Structural rather than path-based, like `_find_listings`: the wrapper is
+    `viewer.marketplace_product_details_page.target` today and will be
+    something else next month, but the key is stable."""
+    if isinstance(obj, dict):
+        if "listing_photos" in obj:
+            yield obj
+        for v in obj.values():
+            yield from _photo_sets(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _photo_sets(v)
+
+
+def _photo_uris(node: dict[str, Any]) -> tuple[str, ...]:
+    """The photo URIs from a `listing_photos` array, in the seller's order."""
+    out: list[str] = []
+    for photo in node.get("listing_photos") or []:
+        if not isinstance(photo, dict):
+            continue
+        uri = (photo.get("image") or {}).get("uri")
+        if uri and uri not in out:
+            out.append(uri)
+    return tuple(out[:6])
 
 
 def _cents(price: dict[str, Any] | None) -> int | None:
@@ -271,12 +300,18 @@ class FacebookSource:
 
     def parse_detail_html(self, html: str, listing: Listing) -> Listing | None:
         best: dict[str, Any] | None = None
+        photos: tuple[str, ...] = ()
         for block in _json_blocks(html):
             for node in _find_listings(block):
                 if str(node.get("id") or "") != listing.source_id:
                     continue
                 if best is None or len(node) > len(best):
                     best = node
+            # The id check is what makes these safe to trust as THIS listing's
+            # photos. Without it we are back to picking up the carousel.
+            for node in _photo_sets(block):
+                if not photos and str(node.get("id") or "") == listing.source_id:
+                    photos = _photo_uris(node)
         if best is None:
             return None
 
@@ -288,11 +323,13 @@ class FacebookSource:
             distance = round(haversine_miles(self.location.lat, self.location.lng,
                                              lat, lng), 1)
 
-        photos = []
-        for m in PHOTO_URI.findall(html):
-            u = m.replace("\\/", "/")
-            if u.split("?")[0] not in {p.split("?")[0] for p in photos}:
-                photos.append(u)
+        # Fall back to the primary photo alone rather than to anything scraped
+        # off the page: one right photo beats six that may belong to somebody
+        # else, and a listing with no photo simply gets no image pass.
+        primary = ((best.get("primary_listing_photo") or {}).get("image")
+                   or {}).get("uri")
+        if not photos and primary:
+            photos = (primary,)
         merged = {**listing.raw, **best}
 
         return Listing(
@@ -313,7 +350,7 @@ class FacebookSource:
             lng=lng if lng is not None else listing.lng,
             distance_mi=distance,
             seller_id=listing.seller_id, seller_name=listing.seller_name,
-            images=tuple(photos[:6]) or listing.images,
+            images=photos or listing.images,
             category=listing.category,
             posted_at=listing.posted_at, raw=merged,
         )

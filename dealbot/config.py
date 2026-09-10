@@ -8,14 +8,18 @@ searched.
 """
 from __future__ import annotations
 
+import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
 from .models import Hunt, Location, Want
+from .schedule import ScheduleDefaults, parse_hhmm
+
+log = logging.getLogger("dealbot.config")
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,11 @@ class ScorerConfig:
     # resolve the unknown has cost money and learned nothing, which is worse
     # value than the photo it saved.
     images_per_check: int = 2
+    # Resolved against the CONFIG FILE by `load`, for the same reason db_path
+    # is: read relative to the working directory it silently falls back to the
+    # built-in rubric, so the bot judges by criteria other than the ones in the
+    # file you edited, and nothing looks wrong.
+    rubric_path: Path | None = None
     # Hard ceiling on model spend per calendar day (UTC). Fetching continues
     # past it -- that costs no quota -- so the bot keeps collecting and simply
     # stops judging. The quota is shared with otter, and an unattended bot
@@ -77,6 +86,17 @@ class CraigslistConfig:
 
 
 @dataclass(frozen=True)
+class RecheckConfig:
+    """Asking the source whether a find is still there.
+
+    Costs requests and no model quota, so it is on by default -- but it is
+    requests against sources that throttle, hence the pacing."""
+    enabled: bool = True
+    every_hours: float = 6.0        # per listing, not per run
+    max_per_run: int = 10
+
+
+@dataclass(frozen=True)
 class DiscordConfig:
     enabled: bool = False
     dashboard_url: str = "http://koda.taila4e463.ts.net:8477"
@@ -87,9 +107,46 @@ class DiscordConfig:
 
 
 @dataclass(frozen=True)
+class HuntDefaults:
+    min_deal_score: float = 7.0
+    free_find_min_score: float = 5.0
+    max_results: int = 60
+
+
+@dataclass(frozen=True)
+class SweepSpec:
+    """A broad trawl, as the file describes it. Kept as a spec rather than
+    compiled straight to a Hunt because a sweep carries every want, and the want
+    list now changes at runtime -- see `Config.hunts`."""
+    name: str
+    queries: tuple[str, ...] = ()
+    max_price_cents: int | None = None
+    exclude: tuple[str, ...] = ()
+    min_deal_score: float | None = None
+    free_find_min_score: float | None = None
+    interval_minutes: int = 15
+    max_results: int | None = None
+    max_age_days: int = 7
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class WantHuntSpec:
+    """Per-want overrides for that want's own targeted hunt (`want_hunts:`)."""
+    exclude: tuple[str, ...] = ()
+    min_deal_score: float | None = None
+    free_find_min_score: float | None = None
+    # Priced items don't evaporate the way free ones do, so they are polled
+    # hourly rather than every 15 minutes.
+    interval_minutes: int = 60
+    max_results: int | None = None
+    max_age_days: int = 0
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class Config:
     location: Location
-    hunts: tuple[Hunt, ...]
     wants: tuple[Want, ...]
     scorer: ScorerConfig
     db_path: Path
@@ -97,17 +154,120 @@ class Config:
     facebook: FacebookConfig
     craigslist: CraigslistConfig
     discord: DiscordConfig
+    recheck: RecheckConfig = RecheckConfig()
+    sweeps: tuple[SweepSpec, ...] = ()
+    want_hunts: Mapping[str, WantHuntSpec] = field(default_factory=dict)
+    defaults: HuntDefaults = HuntDefaults()
+    # Cadence set from the dashboard, keyed by hunt id. Overrides the file.
+    interval_overrides: Mapping[str, int] = field(default_factory=dict)
+    schedule: ScheduleDefaults = ScheduleDefaults()
 
     @property
     def source(self) -> str:
         """Back-compat for single-source callers and tests."""
         return self.sources[0]
 
+    @property
+    def hunts(self) -> tuple[Hunt, ...]:
+        """The runnable hunts, COMPUTED from the current want list.
+
+        This used to be a field compiled once at load. It is derived now because
+        wants are editable from the dashboard: adding one has to produce its
+        hunt, and removing one has to take that hunt away, in a web process that
+        has been up for weeks. Deriving costs a few object allocations per page
+        and removes the whole class of bug where the file and the database
+        disagree about what is running.
+        """
+        d = self.defaults
+        hunts: list[Hunt] = []
+
+        # Sweeps carry EVERY want, so a free listing can match any of them --
+        # that is what lets the sweep find a tv stand without ever searching for
+        # one. Which also means adding a want changes the sweep's prompt.
+        for s in self.sweeps:
+            hid = f"sweep:{s.name}"
+            hunts.append(Hunt(
+                id=hid, name=s.name, kind="sweep",
+                queries=s.queries, max_price_cents=s.max_price_cents,
+                exclude=s.exclude, wants=self.wants,
+                min_deal_score=(d.min_deal_score if s.min_deal_score is None
+                                else s.min_deal_score),
+                free_find_min_score=(d.free_find_min_score
+                                     if s.free_find_min_score is None
+                                     else s.free_find_min_score),
+                interval_minutes=self.interval_overrides.get(
+                    hid, s.interval_minutes),
+                max_results=d.max_results if s.max_results is None else s.max_results,
+                max_age_days=s.max_age_days, enabled=s.enabled))
+
+        # A want with queries also gets its own targeted hunt -- the sweep only
+        # ever sees free items, so a want with a budget is invisible to it.
+        for w in self.wants:
+            if not w.queries:
+                continue
+            hid = f"want:{w.name}"
+            spec = self.want_hunts.get(w.name) or WantHuntSpec()
+            hunts.append(Hunt(
+                id=hid, name=w.name, kind="want",
+                queries=w.queries, max_price_cents=w.max_price_cents,
+                exclude=spec.exclude, wants=(w,),
+                min_deal_score=(d.min_deal_score if spec.min_deal_score is None
+                                else spec.min_deal_score),
+                free_find_min_score=(d.free_find_min_score
+                                     if spec.free_find_min_score is None
+                                     else spec.free_find_min_score),
+                interval_minutes=self.interval_overrides.get(
+                    hid, spec.interval_minutes),
+                max_results=(d.max_results if spec.max_results is None
+                             else spec.max_results),
+                max_age_days=spec.max_age_days, enabled=spec.enabled))
+        return tuple(hunts)
+
+
+def with_store(cfg: Config, store) -> Config:
+    """Overlay what the dashboard owns: the want list and the cadences.
+
+    `config.yaml` seeds the wants table once and is then no longer consulted for
+    them, so this is what makes an edit made on a phone take effect on the next
+    timer tick with nothing to restart. Called per request in the dashboard and
+    once per command in the CLI.
+    """
+    store.seed_wants(cfg.wants)
+    return replace(cfg,
+                   wants=tuple(s.want for s in store.wants()),
+                   interval_overrides=store.hunt_intervals())
+
 
 def _cents(value: Any) -> int | None:
     if value is None:
         return None
     return int(round(float(value) * 100))
+
+
+def _schedule_defaults(raw: dict) -> ScheduleDefaults:
+    """The STARTING window, and the timezone.
+
+    Only the timezone really belongs in the file -- it is a fact about where you
+    live, not a preference. The window is here so a fresh install has one, and
+    is overridden by the `settings` table the moment it is set from the web.
+    """
+    tz = tz_name = None
+    name = raw.get("timezone")
+    if name:
+        try:
+            from zoneinfo import ZoneInfo
+            tz, tz_name = ZoneInfo(str(name)), str(name)
+        except Exception:                                  # noqa: BLE001
+            # An unknown zone must not stop the bot. Falling back to the
+            # machine's own clock is right far more often than refusing to run.
+            log.warning("unknown schedule.timezone %r; using local time", name)
+    start = parse_hhmm(raw.get("start")) 
+    end = parse_hhmm(raw.get("end"))
+    return ScheduleDefaults(
+        enabled=bool(raw.get("enabled", False)),
+        start_minute=12 * 60 if start is None else start,
+        end_minute=20 * 60 if end is None else end,
+        tz=tz, tz_name=tz_name)
 
 
 def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
@@ -127,11 +287,16 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
                            or loc.get("radius_miles", 25)),
     )
 
-    defaults = raw.get("defaults") or {}
-    default_score = float(defaults.get("min_deal_score", 7.0))
-    default_free_score = float(defaults.get("free_find_min_score", 5.0))
-    default_max_results = int(defaults.get("max_results_per_run", 60))
+    dflt = raw.get("defaults") or {}
+    defaults = HuntDefaults(
+        min_deal_score=float(dflt.get("min_deal_score", 7.0)),
+        free_find_min_score=float(dflt.get("free_find_min_score", 5.0)),
+        max_results=int(dflt.get("max_results_per_run", 60)),
+    )
 
+    # The file's wants are a SEED. `db.seed_wants` copies them in the first time
+    # a database is opened and never again, after which the table is the truth
+    # and the dashboard owns it -- see `with_store`.
     wants = tuple(
         Want(
             name=w["name"],
@@ -144,53 +309,42 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     )
     by_name = {w.name: w for w in wants}
 
-    hunts: list[Hunt] = []
-
-    # Sweeps carry every want, so the model can match a free listing against the
-    # whole list at once.
-    for s in raw.get("sweeps") or []:
-        hunts.append(Hunt(
-            id=f"sweep:{s['name']}",
+    sweeps = tuple(
+        SweepSpec(
             name=s["name"],
-            kind="sweep",
             queries=tuple(s.get("queries") or ()),
             max_price_cents=_cents(s.get("max_price")),
             exclude=tuple(s.get("exclude") or ()),
-            wants=wants,
-            min_deal_score=float(s.get("min_deal_score", default_score)),
-            free_find_min_score=float(
-                s.get("free_find_min_score", default_free_score)),
+            min_deal_score=(None if s.get("min_deal_score") is None
+                            else float(s["min_deal_score"])),
+            free_find_min_score=(None if s.get("free_find_min_score") is None
+                                 else float(s["free_find_min_score"])),
             interval_minutes=int(s.get("interval_minutes", 15)),
-            max_results=int(s.get("max_results", default_max_results)),
+            max_results=(None if s.get("max_results") is None
+                         else int(s["max_results"])),
             max_age_days=int(s.get("max_age_days", 7)),
             enabled=bool(s.get("enabled", True)),
-        ))
+        )
+        for s in (raw.get("sweeps") or [])
+    )
 
-    # A want with queries also gets its own targeted hunt -- the sweep only ever
-    # sees free items, so a want with a budget is invisible to it.
-    for w in wants:
-        if not w.queries:
-            continue
-        cfg = (raw.get("want_hunts") or {}).get(w.name, {})
-        hunts.append(Hunt(
-            id=f"want:{w.name}",
-            name=w.name,
-            kind="want",
-            queries=w.queries,
-            max_price_cents=w.max_price_cents,
-            exclude=tuple(cfg.get("exclude") or ()),
-            wants=(w,),
-            min_deal_score=float(cfg.get("min_deal_score", default_score)),
-            free_find_min_score=float(
-                cfg.get("free_find_min_score", default_free_score)),
-            # Priced items don't evaporate the way free ones do, so they are
-            # polled hourly rather than every 15 minutes. Keeps request volume
-            # down without costing anything real.
-            interval_minutes=int(cfg.get("interval_minutes", 60)),
-            max_results=int(cfg.get("max_results", default_max_results)),
-            max_age_days=int(cfg.get("max_age_days", 0)),
-            enabled=bool(cfg.get("enabled", True)),
-        ))
+    want_hunts = {
+        name: WantHuntSpec(
+            exclude=tuple(c.get("exclude") or ()),
+            min_deal_score=(None if c.get("min_deal_score") is None
+                            else float(c["min_deal_score"])),
+            free_find_min_score=(None if c.get("free_find_min_score") is None
+                                 else float(c["free_find_min_score"])),
+            interval_minutes=int(c.get("interval_minutes", 60)),
+            max_results=(None if c.get("max_results") is None
+                         else int(c["max_results"])),
+            max_age_days=int(c.get("max_age_days", 0)),
+            enabled=bool(c.get("enabled", True)),
+        )
+        for name, c in (raw.get("want_hunts") or {}).items()
+    }
+
+    schedule = _schedule_defaults(raw.get("schedule") or {})
 
     sc = raw.get("scorer") or {}
     scorer = ScorerConfig(
@@ -207,11 +361,24 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         max_seven_day_utilization=float(sc.get("max_seven_day_utilization", 0.90)),
         utilization_stale_minutes=int(sc.get("utilization_stale_minutes", 30)),
         rate_limit_fallback_seconds=int(sc.get("rate_limit_fallback_seconds", 5 * 3600)),
+        rubric_path=(config_path.parent
+                     / sc.get("rubric_path", "prompts/rubric.md")),
     )
 
-    unknown = set((raw.get("want_hunts") or {})) - set(by_name)
+    # A file-consistency check, and only that. It runs against the file's own
+    # wants: once the table is the truth a want can be deleted from the
+    # dashboard while the file still names it, and THAT must not raise -- an
+    # exception here takes the bot off the air over a stale comment.
+    unknown = set(want_hunts) - set(by_name)
     if unknown:
         raise ValueError(f"want_hunts references unknown wants: {sorted(unknown)}")
+
+    rc = raw.get("recheck") or {}
+    recheck = RecheckConfig(
+        enabled=bool(rc.get("enabled", True)),
+        every_hours=float(rc.get("every_hours", 6.0)),
+        max_per_run=int(rc.get("max_per_run", 10)),
+    )
 
     dc = raw.get("discord") or {}
     discord = DiscordConfig(
@@ -240,8 +407,11 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
 
     return Config(
         location=location,
-        hunts=tuple(hunts),
         wants=wants,
+        sweeps=sweeps,
+        want_hunts=want_hunts,
+        defaults=defaults,
+        schedule=schedule,
         scorer=scorer,
         # Resolved against the CONFIG FILE, not the working directory. A
         # relative db_path interpreted per-CWD is how the data ended up split
@@ -252,4 +422,5 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         facebook=facebook,
         craigslist=craigslist,
         discord=discord,
+        recheck=recheck,
     )

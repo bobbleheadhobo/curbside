@@ -15,6 +15,21 @@ from typing import Iterator, Protocol
 from ..models import Hunt, Listing, RawListing
 
 
+class SourceBlocked(RuntimeError):
+    """The site answered, but withheld the data. Distinct from an empty result:
+    this must fail the run loudly rather than look like a quiet day.
+
+    Shared by every adapter on purpose. The pipeline has to tell "the site is
+    gating us, stop asking" apart from "this one payload would not parse", and
+    it cannot do that while each source raises its own unrelated class.
+    """
+
+
+class BudgetExhausted(SourceBlocked):
+    """Our own politeness limit, not the site's. Trying another surface cannot
+    help, and reporting it as "all surfaces gated" blames the wrong thing."""
+
+
 class Source(Protocol):
     """A marketplace adapter. To add one, implement these three things.
 

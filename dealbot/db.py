@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from .models import Hunt, Listing, Score, UpsertResult
+from .models import Hunt, Listing, Score, StoredWant, UpsertResult, Want
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -45,7 +45,15 @@ CREATE TABLE IF NOT EXISTS listings (
   dup_key       TEXT,
   first_seen    TEXT NOT NULL,
   last_seen     TEXT NOT NULL,
+  -- 0 once the listing is known to be off the market. Until the re-check pass
+  -- existed nothing ever set this to 0, so every row said 1 forever.
   is_active     INTEGER NOT NULL DEFAULT 1,
+  -- When we CONFIRMED it was no longer available, and how we know. `sold` is
+  -- the source saying so outright; `removed` is the item page no longer
+  -- resolving, which is usually a sale but the source did not say. Both are
+  -- different from `gone`, which only means it stopped appearing in results.
+  sold_at       TEXT,
+  sold_reason   TEXT,
   raw           TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS ix_listings_fingerprint ON listings(fingerprint);
@@ -73,6 +81,9 @@ CREATE TABLE IF NOT EXISTS hunt_matches (
   miss_count    INTEGER NOT NULL DEFAULT 0,
   status_before_gone TEXT,
   notified_at   TEXT,
+  -- Paces the re-check pass: one detail fetch per listing per interval, so a
+  -- bin of forty things cannot turn into forty requests every run.
+  rechecked_at  TEXT,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (hunt_id, listing_id)
 );
@@ -123,13 +134,39 @@ CREATE TABLE IF NOT EXISTS runs (
   n_deferred    INTEGER NOT NULL DEFAULT 0,
   full_pass     INTEGER NOT NULL DEFAULT 1,
   cost_usd      REAL NOT NULL DEFAULT 0,
-  error         TEXT
+  error         TEXT,
+  -- A run that fetched, judged and surfaced, but lost something on the way --
+  -- detail fetches cut short, appraisal interrupted by a rate limit. Kept
+  -- apart from `error` because `last_success_at` reads that column: a degraded
+  -- run recorded as failed makes every tick "due", so the cadence collapses to
+  -- the timer period against a source that is already throttling us.
+  warning       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_runs_hunt ON runs(hunt_id, started_at);
 
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+-- Wants lived only in config.yaml, which meant adding one needed an ssh session
+-- and a service restart. They live here so the dashboard can edit them;
+-- config.yaml seeds this table once and is never read for wants again. Same
+-- reasoning as the pause switches: two writers on one committed file is how you
+-- lose a comment, or a whole want.
+CREATE TABLE IF NOT EXISTS wants (
+  name            TEXT PRIMARY KEY,       -- also the hunt id: want:<name>
+  description     TEXT NOT NULL,
+  max_price_cents INTEGER NOT NULL DEFAULT 0,
+  queries         TEXT NOT NULL DEFAULT '[]',
+  requires        TEXT NOT NULL DEFAULT '[]',
+  origin          TEXT NOT NULL DEFAULT 'web',   -- 'config' when seeded from the file
+  -- Soft delete. Nothing is deleted here either: a removed want keeps its rows
+  -- so /hunt/want:<name> still explains everything it ever matched, and the
+  -- name stays taken so a seed cannot resurrect it.
+  archived_at     TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
 );
 """
 
@@ -168,11 +205,15 @@ class Store:
                         ("image_question", "TEXT"),
                         ("images_checked", "INTEGER NOT NULL DEFAULT 0"))),
             ("listings", (("dup_key", "TEXT"),
-                          ("previous_price_cents", "INTEGER"))),
+                          ("previous_price_cents", "INTEGER"),
+                          ("sold_at", "TEXT"),
+                          ("sold_reason", "TEXT"))),
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("status_before_gone", "TEXT"),
-                              ("notified_at", "TEXT"))),
-            ("runs", (("n_worth_a_look", "INTEGER NOT NULL DEFAULT 0"),
+                              ("notified_at", "TEXT"),
+                              ("rechecked_at", "TEXT"))),
+            ("runs", (("warning", "TEXT"),
+                      ("n_worth_a_look", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_free_find", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_image_checks", "INTEGER NOT NULL DEFAULT 0"),
@@ -227,7 +268,7 @@ class Store:
                 ("n_fetched", "n_new", "n_candidates", "n_scored", "n_surfaced",
                  "n_worth_a_look", "n_wanted", "n_free_find",
                  "n_image_checks", "n_deferred", "full_pass", "cost_usd",
-                 "error")]
+                 "error", "warning")]
         sets = ", ".join(f"{c}=?" for c in cols)
         args = [fields[c] for c in cols]
         self.conn.execute(
@@ -320,7 +361,13 @@ class Store:
                  seller_name  = COALESCE(?, seller_name),
                  images       = CASE WHEN json_array_length(?) >= json_array_length(images)
                                      THEN ? ELSE images END,
-                 last_seen    = ?, is_active = 1, raw = ?
+                 -- NOT a plain `is_active = 1`. Facebook keeps showing sold
+                 -- items in search results, so seeing one again is not
+                 -- evidence it is back on the market -- and a straight 1 here
+                 -- would quietly resurrect everything the re-check retired.
+                 last_seen    = ?,
+                 is_active    = CASE WHEN sold_at IS NULL THEN 1 ELSE 0 END,
+                 raw = ?
                WHERE id = ?""",
             (listing.title, listing.description, listing.price_cents,
              listing.previous_price_cents, listing.url,
@@ -345,7 +392,8 @@ class Store:
             (hunt_id, dup_key, exclude_id)).fetchone()
         return row["id"] if row else None
 
-    def record_price(self, listing_id: str, price_cents: int | None) -> None:
+    def record_price(self, listing_id: str, price_cents: int | None,
+                     observed_at: str | None = None) -> None:
         """Append-only, but only when the price actually MOVED.
 
         Writing an unchanged price every run meant ~200 identical rows per hunt
@@ -358,9 +406,12 @@ class Store:
             "ORDER BY id DESC LIMIT 1", (listing_id,)).fetchone()
         if last is not None and last["price_cents"] == price_cents:
             return
+        # `observed_at` is for backfills and for seed-demo, which needs a
+        # history that spans weeks rather than one instant; the pipeline never
+        # passes it.
         self.conn.execute(
             "INSERT INTO price_observations (listing_id, observed_at, price_cents) VALUES (?,?,?)",
-            (listing_id, _now(), price_cents),
+            (listing_id, observed_at or _now(), price_cents),
         )
 
     def price_history(self, listing_id: str) -> list[tuple[str, int | None]]:
@@ -396,9 +447,11 @@ class Store:
         self.conn.execute(
             f"""UPDATE hunt_matches
                 SET miss_count = 0,
-                    status = CASE WHEN status='gone'
-                                  THEN COALESCE(status_before_gone, 'new')
-                                  ELSE status END,
+                    status = CASE
+                        WHEN status='gone' AND listing_id NOT IN (
+                             SELECT id FROM listings WHERE sold_at IS NOT NULL)
+                        THEN COALESCE(status_before_gone, 'new')
+                        ELSE status END,
                     status_before_gone = NULL
                 WHERE hunt_id=? AND listing_id IN ({marks})""",
             [hunt_id, *seen_ids])
@@ -441,11 +494,79 @@ class Store:
 
     def set_status(self, hunt_id: str, listing_id: str, status: str,
                    note: str | None = None) -> None:
+        # COALESCE, because `note` defaults to None and the pipeline never
+        # passes one: without it every status transition wiped the note that
+        # explained the previous one. Dismissing with a reason and later saving
+        # the same listing erased the reason. A note is only ever replaced by
+        # another note.
         self.conn.execute(
-            "UPDATE hunt_matches SET status=?, dismiss_note=?, updated_at=? "
+            "UPDATE hunt_matches SET status=?, "
+            "dismiss_note=COALESCE(?, dismiss_note), updated_at=? "
             "WHERE hunt_id=? AND listing_id=?",
             (status, note, _now(), hunt_id, listing_id),
         )
+
+    def due_for_recheck(self, statuses: Sequence[str], older_than: str | None,
+                        limit: int) -> list[tuple[str, str, Listing]]:
+        """Listings in a bin whose availability has not been confirmed lately.
+
+        Only things you might actually act on: re-checking the whole store
+        would be hundreds of requests against sources that throttle, to learn
+        something about listings nobody will look at. Never-checked first, then
+        oldest, so a backlog drains in a stable order rather than starving one
+        listing forever.
+        """
+        marks = ",".join("?" * len(statuses))
+        # `older_than=None` means every one of them, however recently checked.
+        # Timestamps are second-granular, so a cutoff of "now" would exclude a
+        # listing stamped in this same second -- which is exactly what a manual
+        # "check them all" run does.
+        paced = "AND (m.rechecked_at IS NULL OR m.rechecked_at < ?)"
+        rows = self.conn.execute(
+            f"""SELECT m.hunt_id, m.status, l.* FROM hunt_matches m
+                JOIN listings l ON l.id = m.listing_id
+                WHERE m.status IN ({marks})
+                  AND l.sold_at IS NULL
+                  {paced if older_than is not None else ""}
+                ORDER BY m.rechecked_at IS NOT NULL, m.rechecked_at
+                LIMIT ?""",
+            [*statuses, *( [older_than] if older_than is not None else [] ), limit]
+        ).fetchall()
+        return [(r["hunt_id"], r["status"], self._row_to_listing(r)) for r in rows]
+
+    def retire_sold(self, listing_id: str) -> int:
+        """Take a listing known to be off the market out of every bin.
+
+        Every bin: one listing can match several hunts, and marking only the
+        hunt that happened to re-check it would leave the same sold couch
+        sitting in another tab. `saved` and `contacted` are deliberately
+        untouched -- those are the user's own decisions, and something they
+        saved should be marked sold, not quietly removed from their list.
+        `new` and `scored` are included so nothing pays to judge it later.
+        """
+        cur = self.conn.execute(
+            """UPDATE hunt_matches
+               SET status_before_gone = COALESCE(status_before_gone, status),
+                   status = 'gone', updated_at = ?
+               WHERE listing_id = ?
+                 AND status IN ('wanted', 'free_find', 'new', 'scored')""",
+            (_now(), listing_id))
+        return cur.rowcount
+
+    def mark_rechecked(self, hunt_id: str, listing_id: str) -> None:
+        self.conn.execute(
+            "UPDATE hunt_matches SET rechecked_at=? WHERE hunt_id=? AND listing_id=?",
+            (_now(), hunt_id, listing_id))
+
+    def mark_sold(self, listing_id: str, reason: str) -> None:
+        """Record that a listing is off the market. Stamped once: the first
+        confirmation is the honest one, and a later re-check cannot move the
+        date around."""
+        self.conn.execute(
+            """UPDATE listings SET sold_at = COALESCE(sold_at, ?),
+                                   sold_reason = COALESCE(sold_reason, ?),
+                                   is_active = 0
+               WHERE id = ?""", (_now(), reason, listing_id))
 
     def pending_notifications(self, hunt_id: str, limit: int = 50
                               ) -> list[tuple[Listing, Score]]:
@@ -555,7 +676,100 @@ class Store:
                      WHERE hunt_id=? GROUP BY listing_id) m
                  ON s.id = m.mx""", (hunt_id,))}
 
+    # --- wants --------------------------------------------------------------
+
+    def seed_wants(self, wants: Iterable[Want]) -> int:
+        """Copy config.yaml's wants into the table, ONCE ever.
+
+        After this the table is the truth and the file is history. Seeding again
+        on every start would undo every edit made from the phone, and seeding
+        per-name would resurrect a want deleted from the web the moment the
+        file still mentioned it. So it is a one-shot, remembered in `settings`.
+        """
+        if self.get_setting("wants.seeded") == "1":
+            return 0
+        n = sum(self.save_want(w, origin="config") for w in wants)
+        self.set_setting("wants.seeded", "1")
+        return n
+
+    def save_want(self, want: Want, *, origin: str = "web") -> int:
+        """Create or update one want. `created_at` and `origin` survive an edit."""
+        now = _now()
+        cur = self.conn.execute(
+            """INSERT INTO wants (name, description, max_price_cents, queries,
+                                  requires, origin, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)
+               ON CONFLICT(name) DO UPDATE SET
+                 description=excluded.description,
+                 max_price_cents=excluded.max_price_cents,
+                 queries=excluded.queries,
+                 requires=excluded.requires,
+                 updated_at=excluded.updated_at""",
+            (want.name, want.description, want.max_price_cents,
+             json.dumps(list(want.queries)), json.dumps(list(want.requires)),
+             origin, now, now))
+        return cur.rowcount or 0
+
+    def archive_want(self, name: str) -> None:
+        """Retire a want. Its hunt stops running; everything it matched stays."""
+        self.conn.execute(
+            "UPDATE wants SET archived_at=?, updated_at=? WHERE name=?",
+            (_now(), _now(), name))
+
+    def restore_want(self, name: str) -> None:
+        self.conn.execute(
+            "UPDATE wants SET archived_at=NULL, updated_at=? WHERE name=?",
+            (_now(), name))
+
+    def wants(self, include_archived: bool = False) -> list[StoredWant]:
+        sql = "SELECT * FROM wants"
+        if not include_archived:
+            sql += " WHERE archived_at IS NULL"
+        sql += " ORDER BY name"
+        return [self._row_to_stored_want(r) for r in self.conn.execute(sql)]
+
+    def get_want(self, name: str) -> StoredWant | None:
+        r = self.conn.execute("SELECT * FROM wants WHERE name=?", (name,)).fetchone()
+        return self._row_to_stored_want(r) if r else None
+
+    @staticmethod
+    def _row_to_stored_want(r: sqlite3.Row) -> StoredWant:
+        return StoredWant(
+            want=Want(
+                name=r["name"],
+                description=r["description"],
+                max_price_cents=r["max_price_cents"],
+                queries=tuple(json.loads(r["queries"] or "[]")),
+                requires=tuple(json.loads(r["requires"] or "[]")),
+            ),
+            origin=r["origin"],
+            archived_at=r["archived_at"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
+
     # --- settings -----------------------------------------------------------
+
+    def hunt_intervals(self) -> dict[str, int]:
+        """Per-hunt cadence set from the dashboard, overriding config.yaml.
+
+        Same home and same reasoning as the pause switches. A value that will
+        not parse is ignored rather than raised on: a bad settings row must not
+        be able to stop the timer."""
+        out: dict[str, int] = {}
+        for r in self.conn.execute(
+                "SELECT key, value FROM settings WHERE key LIKE 'hunt_interval:%'"):
+            try:
+                minutes = int(r["value"])
+            except (TypeError, ValueError):
+                continue
+            if minutes > 0:
+                out[r["key"].split(":", 1)[1]] = minutes
+        return out
+
+    def set_hunt_interval(self, hunt_id: str, minutes: int) -> None:
+        self.set_setting(f"hunt_interval:{hunt_id}", str(int(minutes)))
+
 
     def hunt_enabled(self, hunt_id: str) -> bool:
         """A runtime override on top of config.yaml's `enabled`.

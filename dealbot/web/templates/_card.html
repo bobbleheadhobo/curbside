@@ -2,70 +2,158 @@
    lands everywhere: wants, free finds, saved and near misses.
 
    `i` carries every listings and scores column plus age_days and price_moves;
-   `back` is where the triage buttons return to. See docs/UI.md for the field
-   reference. Images go through /thumb/<id>, never i.images[0] -- Facebook's
-   URLs expire after about four days. #}
-{% macro card(i, back) %}
-<div class="card">
-  {% if i.images %}<img class="thumb" src="/thumb/{{i.id}}" alt="" loading="lazy">
-  {% else %}<div class="thumb">no photo</div>{% endif %}
-  <div class="body">
-    <div class="title"><a href="/listing/{{i.id}}">{{i.title}}</a></div>
-    {% set was = i.previous_price_cents if i.previous_price_cents is not none
-                 else (i.priced_at_cents if i.priced_at_cents is not none
-                       and i.price_cents is not none
-                       and i.price_cents < i.priced_at_cents else none) %}
-    <div class="meta">
-      {% if was is not none and i.price_cents is not none and i.price_cents < was %}
-        <span class="strike">${{ '%.0f'|format(was/100) }}</span>
-        <span class="drop">{% if i.price_cents == 0 %}now FREE{% else %}${{ '%.0f'|format(i.price_cents/100) }}{% endif %} ↓</span>
-      {% elif i.price_cents == 0 %}<b>free</b>
-      {% elif i.price_cents is none %}no price
-      {% else %}${{ '%.0f'|format(i.price_cents/100) }}{% endif %}
-      &middot; {{ '%.0f'|format(i.distance_mi or 0) }} mi &middot; {{ i.city or '?' }}
-      {% if i.age_days is not none %}&middot; listed {{i.age_days}}d ago{% endif %}
-      {% if i.status %}&middot; {{i.status}}{% endif %}
-      {% if i.filter_reason %}<span class="chip">{{i.filter_reason}}</span>{% endif %}
+   `back` is where the triage buttons return to; `actions` are the triage
+   statuses offered inline. See docs/UI.md for the field reference. Images go
+   through /thumb/<id>, never i.images[0] -- Facebook's URLs expire after about
+   four days.
+
+   Shape: photo, price and place decide, and they get the whole top row. The
+   model's judgement -- reasoning, requirements, unknowns -- is real content but
+   it is read second and only sometimes, so it folds away behind a disclosure
+   rather than pushing the next listing off the screen. Nothing is hidden that
+   explains a decision; it is one tap away and the summary says what is in it. #}
+
+{% macro _money(cents) %}{% if cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}{% endmacro %}
+
+{% macro card(i, back, actions=['saved','dismissed'], show_status=false) %}
+{% set was = i.previous_price_cents if i.previous_price_cents is not none
+             else (i.priced_at_cents if i.priced_at_cents is not none
+                   and i.price_cents is not none
+                   and i.price_cents < i.priced_at_cents else none) %}
+{% set dropped = was is not none and i.price_cents is not none and i.price_cents < was %}
+{% set motivated = (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
+{% set has_why = i.reasoning or i.requirements or i.unknowns or i.red_flags %}
+<article class="card">
+  <a class="card-main" href="/listing/{{i.id}}">
+    {# The placeholder sits underneath and the photo covers it, so a source URL
+       that has expired -- Facebook's last about four days -- degrades to a
+       labelled state instead of a broken-image glyph. #}
+    <div class="shot-wrap">
+      <div class="shot empty" aria-hidden="true">
+        <svg class="i"><use href="#i-noimg"/></svg>{{ 'photo expired' if i.images else 'no photo' }}</div>
+      {% if i.images %}
+      <img class="shot" src="/thumb/{{i.id}}" alt="" loading="lazy" decoding="async"
+           onerror="this.hidden=true">
+      {% endif %}
     </div>
-    <div class="why">
-      {% if i.matched_want %}<span class="chip {{'unk' if i.match=='unknown' else 'want'}}">{{i.matched_want}}{% if i.match=='unknown' %}?{% endif %}</span>{% endif %}
-      {% if i.images_checked %}<span class="chip">photos checked</span>{% endif %}
-      {# Old and repriced = a seller who wants it gone. The single signal no
-         keyword filter can express, and we had the data for it all along. #}
-      {% if (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
-        <span class="chip drop">motivated seller</span>
-      {% elif (i.age_days or 0) >= 21 %}<span class="chip">sitting {{i.age_days}}d</span>{% endif %}
-      {% if (i.price_moves or 0) >= 2 %}<span class="chip drop">{{i.price_moves}} price drops</span>{% endif %}
-      {% for f in i.red_flags %}<span class="chip flag">{{f}}</span>{% endfor %}
-      {{ i.reasoning or '' }}
+    <div class="info">
+      <h2>{{i.title}}</h2>
+
+      <p class="price">
+        {% if dropped %}
+          <span class="now num {{ 'free' if i.price_cents == 0 }}">{{ _money(i.price_cents) }}</span>
+          <span class="strike num">{{ _money(was) }}</span>
+          <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
+            {{ ((was - i.price_cents) / was * 100) | round | int }}%</span>
+        {% elif i.price_cents == 0 %}<span class="now free">free</span>
+        {% elif i.price_cents is none %}<span class="none">no price</span>
+        {% else %}<span class="now num">{{ _money(i.price_cents) }}</span>{% endif %}
+      </p>
+
+      <p class="where">
+        {% if i.distance_mi is not none %}
+          <span class="num">{{ '%.0f'|format(i.distance_mi) }} mi</span>{% endif %}
+        <span>{{ i.city or 'unknown' }}</span>
+        {% if i.age_days is not none %}<span>listed
+          {%- if i.age_days == 0 %} today{% elif i.age_days == 1 %} yesterday
+          {%- else %} {{i.age_days}}d ago{% endif %}</span>{% endif %}
+        {# The bin views are named after the status, so repeating it on every
+           row is noise; the hunt view is where it actually varies. #}
+        {% if show_status and i.status %}<span>{{i.status}}</span>{% endif %}
+      </p>
+
+      {% if i.matched_want or i.images_checked or motivated or (i.age_days or 0) >= 21
+            or (i.price_moves or 0) >= 2 or i.red_flags or i.sold_at or i.filter_reason %}
+      <p class="tags">
+        {% if i.matched_want %}
+          <span class="chip {{'unk' if i.match=='unknown' else 'want'}}">
+            {% if i.match=='unknown' %}<svg class="i" aria-hidden="true"><use href="#i-help"/></svg>{% else %}<svg class="i" aria-hidden="true"><use href="#i-check"/></svg>{% endif %}
+            {{i.matched_want}}</span>
+        {% endif %}
+        {# Old and repriced = a seller who wants it gone. The single signal no
+           keyword filter can express, and we had the data for it all along. #}
+        {% if motivated %}
+          <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>motivated seller</span>
+        {% elif (i.age_days or 0) >= 21 %}
+          <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>sitting {{i.age_days}}d</span>
+        {% endif %}
+        {# the percentage chip on the price line already says this #}
+        {% if (i.price_moves or 0) >= 2 and not dropped %}
+          <span class="chip drop">{{i.price_moves}} price drops</span>{% endif %}
+        {% if i.images_checked %}
+          <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>photos checked</span>{% endif %}
+        {% for f in i.red_flags %}
+          <span class="chip flag"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></span>{% endfor %}
+        {# Confirmed off the market by the re-check pass. `removed` is the weaker
+           claim -- the page stopped resolving -- so it does not say "sold". #}
+        {% if i.sold_at %}
+          <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>{{i.sold_reason or 'gone'}}</span>{% endif %}
+        {% if i.filter_reason %}<span class="chip">{{i.filter_reason}}</span>{% endif %}
+      </p>
+      {% endif %}
     </div>
-    {% if i.unknowns %}
-    <div class="unknowns">needs checking: {{ i.unknowns|join('; ') }}</div>
+
+    {% if i.deal_score is not none %}
+    <p class="score {{ 's-hi' if i.deal_score>=7 else ('s-mid' if i.deal_score>=5 else 's-lo') }}">
+      <b class="num">{{ '%.1f'|format(i.deal_score) }}</b><span class="num">/10</span></p>
     {% endif %}
-    {% if i.requirements %}
-    <div class="reqs"><ul>
-      {% for r in i.requirements %}
-      <li>{{ '✓' if r.met=='yes' else ('✗' if r.met=='no' else '?') }}
-          {{r.req}}{% if r.evidence %} &mdash; <i>{{r.evidence}}</i>{% endif %}</li>
-      {% endfor %}
-    </ul></div>
-    {% endif %}
-    <div style="margin-top:.5rem">
-      {% for s in ['saved','dismissed','contacted'] %}
-      <form class="inline" method="post" action="/triage">
-        <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
-        <input type="hidden" name="listing_id" value="{{i.id}}">
-        <input type="hidden" name="status" value="{{s}}">
-        <input type="hidden" name="back" value="{{back}}">
-        <button>{{s}}</button>
-      </form>
-      {% endfor %}
-      <a class="chip" href="{{i.url}}" target="_blank" rel="noopener">open ↗</a>
+  </a>
+
+  {% if has_why %}
+  <details class="why">
+    <summary>
+      {% if i.unknowns %}<svg class="i" aria-hidden="true"><use href="#i-help"/></svg>{% endif %}
+      {% if i.deal_score is not none %}Why it scored {{ '%.1f'|format(i.deal_score) }}{% else %}Why it is here{% endif %}
+      {%- if i.unknowns %} &middot; {{i.unknowns|length}} thing{{ '' if i.unknowns|length == 1 else 's' }} to check{% endif %}
+      {%- if i.red_flags %} &middot; {{i.red_flags|length}} flag{{ '' if i.red_flags|length == 1 else 's' }}{% endif %}
+      <svg class="i chev" aria-hidden="true"><use href="#i-chev"/></svg>
+    </summary>
+    <div class="whybody">
+      {% if i.red_flags %}
+      <ul class="flags">
+        {% for f in i.red_flags %}
+        <li><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if i.unknowns %}
+      <p class="unknowns"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
+        <span><b>Needs checking:</b> {{ i.unknowns|join('; ') }}</span></p>
+      {% endif %}
+      {% if i.requirements %}
+      <ul class="reqs">
+        {% for r in i.requirements %}
+        <li>
+          {% if r.met == 'yes' %}<svg class="i yes" aria-hidden="true"><use href="#i-check"/></svg>
+          {% elif r.met == 'no' %}<svg class="i no" aria-hidden="true"><use href="#i-x"/></svg>
+          {% else %}<svg class="i maybe" aria-hidden="true"><use href="#i-help"/></svg>{% endif %}
+          <span>{{r.req}}{% if r.evidence %}: <i>{{r.evidence}}</i>{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if i.reasoning %}<p>{{ i.reasoning }}</p>{% endif %}
     </div>
-  </div>
-  {% if i.deal_score is not none %}
-  <div class="score {{ 's-hi' if i.deal_score>=7 else ('s-mid' if i.deal_score>=5 else 's-lo') }}">
-    {{ '%.1f'|format(i.deal_score) }}</div>
+  </details>
   {% endif %}
-</div>
+
+  <div class="actions">
+    {% for s in actions %}
+    <form class="inline" method="post" action="/triage">
+      <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
+      <input type="hidden" name="listing_id" value="{{i.id}}">
+      <input type="hidden" name="status" value="{{s}}">
+      <input type="hidden" name="back" value="{{back}}">
+      <button title="{% if s == 'saved' %}Move to Saved{% elif s == 'dismissed' %}Take it out of this bin, and teach the hunt not to send things like it{% endif %}">
+        {% if s == 'saved' %}<svg class="i" aria-hidden="true"><use href="#i-saved"/></svg>Save
+        {% elif s == 'dismissed' %}<svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Dismiss
+        {% else %}{{s}}{% endif %}
+      </button>
+    </form>
+    {% endfor %}
+    <a class="btn open" href="{{i.url}}" target="_blank" rel="noopener"
+       aria-label="Open on the marketplace">
+      <svg class="i" aria-hidden="true"><use href="#i-open"/></svg></a>
+  </div>
+</article>
 {% endmacro %}
