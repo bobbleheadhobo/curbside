@@ -76,6 +76,14 @@ systemctl --user restart curbside-web.service        # after changing web code
 The dashboard is a long-lived process: **web code changes need that restart.**
 The timer does not — each `dealbot once` is a fresh process.
 
+**Restart it yourself when you change web code.** Standing authorisation, given
+2026-09-10 — do not stop and ask. It is a five-second bounce of a local read-
+mostly service behind a proxy, and leaving it un-restarted means the user is
+looking at last week's dashboard while being told the work is done. Check it
+came back (`systemctl --user is-active`, and curl a page) rather than assuming.
+This covers restarts. Editing or disabling the units is still worth asking
+about.
+
 **You have passwordless `sudo` for `systemctl` and `journalctl`**, for the
 system manager and the full journal. You will rarely need it, since everything
 Curbside runs is a user unit. Nothing else is passwordless.
