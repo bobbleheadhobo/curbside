@@ -109,7 +109,14 @@ an Android home screen and the alternative was a grey default square. It is the
 thing the product is named after: a box at the edge of a curb where the pavement
 steps down, white on the accent blue, two shapes and no detail that dies at
 32px. It is drawn by `tools/make_icons.py`, which emits the SVG and every PNG
-from one geometry. It is not a logo and does not appear in the interface.
+from one geometry.
+
+**It sits in the top bar beside the name as of 2026-09-10**, at the user's
+request — the same `/static/icon.svg` the tab and the installed tile use, so
+the three cannot drift. It is a mark, not a logo or a wordmark: the name is
+still set in the interface face beside it. It is also the one solid block of
+accent in the interface, which is the documented exception to "accent is never
+decoration".
 
 **Standing preference, confirmed 2026-09-09: the category standard, played
 straight.** Offered a rolled visual direction (highway guide signage) and

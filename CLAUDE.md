@@ -80,7 +80,14 @@ The timer does not — each `dealbot once` is a fresh process.
 2026-09-10 — do not stop and ask. It is a five-second bounce of a local read-
 mostly service behind a proxy, and leaving it un-restarted means the user is
 looking at last week's dashboard while being told the work is done. Check it
-came back (`systemctl --user is-active`, and curl a page) rather than assuming.
+came back rather than assuming — and note that `is-active` says `active` the
+instant the unit starts, seconds before uvicorn has bound the port, so poll it:
+
+```bash
+systemctl --user restart curbside-web.service
+for i in 1 2 3 4 5; do curl -sf -o /dev/null localhost:8477/ && break; sleep 1; done
+```
+
 This covers restarts. Editing or disabling the units is still worth asking
 about.
 

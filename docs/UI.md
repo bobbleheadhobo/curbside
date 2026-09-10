@@ -249,6 +249,16 @@ first half hour after waking is never a warning. Without that, eight hours of
 deliberate silence looks exactly like a scraper that died on Tuesday, which is
 the one thing this dashboard exists to rule out.
 
+**The mark in the top bar is `/static/icon.svg`**, the same file the browser
+tab and the installed home-screen tile use. Do not inline a copy of it into
+`base.html`; regenerate with `tools/make_icons.py` instead, or the three drift.
+It is the only solid block of accent in the interface.
+
+**`/` carries the add button for wants** (`.addbtn`, a `+` beside the title,
+44px because it is a phone). Settings has one too, but reaching it only through
+the gear reads as configuration; `/` is the page you are on when you think "I
+should look for one of those". The empty state links there as well.
+
 **Settings is a gear in the top bar, not a sixth tab.** Five tabs is what fits
 across a phone. Hours and wants are set once a month; the bins are skimmed
 daily. If you add another destination, it goes in the top bar too.

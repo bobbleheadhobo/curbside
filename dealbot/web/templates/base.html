@@ -94,7 +94,14 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
   padding:0 16px;padding-top:env(safe-area-inset-top);
   display:flex;align-items:center;gap:12px;height:calc(52px + env(safe-area-inset-top));
 }
-.brand{font-weight:650;font-size:16px;letter-spacing:-.015em;margin-right:auto}
+.brand{
+  display:inline-flex;align-items:center;gap:9px;margin-right:auto;
+  font-weight:650;font-size:16px;letter-spacing:-.015em
+}
+/* The same file the home screen gets, so the tab, the installed tile and the
+   header cannot drift. It is the one solid block of accent in the interface;
+   everything else spends the colour on state. */
+.brand .mark{width:24px;height:24px;display:block;flex:none}
 .health{
   display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;
   border:1px solid var(--line);border-radius:99px;background:var(--card);
@@ -155,6 +162,21 @@ main.wide{max-width:1100px}
 @media (min-width:900px){main{padding:28px 24px 56px}}
 
 .pagehead{margin:0 0 18px}
+/* A page head with one action in it. The button sits beside the title rather
+   than under the stats: on a phone the top right is where a list's "add"
+   lives, and putting it below the counts buries it under the fold on a long
+   list. */
+.headrow{display:flex;align-items:flex-start;gap:12px}
+.headrow h1{flex:1;min-width:0}
+.addbtn{
+  flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:var(--tap);height:var(--tap);margin-top:-2px;border-radius:12px;
+  font-size:21px;background:var(--accent-soft);color:var(--accent);
+  transition:background .15s,color .15s;-webkit-tap-highlight-color:transparent
+}
+.addbtn:hover{background:var(--accent);color:var(--on-accent)}
+.addbtn:active{background:var(--accent);color:var(--on-accent)}
+.addbtn svg.i{stroke-width:2.2}
 .pagehead h1{
   font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;
   margin:0;text-wrap:balance
@@ -597,7 +619,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 {% set here = request.url.path %}
 
 <header class="topbar">
-  <a class="brand" href="/">Curbside</a>
+  <a class="brand" href="/"><img class="mark" src="/static/icon.svg" alt="" width="24" height="24">Curbside</a>
   <nav class="desknav" aria-label="Sections">
     {% for path, label, icon in nav %}
     <a href="{{path}}"{% if here == path %} aria-current="page"{% endif %}>

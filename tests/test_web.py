@@ -279,6 +279,31 @@ def test_every_page_offers_the_manifest_and_the_settings_gear(tmp_path):
         assert 'href="/settings"' in body, path
 
 
+def test_the_header_wears_the_same_mark_as_the_home_screen(tmp_path):
+    """One file for the tab, the installed tile and the header, so the three
+    cannot drift apart."""
+    client, _ = _client(tmp_path)
+    body = client.get("/").text
+    assert 'class="mark" src="/static/icon.svg"' in body
+    assert client.get("/static/icon.svg").status_code == 200
+
+
+def test_the_wants_page_offers_a_way_to_add_one(tmp_path):
+    """The page you are on when you think "I should look for one of those".
+    Reaching it only through the settings gear reads as configuration."""
+    client, _ = _client(tmp_path)
+    body = client.get("/").text
+    assert 'class="addbtn" href="/wants/new"' in body
+    assert 'aria-label="Add a want"' in body        # it is an icon alone
+    assert client.get("/wants/new").status_code == 200
+
+
+def test_the_empty_wants_view_also_points_at_adding_one(tmp_path):
+    """An empty list is exactly when you need the way out of it."""
+    client, _ = _client(tmp_path)
+    assert 'href="/wants/new">add another want' in client.get("/").text
+
+
 # --- the health pill knows about bedtime ------------------------------------
 
 def _one_run(cfg, minutes_ago, error=None):

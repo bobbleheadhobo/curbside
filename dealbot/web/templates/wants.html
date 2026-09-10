@@ -4,7 +4,14 @@
 {% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
 {% set gratis = items|selectattr('price_cents','equalto',0)|list|length %}
 <div class="pagehead">
-  <h1>Wants</h1>
+  <div class="headrow">
+    <h1>Wants</h1>
+    {# The list this page is the result of is edited in one place. Getting
+       there from the settings gear works but reads as configuration; this is
+       the page you are on when you think "I should look for one of those". #}
+    <a class="addbtn" href="/wants/new" title="Add a want" aria-label="Add a want">
+      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></a>
+  </div>
   <p class="stats">
     <i><b>{{total}}</b> waiting</i>
     {% if unsure %}
@@ -24,7 +31,8 @@
   <p>{% if counts.get('free_find') %}
       <a href="/free">{{counts['free_find']}} free find{{ '' if counts['free_find'] == 1 else 's' }}</a>
       waiting, though.<br>{% endif %}
-    <a href="/runs">Check the runs</a> to tell a quiet day from a broken fetch.</p>
+    <a href="/runs">Check the runs</a> to tell a quiet day from a broken fetch,
+    or <a href="/wants/new">add another want</a>.</p>
 </div>
 {% endfor %}
 </div>
