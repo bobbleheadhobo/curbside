@@ -254,6 +254,11 @@ flagged amber, next to confirmed matches rather than hidden; under it, it stays
 let it be filtered out of Wants: a 9.0 unconfirmed listing is worth the five
 seconds it takes to look at the photos.
 
+**Judging has its own row on `/runs`, separate from the two pause switches.**
+Every other pause here stops the fetching as well; the quota guards stop only
+the spending, and the health pill says "Judging paused" and links here. The row
+states what is stopping it and offers the override.
+
 **The pause switches live on `/runs`.** Both of them: *Pause free-stuff
 searches* (`kind=sweep`) and *Pause all searching* (`kind=all`). They used to
 sit on `/free`, which was the wrong page. `/runs` is where you go to ask

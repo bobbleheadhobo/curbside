@@ -8,6 +8,7 @@ explain is a tool you stop opening.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import config as config_mod
 from .. import schedule as schedule_mod
+from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON,
+                                   PAUSE_UNTIL)
 from ..config import Config
 from ..db import Store
 from ..filters import matches_any
@@ -753,10 +756,49 @@ def create_app(base_cfg: Config) -> FastAPI:
             store.archive_want(name)
         return _answer(request, back)
 
+    def _quota_state() -> dict:
+        """What is stopping the judging, and whether the user has overridden it.
+
+        Fetching is unaffected by any of this -- it costs no quota -- so this
+        panel is only ever about the judging half.
+        """
+        now = time.time()
+        def _ts(key):
+            try:
+                return float(store.get_setting(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        until, override = _ts(PAUSE_UNTIL), _ts(OVERRIDE_UNTIL)
+        return {
+            "paused": until > now,
+            "reason": store.get_setting(PAUSE_REASON, "rate limit"),
+            "mins": int((until - now) / 60) if until > now else 0,
+            "override": override > now,
+            "override_mins": int((override - now) / 60) if override > now else 0,
+        }
+
+    @app.post("/quota/override")
+    def quota_override(request: Request, minutes: int = Form(120),
+                       back: str = Form("/runs")):
+        """Spend anyway, for a bounded while.
+
+        Lifts the three things this project chose to stop at -- the daily spend
+        ceiling, the plan-utilisation ceilings, and a rate-limit pause it set
+        itself. It cannot lift the real one: if the plan refuses the call, the
+        call is refused.
+        """
+        minutes = max(0, min(int(minutes), 12 * 60))
+        if minutes:
+            store.set_setting(OVERRIDE_UNTIL, str(time.time() + minutes * 60))
+        else:
+            store.set_setting(OVERRIDE_UNTIL, "0")
+        return _answer(request, back)
+
     @app.get("/runs")
     def runs(request: Request):
         rows = [dict(r) for r in store.conn.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
-        return TEMPLATES.TemplateResponse(request, "runs.html", ctx(request, runs=rows))
+        return TEMPLATES.TemplateResponse(
+            request, "runs.html", ctx(request, runs=rows, quota=_quota_state()))
 
     return app

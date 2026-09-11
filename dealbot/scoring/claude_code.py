@@ -45,6 +45,12 @@ log = logging.getLogger("dealbot.scoring")
 
 PAUSE_UNTIL = "scoring_paused_until"
 PAUSE_REASON = "scoring_paused_reason"
+# Set from /runs when the user decides they would rather spend the quota than
+# wait for it. Time-boxed on purpose: an override with no expiry is a guard you
+# removed, and these guards exist to keep Curbside from crowding out the same
+# plan the user works on. It lifts what THIS project chose to stop at; a real
+# refusal from the other end still refuses.
+OVERRIDE_UNTIL = "quota_override_until"
 UTIL_5H, UTIL_7D, UTIL_AT = "util_five_hour", "util_seven_day", "util_recorded_at"
 
 
@@ -133,7 +139,22 @@ class ClaudeCodeScorer:
 
     # --- availability -------------------------------------------------------
 
+    def overridden(self) -> bool:
+        """Whether the user has told us to spend anyway, and it has not lapsed."""
+        until = self.store.get_setting(OVERRIDE_UNTIL)
+        try:
+            return bool(until) and time.time() < float(until)
+        except (TypeError, ValueError):
+            return False
+
     def check_available(self) -> None:
+        if self.overridden():
+            # Still the connectivity probe: that one is not a budget, it is the
+            # 10 minutes of retry backoff a `claude -p` burns with no network.
+            if not api_reachable():
+                raise ScoringUnavailable("api.anthropic.com unreachable")
+            return
+
         limit = self.cfg.daily_cost_limit_usd
         if limit > 0:
             today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
@@ -153,6 +174,8 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable("api.anthropic.com unreachable")
 
     def _check_utilization(self) -> None:
+        if self.overridden():
+            return
         """Stand aside while the plan is busy.
 
         Waiting for an outright rejection means otter has already been refused

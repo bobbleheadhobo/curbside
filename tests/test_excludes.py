@@ -265,6 +265,7 @@ INPLACE = [
     ("/wants/archive", {"name": "tv-stand", "restore": "1"}),
     ("/triage", {"hunt_id": SWEEP, "listing_id": "fixture:probe",
                  "status": "saved"}),
+    ("/quota/override", {"minutes": "120"}),
 ]
 
 

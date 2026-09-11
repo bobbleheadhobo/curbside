@@ -112,6 +112,10 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   dropped. It is the auditable counterpart to a dismissal.
 - **`match == "unknown"` is a first-class state**, not an error, and belongs
   beside confirmed matches rather than hidden.
+- **The quota guards are overridable from `/runs`**, added 2026-09-11 at the
+  user's request. Curbside stands aside early to avoid crowding out the plan it
+  shares; the button says spend anyway, for two hours, and lapses on its own.
+  It cannot lift the plan's own limit — that refuses at the other end.
 - **Paused hunts must be announced on every page**, because a bot switched
   off and forgotten looks exactly like a broken one. As of 2026-09-10 the
   health pill carries this, not a banner: the banner said what the pill said,

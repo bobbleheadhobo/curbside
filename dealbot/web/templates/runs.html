@@ -32,6 +32,30 @@
       </form>
     </div>
   </div>
+  {# Judging, as opposed to searching. Every other pause here stops the
+     fetching too; these stop only the spending, which is why they get their
+     own row rather than a third switch above. #}
+  <div class="control-row">
+    <span class="who">Judging
+      <small>
+        {%- if quota.override %}Spending anyway for another
+          {{ quota.override_mins }} min. Normal limits resume by themselves.
+        {%- elif quota.paused %}Paused: {{ quota.reason }}. {{ quota.mins }} min
+          left. Listings keep piling up and get judged when it lifts.
+        {%- else %}Running. Stands aside when the plan window gets tight, so it
+          does not crowd out your own use.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/quota/override" data-inplace="main"
+            data-toast="{{ 'Back to normal limits.' if quota.override else 'Judging anyway.' }}">
+        <input type="hidden" name="minutes" value="{{ 0 if quota.override else 120 }}">
+        <input type="hidden" name="back" value="/runs">
+        <button {% if quota.paused and not quota.override %}class="primary"{% endif %}>
+          {%- if quota.override %}Back to normal limits
+          {%- else %}Judge anyway for 2 hours{% endif -%}
+        </button>
+      </form>
+    </div>
+  </div>
   <div class="control-row">
     <span class="who">Everything
       <small>{% if all_paused %}All {{hunts|length}} hunts are off. Nothing is

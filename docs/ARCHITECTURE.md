@@ -270,6 +270,7 @@ upsert or the miss counter: Facebook keeps showing sold items in search.
 | Daily ceiling | $10/day, a blunt backstop under the quota ceiling. Counts in-flight spend, not just finished runs. |
 | Rate-limit pause | If refused anyway, resumes at `resetsAt`; never zero. |
 | Connectivity preflight | A `claude -p` with no network burns ~10 min of retry backoff; a 200ms TCP probe avoids it. |
+| **Override** | *Judge anyway for 2 hours*, on `/runs`. Lifts the three guards this project chose to stop at — the daily spend ceiling, the utilisation ceilings and a rate-limit pause it set itself — and nothing else. The connectivity probe still applies, because that is backoff rather than budget, and **the plan's own limit still refuses**: the override gets the call sent, not accepted. Time-boxed, because an override with no expiry is a guard you removed rather than one you overrode. |
 | Silent throttling | Facebook answers 200 with a full page and no data. Absent `feed_units` raises. |
 | Model output | Coerced, not trusted: `"$1,350"` parses, scores clamp to 0–10, non-scalars never reach TEXT columns. |
 | Run record | Every fetch attempt, success or failure. |

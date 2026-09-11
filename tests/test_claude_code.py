@@ -543,3 +543,41 @@ def test_a_retry_that_works_reports_what_both_attempts_cost(scorer, monkeypatch)
     assert len(scores) == 1
     assert scores[0].cost_usd == pytest.approx(0.04)
     assert sc.drain_unbilled() == 0.0
+
+
+def test_the_override_lifts_this_projects_own_ceilings(scorer, monkeypatch):
+    """Curbside stops early on purpose, to avoid crowding out the plan it
+    shares. The button says spend anyway. It lifts what we chose to stop at --
+    not the real limit, which refuses at the other end regardless."""
+    import time
+    from dealbot.scoring.claude_code import OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+
+    store.set_setting(PAUSE_UNTIL, str(time.time() + 3600))
+    store.set_setting(PAUSE_REASON, "rate limit (seven_day)")
+    with pytest.raises(ScoringUnavailable):
+        sc.check_available()
+
+    store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
+    assert sc.overridden() is True
+    sc.check_available()                       # no longer raises
+
+    # ...and it lapses on its own. An override with no expiry is a guard you
+    # removed, not a guard you overrode.
+    store.set_setting(OVERRIDE_UNTIL, str(time.time() - 1))
+    assert sc.overridden() is False
+    with pytest.raises(ScoringUnavailable):
+        sc.check_available()
+
+
+def test_the_override_never_lifts_the_connectivity_probe(scorer, monkeypatch):
+    """Not a budget: a `claude -p` with no network burns ten minutes of retry
+    backoff before it fails."""
+    import time
+    from dealbot.scoring.claude_code import OVERRIDE_UNTIL
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: False)
+    store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
+    with pytest.raises(ScoringUnavailable, match="unreachable"):
+        sc.check_available()
