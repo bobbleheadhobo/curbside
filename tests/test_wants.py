@@ -173,3 +173,37 @@ def test_the_settings_page_survives_a_want_the_file_never_knew(app):
     body = client.get("/settings").text
     assert "lamp" in body
     assert "free stuff only" in body       # no queries means sweep-only, said so
+
+
+def test_a_want_added_to_the_file_later_still_arrives(tmp_path):
+    """The seed used to be one global flag, so anything added to config.yaml
+    after a database's first open never appeared and never said why."""
+    from dealbot.models import Want
+    store = Store(tmp_path / "t.db")
+    store.seed_wants([Want("tv-stand", "d", 25000, ("tv stand",))])
+    assert [w.want.name for w in store.wants()] == ["tv-stand"]
+
+    store.seed_wants([Want("tv-stand", "d", 25000, ("tv stand",)),
+                      Want("lamp", "a lamp", 2000, ("lamp",))])
+    assert sorted(w.want.name for w in store.wants()) == ["lamp", "tv-stand"]
+
+
+def test_but_a_deleted_want_is_still_not_resurrected(tmp_path):
+    """Safe only because deleting ARCHIVES: the row stays, so the name stays
+    taken and per-name seeding cannot bring it back."""
+    from dealbot.models import Want
+    store = Store(tmp_path / "t.db")
+    store.seed_wants([Want("lamp", "a lamp", 2000, ("lamp",))])
+    store.archive_want("lamp")
+    store.seed_wants([Want("lamp", "a lamp", 2000, ("lamp",))])
+    assert store.wants() == []
+    assert store.get_want("lamp").archived
+
+
+def test_seeding_never_overwrites_an_edited_want(tmp_path):
+    from dealbot.models import Want
+    store = Store(tmp_path / "t.db")
+    store.seed_wants([Want("lamp", "from the file", 2000, ("lamp",))])
+    store.save_want(Want("lamp", "edited on the phone", 9900, ("lamp",)))
+    store.seed_wants([Want("lamp", "from the file", 2000, ("lamp",))])
+    assert store.get_want("lamp").want.description == "edited on the phone"

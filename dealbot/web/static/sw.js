@@ -10,7 +10,10 @@
  * under /thumb/, which are content-addressed by listing id and rewritten only
  * when the listing itself is refetched.
  */
-const VERSION = 'curbside-v1';
+// Substituted by the /sw.js route from the newest mtime in /static, so a
+// regenerated icon actually reaches a phone that already installed this.
+// A hardcoded version meant cache-first assets were cache-forever.
+const VERSION = '__VERSION__';
 const SHELL = VERSION + '-shell';
 const MEDIA = VERSION + '-media';
 const OFFLINE = '/static/offline.html';

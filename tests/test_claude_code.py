@@ -477,3 +477,69 @@ def test_spend_already_in_the_runs_table_is_not_counted_twice(scorer, monkeypatc
 
     sc.begin_run()                                  # a new run: the DB has it now
     sc.check_available()                            # must not raise
+
+
+def test_spend_on_an_unreadable_appraisal_still_reaches_the_run(scorer, monkeypatch):
+    """Cost only reaches `runs.cost_usd` by riding on a Score, so a listing
+    whose output could not be parsed -- twice, which is the expensive case --
+    was invisible to the daily ceiling on every later run. The ceiling then
+    under-counts by exactly the listings that burn the most tokens."""
+    from dealbot.models import Candidate, Hunt, Listing
+
+    sc, _ = scorer
+
+    def fake_invoke(system, user, model, read_dir=None):
+        class F:
+            text = "I am afraid I cannot do that"     # never parses, so it retries
+            input_tokens = output_tokens = cache_read_tokens = 0
+            cost_usd = 0.02
+        return F()
+
+    monkeypatch.setattr(sc, "_invoke", fake_invoke)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    want = type("W", (), {"name": "w", "requires": (), "description": "d",
+                          "max_price_cents": 100})()
+    hunt = Hunt(id="h", name="h", kind="sweep", queries=(), max_price_cents=0,
+                exclude=(), wants=(want,), min_deal_score=7.0,
+                free_find_min_score=5.0, interval_minutes=15, max_results=50)
+    lst = Listing(id="x:1", source="x", source_id="1", title="t",
+                  description=None, price_cents=0, currency="USD", url="u")
+
+    assert sc.appraise(hunt, [Candidate(lst, "new")]) == []
+    # Both attempts, not one and not none.
+    assert sc.drain_unbilled() == pytest.approx(0.04)
+    assert sc.drain_unbilled() == 0.0                 # drained, not double-counted
+
+
+def test_a_retry_that_works_reports_what_both_attempts_cost(scorer, monkeypatch):
+    from dealbot.models import Candidate, Hunt, Listing
+
+    sc, _ = scorer
+    calls = {"n": 0}
+
+    def fake_invoke(system, user, model, read_dir=None):
+        calls["n"] += 1
+        class F:
+            text = ("not json" if calls["n"] == 1 else
+                    '{"match":"no","deal_score":3,"worth_grabbing":true,'
+                    '"reasoning":"ok"}')
+            input_tokens = output_tokens = cache_read_tokens = 0
+            cost_usd = 0.02
+        return F()
+
+    monkeypatch.setattr(sc, "_invoke", fake_invoke)
+    monkeypatch.setattr(sc, "check_available", lambda: None)
+
+    want = type("W", (), {"name": "w", "requires": (), "description": "d",
+                          "max_price_cents": 100})()
+    hunt = Hunt(id="h", name="h", kind="sweep", queries=(), max_price_cents=0,
+                exclude=(), wants=(want,), min_deal_score=7.0,
+                free_find_min_score=5.0, interval_minutes=15, max_results=50)
+    lst = Listing(id="x:1", source="x", source_id="1", title="t",
+                  description=None, price_cents=0, currency="USD", url="u")
+
+    scores = sc.appraise(hunt, [Candidate(lst, "new")])
+    assert len(scores) == 1
+    assert scores[0].cost_usd == pytest.approx(0.04)
+    assert sc.drain_unbilled() == 0.0

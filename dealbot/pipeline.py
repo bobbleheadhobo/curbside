@@ -346,10 +346,16 @@ def run_hunt(
         triaged = scorer.triage(hunt, gr.candidates)
     except ScoringUnavailable as exc:
         log.warning("scoring unavailable for %s: %s", hunt.id, exc)
-        # Chunks that completed before the pause were BILLED. Their cost has to
-        # reach `runs.cost_usd`, which is the only thing the daily ceiling
-        # reads, and their verdicts have to be recorded or those listings are
-        # triaged and charged for a second time on the next run.
+        # Chunks that completed before the pause were BILLED, so their cost has
+        # to reach `runs.cost_usd` -- the only thing the daily ceiling reads.
+        #
+        # Their DROPS are recorded as scores, which is the load-bearing half:
+        # without it the gate re-admits them as `new` and they are re-triaged
+        # and re-appraised forever. Their KEEPS are not, and cannot be: the
+        # only honest record for a listing that was kept but never appraised is
+        # "not judged yet". Those are re-triaged next run, costing part of one
+        # batched call -- the cheap half of the bill, deliberately paid twice
+        # rather than recorded as a judgement that never happened.
         done = getattr(exc, "partial", None)
         if isinstance(done, TriageResult):
             result.cost_usd += done.cost_usd
@@ -357,6 +363,8 @@ def run_hunt(
                 store, hunt,
                 [c for c in gr.candidates if c.listing.id in done.notes],
                 done.notes, scorer.name)
+        if hasattr(scorer, "drain_unbilled"):
+            result.cost_usd += scorer.drain_unbilled()
         result.error = f"scoring skipped: {exc}"
         store.finish_run(run_id, n_fetched=result.n_fetched, n_new=result.n_new,
                          n_candidates=result.n_candidates,
@@ -379,6 +387,13 @@ def run_hunt(
         # stay `new` and are picked up when the window reopens.
         log.warning("appraisal interrupted for %s: %s", hunt.id, exc)
         scores, interrupted = list(getattr(exc, "partial", []) or []), exc
+
+    # Calls that produced no Score still cost money. They reach the run here,
+    # or they reach nothing: `runs.cost_usd` is what the daily ceiling reads on
+    # every later run, and it under-counted by exactly the listings that burn
+    # the most tokens.
+    if hasattr(scorer, "drain_unbilled"):
+        result.cost_usd += scorer.drain_unbilled()
 
     by_id = {c.listing.id: c.listing for c in survivors}
     for score in scores:

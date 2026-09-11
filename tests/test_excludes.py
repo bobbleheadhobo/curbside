@@ -356,3 +356,15 @@ def test_a_triage_that_matches_nothing_says_so(app):
                       data={"hunt_id": SWEEP, "listing_id": "fixture:probe",
                             "status": "nonsense"})
     assert bad.status_code == 400
+
+
+def test_a_new_hunt_in_the_file_gets_its_terms(app):
+    """Per hunt, not one global flag: a sweep added to config.yaml later still
+    gets seeded. A hunt that already has a list is left alone, however short,
+    so a term removed on the dashboard stays removed."""
+    _, _, store = app
+    store.set_hunt_excludes(SWEEP, ["mattress"])
+    store.seed_excludes({SWEEP: ["free estimate"],
+                         "sweep:curb-alerts": ["mattress", "firewood"]})
+    assert store.hunt_excludes()[SWEEP] == ("mattress",)          # untouched
+    assert store.hunt_excludes()["sweep:curb-alerts"] == ("mattress", "firewood")

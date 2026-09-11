@@ -239,3 +239,32 @@ def test_another_listings_photo_set_on_the_same_page_is_ignored(src):
             '{"image":{"uri":"https://scontent/somebody-elses.jpg"}}]}}'
             '</script>')
     assert src.parse_detail_html(html, stub).images == ("https://scontent/mine.jpg",)
+
+
+def test_a_throttled_item_page_raises_instead_of_reading_as_deleted():
+    """The failure this whole adapter is shaped around, in the one place it was
+    not guarded. A throttled response is ~590KB of valid HTML with no listing
+    data; the re-check pass read that as "removed" and retired saved listings
+    out of every bin, irreversibly."""
+    import pytest
+    from pathlib import Path
+    from dealbot.sources.base import SourceBlocked
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "fixtures/html/search-throttled.html").read_text()
+    from dealbot.models import Listing
+    stub = Listing(id="facebook:9", source="facebook", source_id="9",
+                   title="Couch", description=None, price_cents=0,
+                   currency="USD", url="u")
+    with pytest.raises(SourceBlocked):
+        FacebookSource(ABQ).parse_detail_html(html, stub)
+
+
+def test_a_real_item_page_still_parses():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "fixtures/html/item-1354512002236671.html").read_text()
+    from dealbot.models import Listing
+    stub = Listing(id="facebook:1354512002236671", source="facebook",
+                   source_id="1354512002236671", title="whatever",
+                   description=None, price_cents=0, currency="USD", url="u")
+    assert FacebookSource(ABQ).parse_detail_html(html, stub) is not None

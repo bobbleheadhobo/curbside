@@ -692,9 +692,13 @@ class Store:
         per-name would resurrect a want deleted from the web the moment the
         file still mentioned it. So it is a one-shot, remembered in `settings`.
         """
-        if self.get_setting("wants.seeded") == "1":
-            return 0
-        n = sum(self.save_want(w, origin="config") for w in wants)
+        # Per NAME, not once globally. A global flag meant a want added to
+        # config.yaml after the first run never appeared and never said why.
+        # Per-name is safe because deleting a want ARCHIVES it -- the row stays,
+        # so the name stays taken and the file cannot resurrect it.
+        known = {r["name"] for r in self.conn.execute("SELECT name FROM wants")}
+        n = sum(self.save_want(w, origin="config")
+                for w in wants if w.name not in known)
         self.set_setting("wants.seeded", "1")
         return n
 
@@ -801,11 +805,17 @@ class Store:
         so a term can be removed from the dashboard and stay removed. Merging
         the file in forever would mean four of the terms on that page could
         never be deleted, which is not a list you can edit."""
-        if self.get_setting("excludes.seeded") == "1":
-            return 0
+        # Per HUNT, not once globally: a sweep added to config.yaml later still
+        # gets its terms. A hunt that already has a row is left alone, however
+        # short that row is, so a term removed on the dashboard stays removed.
+        #
+        # The limit, and it is deliberate: a term APPENDED to a hunt that
+        # already has a row does nothing. Applying it would mean re-adding
+        # every term you had deleted, since the file cannot know which is which.
         n = 0
+        existing = set(self.hunt_excludes())
         for hunt_id, terms in from_file.items():
-            if terms:
+            if terms and hunt_id not in existing:
                 self.set_hunt_excludes(hunt_id, list(terms))
                 n += len(terms)
         self.set_setting("excludes.seeded", "1")

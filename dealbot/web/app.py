@@ -365,8 +365,12 @@ def create_app(base_cfg: Config) -> FastAPI:
         rise above its own path -- at /static/sw.js it could only ever see
         /static. `no-cache` so a fixed worker is picked up on the next load
         rather than in a day's time."""
-        return FileResponse(
-            STATIC / "sw.js", media_type="text/javascript",
+        stamp = max((int(f.stat().st_mtime) for f in STATIC.iterdir()
+                     if f.is_file()), default=0)
+        return Response(
+            (STATIC / "sw.js").read_text().replace("__VERSION__",
+                                                   f"curbside-{stamp}"),
+            media_type="text/javascript",
             headers={"Cache-Control": "no-cache",
                      "Service-Worker-Allowed": "/"})
 

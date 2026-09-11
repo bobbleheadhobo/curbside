@@ -19,9 +19,11 @@ Three things keep it cheap and safe:
     requests to learn something about listings nobody will look at.
   * **Paced per listing.** One detail fetch per listing per interval, capped
     per run, and the source's own rate limit still applies underneath.
-  * **Fails open.** A request that errors is not evidence a listing is gone.
-    Nothing is retired on an unreadable answer, and a gated source stops the
-    pass rather than quietly retiring everything behind it.
+  * **Fails open, and means it.** A request that errors is not evidence a
+    listing is gone, and neither is a page that came back without one. On
+    Facebook a missing payload is `unknown` rather than `removed`, because a
+    silent throttle looks exactly like a deleted listing and retiring on it is
+    irreversible. A gated source stops being asked; the others carry on.
 """
 from __future__ import annotations
 
@@ -51,19 +53,31 @@ class RecheckResult:
     n_sold: int = 0
     n_removed: int = 0
     n_listed: int = 0
+    # Asked, and could not tell. Retires nothing.
+    n_unknown: int = 0
     error: str | None = None
 
 
-def availability(full: Listing | None) -> str:
-    """`sold`, `removed` or `listed`, from whatever the source gave back.
+def availability(full: Listing | None, source: str = "") -> str:
+    """`sold`, `removed`, `listed`, or `unknown`.
 
     `removed` is the weaker claim: the item page no longer resolves, which is
     usually a sale but the source did not say so, and a listing can also be
     deleted or hidden. Recorded separately so a "sold" badge never overstates
     what we actually know.
+
+    **A missing payload is never `removed` on Facebook.** There, "the page did
+    not contain this listing" and "we are being throttled" look identical, and
+    retiring on it is irreversible: `mark_sold` COALESCEs so the stamp never
+    moves, `due_for_recheck` skips anything stamped, and `mark_seen` will not
+    un-`gone` it. One throttled window would have quietly emptied a bin of
+    things the user had saved. Facebook states `is_sold` and `is_live`
+    outright when the page does resolve, so nothing is lost by insisting on
+    that positive evidence; a listing that really is gone still stops
+    appearing in search and is retired by `mark_gone`.
     """
     if full is None:
-        return "removed"
+        return "unknown" if source == "facebook" else "removed"
     raw = full.raw or {}
     if raw.get("is_sold"):
         return "sold"
@@ -87,19 +101,35 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
     ).isoformat(timespec="seconds")
     due = store.due_for_recheck(list(statuses), cutoff, max_per_run)
     by_name = {name: src for name, src in sources}
+    blocked: set[str] = set()
+    asked: set[str] = set()
 
     for hunt_id, status, listing in due:
         source = by_name.get(listing.source)
         if source is None or not hasattr(source, "detail"):
             continue                      # fixture runs, or a source dropped
+        if listing.source in blocked:
+            continue
+        # A listing matched by two hunts is two rows here. Asking twice spends
+        # a second request on an answer we already have, against the very
+        # budget that makes this pass stop early.
+        if listing.id in asked:
+            store.mark_rechecked(hunt_id, listing.id)
+            continue
+        asked.add(listing.id)
         try:
             full = source.detail(listing)
         except SourceBlocked as exc:
-            # Gated, or out of request budget. Stop asking; the rest keep their
-            # place in the queue and are checked next time.
-            log.warning("recheck stopped at %s: %s", listing.id, exc)
-            result.error = f"recheck stopped: {type(exc).__name__}: {exc}"
-            break
+            # Gated, or out of request budget -- for THIS source. Stop asking
+            # it and carry on with the others: Facebook's budget is spent by
+            # the sweep that runs before this, and breaking outright meant one
+            # exhausted source starved every Craigslist listing behind it.
+            log.warning("recheck stopped for %s at %s: %s",
+                        listing.source, listing.id, exc)
+            blocked.add(listing.source)
+            result.error = (f"recheck stopped for {listing.source}: "
+                            f"{type(exc).__name__}: {exc}")
+            continue
         except Exception as exc:                          # noqa: BLE001
             # FAIL OPEN. An unreadable answer is not evidence that a listing is
             # gone, and retiring on one would delete the find the user wanted.
@@ -109,7 +139,14 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
 
         result.n_checked += 1
         store.mark_rechecked(hunt_id, listing.id)
-        verdict = availability(full)
+        verdict = availability(full, listing.source)
+
+        if verdict == "unknown":
+            # Asked, could not tell. Stamped so it is paced rather than asked
+            # again every pass, and retired from nothing.
+            result.n_unknown += 1
+            log.info("%s: no answer either way; left alone", listing.id)
+            continue
 
         if verdict == "listed":
             # Still there. Refresh it while we have it: this is the only place

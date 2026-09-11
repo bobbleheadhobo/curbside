@@ -188,3 +188,81 @@ def test_the_per_run_cap_is_obeyed(store):
         register(store, make_listing(f"fb:cap{i}"), "free_find")
     src = Says(lambda x: replace(x, raw={"is_live": True}))
     assert recheck(store, [("fixture", src)], max_per_run=2).n_checked == 2
+
+
+def test_a_missing_facebook_payload_never_retires_anything():
+    """The irreversible one. `mark_sold` COALESCEs so the stamp never moves,
+    `due_for_recheck` skips anything stamped, and `mark_seen` will not un-gone
+    it -- so reading a throttle as "removed" quietly emptied a bin of things
+    the user had saved, permanently."""
+    from dealbot.recheck import availability
+    assert availability(None, "facebook") == "unknown"
+    assert availability(None, "craigslist") == "removed"
+
+
+def test_positive_evidence_still_retires():
+    from dealbot.recheck import availability
+    from conftest import make_listing
+    assert availability(make_listing(raw={"is_sold": True}), "facebook") == "sold"
+    assert availability(make_listing(raw={"is_live": False}), "facebook") == "removed"
+    assert availability(make_listing(raw={"is_live": True}), "facebook") == "listed"
+
+
+class _Blocked:
+    """A source that is out of request budget."""
+    name = "facebook"
+    def detail(self, listing):
+        from dealbot.sources.base import SourceBlocked
+        raise SourceBlocked("budget exhausted")
+
+
+class _Fine:
+    name = "craigslist"
+    def __init__(self): self.asked = []
+    def detail(self, listing):
+        self.asked.append(listing.id)
+        from dataclasses import replace
+        return replace(listing, raw={"is_live": True})
+
+
+def _bin_listing(store, lid, source, hunts):
+    from conftest import make_listing
+    from dataclasses import replace
+    lst = replace(make_listing(lid=lid), source=source,
+                  source_id=lid.split(":")[-1])
+    store.upsert_listing(lst)
+    for h in hunts:
+        store.mark_matches(h, [lst])
+        store.set_status(h, lst.id, "saved")
+    return lst
+
+
+def test_one_exhausted_source_does_not_starve_the_others(tmp_path):
+    """recheck runs last and shares the pass's single request budget, so
+    Facebook is routinely spent by the sweep before this. Breaking outright
+    skipped every Craigslist listing queued behind it."""
+    from dealbot.db import Store
+    from dealbot.recheck import recheck
+    store = Store(tmp_path / "t.db")
+    _bin_listing(store, "facebook:1", "facebook", ["want:tv-stand"])
+    _bin_listing(store, "craigslist:2", "craigslist", ["want:tv-stand"])
+    fine = _Fine()
+    r = recheck(store, [("facebook", _Blocked()), ("craigslist", fine)],
+                every_hours=0, max_per_run=10)
+    assert fine.asked == ["craigslist:2"]
+    assert r.n_listed == 1
+    assert "facebook" in (r.error or "")
+
+
+def test_a_listing_in_two_bins_is_only_asked_about_once(tmp_path):
+    """One row per (hunt, listing), so a listing matched by two hunts was two
+    requests for one answer -- against the very budget above."""
+    from dealbot.db import Store
+    from dealbot.recheck import recheck
+    store = Store(tmp_path / "t.db")
+    _bin_listing(store, "craigslist:9", "craigslist",
+                 ["want:tv-stand", "sweep:free-nearby"])
+    fine = _Fine()
+    r = recheck(store, [("craigslist", fine)], every_hours=0, max_per_run=10)
+    assert fine.asked == ["craigslist:9"]
+    assert r.n_checked == 1

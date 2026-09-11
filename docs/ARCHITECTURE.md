@@ -243,9 +243,23 @@ Two different facts, deliberately kept apart:
 
 The re-check costs requests and no model quota, so it rides along with `once`:
 one detail fetch per bin listing every 6 hours, capped per run, and only for
-statuses you might act on. It fails open — an unreadable answer retires nothing
-and a gated source stops the pass — and a `saved` listing is *marked*, never
-un-saved. Seeing a sold listing again does not resurrect it, in either the
+statuses you might act on. A `saved` listing is *marked*, never un-saved.
+
+It fails open, and three things make that true rather than aspirational:
+
+* **A missing Facebook payload is `unknown`, not `removed`.** A throttled item
+  page and a deleted one are the same 200 with no listing data, and retiring on
+  it cannot be undone — `mark_sold` COALESCEs, `due_for_recheck` skips anything
+  stamped, `mark_seen` will not un-`gone` it. Facebook says `is_sold` and
+  `is_live` outright when it answers, so nothing is lost by requiring that.
+  `parse_detail_html` also raises on a page carrying no product structure at
+  all, the same discriminator the search path uses.
+* **A blocked source stops being asked; the others carry on.** Recheck runs
+  last and shares the pass's single request budget, so Facebook is routinely
+  spent by the sweep before it. Breaking outright skipped every Craigslist
+  listing queued behind it.
+* **A listing in two bins is asked about once.** The queue is one row per
+  (hunt, listing). Seeing a sold listing again does not resurrect it, in either the
 upsert or the miss counter: Facebook keeps showing sold items in search.
 
 ## 6. Guards
@@ -343,18 +357,20 @@ either the seed or is not consulted at all:
 
 | thing | home | file's role |
 |---|---|---|
-| wants | `wants` table | **seeds it once**, then never again |
+| wants | `wants` table | **seeds each name once** |
 | cadences | `settings` `hunt_interval:<id>` | default |
-| blocked words | `settings` `hunt_exclude:<id>` | **seeds it once**, then never again |
+| blocked words | `settings` `hunt_exclude:<id>` | **seeds each hunt once** |
 | waking hours | `settings` `schedule.*` | starting values |
 | timezone | `config.yaml` | the only home. It is a fact, not a preference |
 | pause switches | `settings` `hunt_disabled:<id>` | `enabled:` still wins if false |
 
-The wants seed is a **one-shot**, remembered as `settings['wants.seeded']`.
-Seeding on every start would revert every phone edit at the next tick; seeding
-per missing name would resurrect a want deleted from the web. A deleted want is
-archived rather than dropped, so its name stays taken and its history stays
-readable at `/hunt/want:<name>`.
+Seeding is **per name and per hunt**, so something added to `config.yaml` after
+a database's first open still arrives. It cannot resurrect a deletion: a deleted
+want is archived rather than dropped, so its name stays taken (and its history
+stays readable at `/hunt/want:<name>`), and a hunt that already has an exclude
+list is left alone however short that list is. The one thing the file can no
+longer do is append a term to a hunt that already has a list — it cannot tell a
+new term from one you deleted, so that edit belongs on `/settings`.
 
 Because of this, `Config.hunts` is a **computed property** rather than a field:
 the web process stays up for weeks and adding a want has to produce its hunt

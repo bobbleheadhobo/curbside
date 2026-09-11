@@ -109,8 +109,11 @@ from `/settings` instead:
 * **the wants themselves** — a `wants` table, which `config.yaml` **seeds once**
 * **the blocked words** — `hunt_exclude:<id>`, also seeded once
 
-Each seed is a one-shot, remembered as `settings['wants.seeded']` and
-`settings['excludes.seeded']`. Seeding per
+Each seed is **per name / per hunt**, not one global flag: something added to
+`config.yaml` later still arrives. It cannot resurrect a deletion, because
+deleting a want archives the row and a hunt that already has an exclude list is
+left alone. The one thing the file can no longer do is append a term to a hunt
+that already has a list — it cannot tell a new term from one you deleted. Seeding per
 start would revert every edit made on the phone at the next tick, and seeding
 per missing name would resurrect a want deleted from the web. After the first
 open the table is the truth and the file is history.
@@ -192,7 +195,12 @@ new column fails on every existing database.
 ## Other things learned the expensive way
 
 * Facebook throttles **silently** — HTTP 200, a full-size page, no listings. The
-  `feed_units` key is the discriminator and its absence must raise.
+  `feed_units` key is the discriminator and its absence must raise. **The item
+  page needs the same guard** (`marketplace_product_details` /
+  `marketplace_listing_title`): without it a throttled detail fetch reads as
+  "this listing is gone", and the re-check pass retired saved listings out of
+  every bin, permanently. A missing Facebook payload is now `unknown`, never
+  `removed` — that source states `is_sold` and `is_live` when it answers at all.
 * `Sec-Fetch-*` headers are mandatory on Facebook or you get a bodyless 400.
 * Craigslist's search feed omits descriptions *and* the posting date; both only
   arrive from the item endpoint, which wants the **uuid** (field 13), not the

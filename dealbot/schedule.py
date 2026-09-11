@@ -43,9 +43,13 @@ def parse_hhmm(text: str | None) -> int | None:
         hh, mm = int(parts[0]), int(parts[1])
     except ValueError:
         return None
-    if not (0 <= hh <= 24 and 0 <= mm < 60):
+    # 24:00 is rejected rather than clamped: `fmt_hhmm` renders 1440 as
+    # "00:00", so saving and reloading would silently turn "awake until
+    # midnight" into "awake until midnight last night". `<input type=time>`
+    # cannot produce it anyway.
+    if not (0 <= hh < 24 and 0 <= mm < 60):
         return None
-    return min(hh * 60 + mm, 24 * 60)
+    return hh * 60 + mm
 
 
 def fmt_hhmm(minute: int) -> str:

@@ -298,7 +298,24 @@ class FacebookSource:
         return self.parse_detail_html(
             self._get(f"{BASE}/marketplace/item/{listing.source_id}/"), listing)
 
+    # The item page's equivalent of `feed_units`. A throttled response is ~590KB
+    # of valid HTML carrying none of the marketplace product structure, and it
+    # is indistinguishable from a deleted listing unless you look for this.
+    # All three are absent from a throttled response and present on any page
+    # that carries a real listing payload, synthetic test ones included.
+    DETAIL_MARKERS = ("marketplace_product_details", "MarketplacePDP",
+                      "marketplace_listing_title")
+
     def parse_detail_html(self, html: str, listing: Listing) -> Listing | None:
+        """None means "this page did not carry THIS listing". It does not mean
+        the listing is gone, and the re-check pass must not read it that way.
+
+        A page with no product structure at all is the silent throttle, and it
+        raises for the same reason the search path does: absorbing it turns a
+        rate limit into "your saved listings were removed"."""
+        if not any(m in html for m in self.DETAIL_MARKERS):
+            raise SourceBlocked(
+                f"no product data in {len(html)} bytes -- almost certainly throttled")
         best: dict[str, Any] | None = None
         photos: tuple[str, ...] = ()
         for block in _json_blocks(html):

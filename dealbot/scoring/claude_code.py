@@ -75,6 +75,11 @@ class ClaudeCodeScorer:
         # the limit unchecked -- which defeats the point, since the limit exists
         # to protect quota shared with otter.
         self._spent_this_process = 0.0
+        # Spend on calls that produced no Score row. Cost only reaches
+        # `runs.cost_usd` by riding on a Score, so a listing whose output could
+        # not be parsed -- twice, which is the expensive case -- was invisible
+        # to the daily ceiling on every later run. See `drain_unbilled`.
+        self._unbilled_usd = 0.0
         # Read once: an edit part-way through a run would change the cached
         # prefix mid-flight and cost a miss on every remaining call.
         self._rubric = (load_rubric(cfg.rubric_path) if cfg.rubric_path
@@ -93,6 +98,7 @@ class ClaudeCodeScorer:
         runs table cannot see yet.
         """
         self._spent_this_process = 0.0
+        self._unbilled_usd = 0.0
 
     def _negative_examples(self, hunt: Hunt) -> tuple[str, ...]:
         """Dismissed titles for this hunt, SNAPSHOTTED DAILY.
@@ -448,6 +454,7 @@ class ClaudeCodeScorer:
         scores: list[Score] = []
 
         for n, c in enumerate(candidates):
+            spent = 0.0
             user = APPRAISE_INSTRUCTION + "\n\n" + render_listing(c.listing)
             try:
                 # Re-read the plan window between listings, for the same reason
@@ -455,6 +462,7 @@ class ClaudeCodeScorer:
                 if n:
                     self._check_utilization()
                 facts = self._invoke(system, user, self.cfg.appraise_model)
+                spent = facts.cost_usd
                 data = self._json_object(facts.text)
                 if data is None:
                     # One retry with a blunter instruction. INSIDE the try: a
@@ -464,9 +472,11 @@ class ClaudeCodeScorer:
                     facts = self._invoke(
                         system, user + "\n\nReturn ONLY the JSON object. No prose.",
                         self.cfg.appraise_model)
+                    spent += facts.cost_usd
                     data = self._json_object(facts.text)
             except ScoringUnavailable as exc:
                 # Stop, but hand back what was already bought.
+                self._unbilled_usd += spent
                 raise ScoringUnavailable(str(exc), partial=scores) from None
             if data is None:
                 # Deliberately no Score row: the listing stays `new` and is
@@ -474,6 +484,7 @@ class ClaudeCodeScorer:
                 # strength of output we could not read.
                 log.warning("unparseable appraisal for %s; raw=%r",
                             c.listing.id, facts.text[:200])
+                self._unbilled_usd += spent
                 continue
 
             est = self._as_float(data.get("est_value_usd"))
@@ -499,12 +510,20 @@ class ClaudeCodeScorer:
                 red_flags=self._as_str_tuple(data.get("red_flags")),
                 reasoning=str(data.get("reasoning") or "")[:2000],
                 input_tokens=facts.input_tokens, output_tokens=facts.output_tokens,
-                cache_read_tokens=facts.cache_read_tokens, cost_usd=facts.cost_usd,
+                # BOTH attempts, so a retry that worked still reports what the
+                # first one cost.
+                cache_read_tokens=facts.cache_read_tokens, cost_usd=spent,
               ))
             except Exception:                                  # noqa: BLE001
                 log.exception("could not build a score for %s; skipping",
                               c.listing.id)
+                self._unbilled_usd += spent
         return scores
+
+    def drain_unbilled(self) -> float:
+        """Spend that produced no Score, handed to the run that paid it."""
+        out, self._unbilled_usd = self._unbilled_usd, 0.0
+        return out
 
     # --- image pass ---------------------------------------------------------
 
