@@ -13,6 +13,8 @@
       <i><b>{{sitting}}</b> sitting 3wk+</i>{% endif %}
     {% if truncated %}
       <i>showing top {{items|length}}</i>{% endif %}
+    {% if blocked %}
+      <i><a href="/settings#blocked"><b>{{blocked}}</b> blocked</a></i>{% endif %}
   </p>
   <p>Nothing here matches a want. It is worth grabbing anyway.</p>
 </div>

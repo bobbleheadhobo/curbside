@@ -121,9 +121,15 @@ lines in a committed file, two guards hold it:
   the sweep would drop the free media console the tv-stand hunt exists to find,
   and nothing in the interface would ever say so.
 
-Every term is counted on `/settings` as the number of listings it has dropped,
-which is the difference between a preference you can audit and one you have to
-trust. The file's terms are shown there but only removable in the file.
+Every term is counted on `/settings` (its own **Never show me** panel, anchored
+at `#blocked` and linked from the head of `/free`) as the number of listings it
+has dropped — the difference between a preference you can audit and one you
+have to trust.
+
+`config.yaml` **seeds** the terms on a database's first open and is not read for
+them again, exactly like wants. Merging the file in forever would mean four of
+the entries on that page could never be deleted, which is not a list you can
+edit.
 
 Then two more filters:
 
@@ -326,6 +332,7 @@ either the seed or is not consulted at all:
 |---|---|---|
 | wants | `wants` table | **seeds it once**, then never again |
 | cadences | `settings` `hunt_interval:<id>` | default |
+| blocked words | `settings` `hunt_exclude:<id>` | **seeds it once**, then never again |
 | waking hours | `settings` `schedule.*` | starting values |
 | timezone | `config.yaml` | the only home. It is a fact, not a preference |
 | pause switches | `settings` `hunt_disabled:<id>` | `enabled:` still wins if false |

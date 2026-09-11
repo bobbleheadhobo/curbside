@@ -7,6 +7,9 @@
   <h1>Settings</h1>
   <p class="stats">
     <i><b>{{ live|length }}</b> want{{ '' if live|length == 1 else 's' }}</i>
+    {% set nblocked = sweeps|sum(attribute='terms'|length) if false else
+        (sweeps|map(attribute='terms')|map('length')|sum) %}
+    {% if nblocked %}<i><b>{{ nblocked }}</b> blocked</i>{% endif %}
     <i><b>{{ schedule.window_label if schedule.enabled else 'Always' }}</b>
       {{ 'awake' if schedule.enabled else 'on' }}</i>
   </p>
@@ -44,14 +47,6 @@
 {% if sweeps %}
 <div class="panel" style="margin-bottom:18px">
   <h2>Free stuff</h2>
-  {% if err %}
-  <p class="formerr" role="alert">
-    <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
-    {%- if err == 'short' %}Too short to block safely. Use three letters or more.
-    {%- elif err.startswith('wanted:') %}You are hunting for
-      {{ err.split(':', 1)[1] }}. Blocking that would hide it.
-    {%- else %}That did not work.{% endif %}</p>
-  {% endif %}
   {% for s in sweeps %}
   <form method="post" action="/settings/interval">
     <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
@@ -69,17 +64,32 @@
     <div class="formactions"><button>Save</button></div>
   </form>
 
-  {# Blocked words, with what each one has actually cost. Dismissing teaches by
-     example and cannot be counted; this can, which is the whole reason it is
-     on a page rather than in a prompt. #}
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% if sweeps %}
+{# Its own panel, not a field at the bottom of another one. This is a list you
+   come looking for -- from the free page, or after blocking something from a
+   card -- and a footnote under "how often to sweep" is not findable. #}
+<div class="panel" id="blocked" style="margin-bottom:18px">
+  <h2>Never show me</h2>
+  {% if err %}
+  <p class="formerr" role="alert">
+    <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
+    {%- if err == 'short' %}Too short to block safely. Use three letters or more.
+    {%- elif err.startswith('wanted:') %}You are hunting for
+      {{ err.split(':', 1)[1] }}. Blocking that would hide it.
+    {%- else %}That did not work.{% endif %}</p>
+  {% endif %}
+  {% for s in sweeps %}
   <div class="field">
-    <span class="lbl">Never show me</span>
     {% if s.terms %}
     <div class="terms">
       {% for t in s.terms %}
-      <span class="term {{ 'locked' if not t.mine }}">{{ t.term }}
+      <span class="term">{{ t.term }}
         {%- if t.n %} <b class="num" title="listings dropped">{{ t.n }}</b>{% endif %}
-        {%- if t.mine %}
         <form method="post" action="/settings/exclude">
           <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
           <input type="hidden" name="term" value="{{ t.term }}">
@@ -87,10 +97,12 @@
           <button title="Stop blocking {{ t.term }}" aria-label="Stop blocking {{ t.term }}">
             <svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
         </form>
-        {%- endif %}
       </span>
       {% endfor %}
     </div>
+    {% else %}
+    <p class="hint">Nothing is blocked. Use <b>Never show</b> on a free listing,
+      or add a word here.</p>
     {% endif %}
     <form class="addterm" method="post" action="/settings/exclude">
       <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
@@ -98,11 +110,10 @@
              autocomplete="off" spellcheck="false">
       <button>Block</button>
     </form>
-    <p class="hint">A blocked word drops the listing before it is judged or
-      shown, so it costs nothing. The number beside it is how many it has
-      dropped. Matching is by whole word, plurals included, so
-      <code>bed</code> will not catch <code>bedroom</code>. Words from
-      <code>config.yaml</code> are shown but removed there.</p>
+    <p class="hint">A blocked word drops free listings before they are judged
+      or shown, so it costs nothing. The number beside it is how many it has
+      dropped. Matching is by whole word with plurals, so <code>bed</code> will
+      not catch <code>bedroom</code>. A word you are hunting for is refused.</p>
   </div>
   {% endfor %}
 </div>

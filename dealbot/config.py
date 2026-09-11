@@ -164,6 +164,10 @@ class Config:
     # file's `exclude`; a reviewed line in a committed file is not something a
     # tap should be able to delete.
     exclude_extra: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # True once the file's terms have been seeded into the table, after which
+    # the table is the whole list and the file is no longer consulted -- so a
+    # term removed on the dashboard stays removed.
+    exclude_owned: bool = False
     schedule: ScheduleDefaults = ScheduleDefaults()
 
     @property
@@ -172,6 +176,8 @@ class Config:
         return self.sources[0]
 
     def _exclude(self, hunt_id: str, from_file: tuple[str, ...]) -> tuple[str, ...]:
+        if self.exclude_owned:
+            return tuple(self.exclude_extra.get(hunt_id, ()))
         return tuple(dict.fromkeys(
             from_file + tuple(self.exclude_extra.get(hunt_id, ()))))
 
@@ -241,10 +247,17 @@ def with_store(cfg: Config, store) -> Config:
     once per command in the CLI.
     """
     store.seed_wants(cfg.wants)
+    # Keyed off the specs rather than `cfg.hunts`, which is computed from the
+    # want list this function is in the middle of replacing.
+    from_file = {f"sweep:{sw.name}": sw.exclude for sw in cfg.sweeps}
+    from_file.update({f"want:{n}": spec.exclude
+                      for n, spec in cfg.want_hunts.items()})
+    store.seed_excludes(from_file)
     return replace(cfg,
                    wants=tuple(s.want for s in store.wants()),
                    interval_overrides=store.hunt_intervals(),
-                   exclude_extra=store.hunt_excludes())
+                   exclude_extra=store.hunt_excludes(),
+                   exclude_owned=True)
 
 
 def _cents(value: Any) -> int | None:

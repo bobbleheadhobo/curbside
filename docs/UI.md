@@ -322,6 +322,11 @@ a card on `/skipped` can be put back.
 eleven cards reads as a bug. `[data-bincount]` in the page head and the `.pip`
 on the current tab are the two places.
 
+**The blocked-word list has its own panel**, `#blocked` on `/settings`, and
+the head of `/free` links to it with a count. It was a field at the bottom of
+the sweep panel and nobody found it — which is the test that matters for a
+list whose entire job is being auditable.
+
 **"Never show" is only on `/free`.** A blocked word on a want hunt would block
 the thing you are hunting -- the guard in `/settings/exclude` refuses a term
 that matches any want's name or queries, but the affordance is absent there

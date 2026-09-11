@@ -84,7 +84,7 @@ def test_blocking_a_word_you_are_hunting_for_is_refused(app):
     r = client.post("/settings/exclude", data={"hunt_id": SWEEP, "term": "console"},
                     follow_redirects=False)
     assert r.headers["location"] == "/settings?err=wanted:tv-stand"
-    assert store.hunt_excludes() == {}
+    assert "console" not in store.hunt_excludes().get(SWEEP, ())
 
     j = client.post("/settings/exclude.json",
                     data={"hunt_id": SWEEP, "term": "ottoman"}).json()
@@ -98,16 +98,16 @@ def test_a_word_too_short_to_be_safe_is_refused(app):
                        ).headers["location"] == "/settings?err=short"
     assert client.post("/settings/exclude.json",
                        data={"hunt_id": SWEEP, "term": "ab"}).json()["ok"] is False
-    assert store.hunt_excludes() == {}
+    assert "ab" not in store.hunt_excludes().get(SWEEP, ())
 
 
 def test_terms_round_trip_and_can_be_removed(app):
     client, _, store = app
     client.post("/settings/exclude", data={"hunt_id": SWEEP, "term": "  Firewood "})
-    assert store.hunt_excludes()[SWEEP] == ("firewood",)     # trimmed, lowered
+    assert "firewood" in store.hunt_excludes()[SWEEP]        # trimmed, lowered
     client.post("/settings/exclude", data={"hunt_id": SWEEP, "term": "firewood",
                                            "remove": "1"})
-    assert store.hunt_excludes().get(SWEEP, ()) == ()
+    assert "firewood" not in store.hunt_excludes().get(SWEEP, ())
 
 
 def test_what_a_term_has_cost_is_countable(app):
@@ -125,13 +125,27 @@ def test_what_a_term_has_cost_is_countable(app):
     assert "mattress" in body and "Never show me" in body
 
 
-def test_the_file_terms_are_shown_but_not_removable_from_the_web(app):
-    """They are reviewed lines in a committed file, not a tap."""
-    client, _, _ = app
+def test_the_file_seeds_the_list_once_and_then_it_is_yours(app):
+    """Same one-shot as wants, and for the same reason: a list where four of
+    the entries can never be deleted is not a list you can edit."""
+    client, cfg, store = app
     body = client.get("/settings").text
-    assert "free estimate" in body
-    # A term the file owns is rendered locked; only web-added ones get a form.
-    assert 'class="term locked"' in body
+    assert "free estimate" in body and "Never show me" in body
+    assert 'class="term locked"' not in body            # nothing is locked now
+
+    client.post("/settings/exclude", data={"hunt_id": SWEEP,
+                                           "term": "free quote", "remove": "1"})
+    assert "free quote" not in with_store(cfg, store).hunts[0].exclude
+    # and it stays gone -- the file does not put it back on the next load
+    client.get("/settings")
+    assert "free quote" not in with_store(cfg, store).hunts[0].exclude
+
+
+def test_the_list_has_its_own_section_and_the_free_page_points_at_it(app):
+    """It was a field at the bottom of the sweep panel and nobody found it."""
+    client, _, _ = app
+    assert 'id="blocked"' in client.get("/settings").text
+    assert '/settings#blocked' in client.get("/free").text
 
 
 # --- the daily loop ---------------------------------------------------------

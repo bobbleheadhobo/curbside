@@ -94,9 +94,10 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   toast offers **Undo**. The buttons stay real forms and still work with
   JavaScript off.
 - **"Never show me" blocks a word, on the free sweep only.** Deterministic,
-  listed on `/settings` with a count of what it has dropped, and refused if the
-  word matches something you are hunting for. It is the auditable counterpart
-  to a dismissal.
+  refused if the word matches something you are hunting for, and fully
+  editable in its own panel on `/settings` (`#blocked`, linked with a count
+  from the head of `/free`) where each term shows how many listings it has
+  dropped. It is the auditable counterpart to a dismissal.
 - **`match == "unknown"` is a first-class state**, not an error, and belongs
   beside confirmed matches rather than hidden.
 - **Paused hunts must be announced on every page**, because a bot switched

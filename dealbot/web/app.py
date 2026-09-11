@@ -252,7 +252,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         return {r["status"]: r["n"] for r in store.conn.execute(
             "SELECT status, COUNT(*) n FROM hunt_matches GROUP BY status")}
 
-    def _bin(request: Request, template: str, status: str):
+    def _bin(request: Request, template: str, status: str, **extra):
         items = _rows(store, QUEUE_SQL, (status, PAGE_LIMIT))
         total = store.conn.execute(
             "SELECT COUNT(*) c FROM hunt_matches WHERE status=?",
@@ -260,7 +260,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         return TEMPLATES.TemplateResponse(
             request, template,
             ctx(request, items=items, counts=_counts(), total=total,
-                truncated=total > len(items)))
+                truncated=total > len(items), **extra))
 
     @app.get("/")
     def wants(request: Request):
@@ -342,7 +342,11 @@ def create_app(base_cfg: Config) -> FastAPI:
     def free_finds(request: Request):
         """Bin two: worth grabbing regardless of the wants list. This is the
         half of the sweep that finds things you never thought to search for."""
-        return _bin(request, "free.html", "free_find")
+        # The blocked-word count belongs on this page: it is where blocking
+        # happens, so it is where you look for what you have blocked.
+        cfg = _live()
+        blocked = sum(len(h.exclude) for h in cfg.hunts if h.kind == "sweep")
+        return _bin(request, "free.html", "free_find", cfg=cfg, blocked=blocked)
 
     @app.get("/hunt/{hunt_id:path}")
     def hunt_view(request: Request, hunt_id: str, status: str | None = None):
@@ -495,13 +499,11 @@ def create_app(base_cfg: Config) -> FastAPI:
         sweeps = []
         for h in (x for x in cfg.hunts if x.kind == "sweep"):
             counts = store.exclude_counts(h.id)
-            mine = store.hunt_excludes().get(h.id, ())
             sweeps.append({
                 "hunt": h, "paused": h.id in off,
-                # The file's terms are shown but not removable here: they are
-                # reviewed lines in a committed file, not a tap.
-                "terms": [{"term": t, "n": counts.get(t, 0), "mine": t in mine}
-                          for t in h.exclude],
+                # Every term is removable. config.yaml seeded them once and is
+                # not consulted again, so this is the whole list.
+                "terms": [{"term": t, "n": counts.get(t, 0)} for t in h.exclude],
             })
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
             request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,

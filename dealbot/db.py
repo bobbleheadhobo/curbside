@@ -17,7 +17,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from .models import Hunt, Listing, Score, StoredWant, UpsertResult, Want
 
@@ -786,6 +786,24 @@ class Store:
                 out[r["key"].split(":", 1)[1]] = tuple(
                     str(t) for t in terms if str(t).strip())
         return out
+
+    def seed_excludes(self, from_file: Mapping[str, Sequence[str]]) -> int:
+        """Copy config.yaml's exclude terms in, ONCE ever.
+
+        Same one-shot as `seed_wants`, for the same reason and with the same
+        consequence: after this the table is the truth and the file is history,
+        so a term can be removed from the dashboard and stay removed. Merging
+        the file in forever would mean four of the terms on that page could
+        never be deleted, which is not a list you can edit."""
+        if self.get_setting("excludes.seeded") == "1":
+            return 0
+        n = 0
+        for hunt_id, terms in from_file.items():
+            if terms:
+                self.set_hunt_excludes(hunt_id, list(terms))
+                n += len(terms)
+        self.set_setting("excludes.seeded", "1")
+        return n
 
     def set_hunt_excludes(self, hunt_id: str, terms: Sequence[str]) -> None:
         # Deduplicated, order kept: the list is read by a person on the

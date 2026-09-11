@@ -107,8 +107,10 @@ from `/settings` instead:
 * **the waking hours** — outside them a timer tick does *nothing*
 * **each hunt's cadence** — `settings` rows keyed `hunt_interval:<hunt_id>`
 * **the wants themselves** — a `wants` table, which `config.yaml` **seeds once**
+* **the blocked words** — `hunt_exclude:<id>`, also seeded once
 
-The seed is a one-shot, remembered as `settings['wants.seeded']`. Seeding per
+Each seed is a one-shot, remembered as `settings['wants.seeded']` and
+`settings['excludes.seeded']`. Seeding per
 start would revert every edit made on the phone at the next tick, and seeding
 per missing name would resurrect a want deleted from the web. After the first
 open the table is the truth and the file is history.
