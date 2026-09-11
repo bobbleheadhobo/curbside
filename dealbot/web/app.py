@@ -30,6 +30,15 @@ from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 STATIC = Path(__file__).parent / "static"
+
+
+def asset_version() -> int:
+    """Newest mtime in /static, used to bust three caches at once: the browser's
+    (a ?v= on the stylesheet and script), the service worker's own name, and
+    therefore everything the worker holds cache-first. A hardcoded version meant
+    a regenerated icon never reached a phone that had already installed this."""
+    return max((int(f.stat().st_mtime) for f in STATIC.iterdir() if f.is_file()),
+               default=0)
 log = logging.getLogger("dealbot.web")
 
 QUEUE_SQL = """
@@ -166,6 +175,87 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
             f'vector-effect="non-scaling-stroke" points="{coords}"/></svg>')
 
 
+def health(row, paused, hunts, sched) -> dict:
+    """The state of the bot itself, on every page, in one pill.
+
+    Pure: `row` is the latest `runs` row (or None). It lives out here
+    because the ORDER below has been wrong twice, and a precedence
+    ladder that can only be exercised through HTTP is one nobody tests
+    every branch of.
+
+    This is the ONLY place a pause is announced. The banner that used to
+    sit on every page said the same thing, took a block of every screen to
+    say it, and pushed the first listing below the fold.
+
+    So the order below is the whole design: the most actionable true fact
+    wins, and the pill links to /runs where the switch to undo it lives.
+    Several of these are true at once most of the time -- asleep AND
+    paused AND quiet -- and picking the wrong one is how the pill starts
+    lying. It reported "Asleep till 12pm" over a bot with every hunt
+    switched off, which is the exact failure it exists to prevent.
+    """
+    window = "" if sched.always_on else f"Awake {sched.window_label}. "
+    detail = f"Last run {row['started_at']}" if row else "Nothing has fetched yet."
+
+    # 1. Everything is off. Nothing is running, so nothing else here is the
+    #    reason nothing is happening -- not the hours, not a stale error.
+    if hunts and len(paused) == len(hunts):
+        return {"state": "warn", "label": "Paused",
+                "detail": f"Every hunt is off. Nothing is being collected. "
+                          f"{window}{detail}"}
+
+    # 2. A fetch that died. Louder than anything below it -- but a run
+    #    that fetched fine and then stood aside from the plan quota writes
+    #    that to the SAME column, and 108 of the 112 errors on the live box
+    #    were exactly that. Reporting a routine quota pause as a red
+    #    "Fetch failing" is the same lie as the last one.
+    if row is not None and row["error"]:
+        if row["error"].startswith("scoring skipped"):
+            return {"state": "warn", "label": "Judging paused",
+                    "detail": f"Collecting normally. {row['error']}. {detail}"}
+        return {"state": "bad", "label": "Fetch failing",
+                "detail": f"{detail} — {row['error']}"}
+
+    # 3. Some hunts off. Indefinite, and only you can undo it.
+    if paused:
+        n = len(paused)
+        return {"state": "warn",
+                "label": f"{n} hunt{'' if n == 1 else 's'} off",
+                "detail": f"{', '.join(h.name for h in paused)} paused. "
+                          f"{window}{detail}"}
+
+    if row is None:
+        return {"state": "idle", "label": "No runs yet",
+                "detail": f"{window}Nothing has fetched yet."}
+
+    mins = int(row["mins"] or 0)
+    when = "just now" if mins < 1 else (
+        f"{mins}m ago" if mins < 60 else
+        f"{mins // 60}h ago" if mins < 2880 else f"{mins // 1440}d ago")
+
+    # 4. Asleep on purpose is not quiet and is not broken. A schedule the
+    #    interface does not admit to is the same trap as a pause switch
+    #    nobody can see: the bot looks dead for eight hours a day and you
+    #    stop trusting the page.
+    if not sched.is_open():
+        return {"state": "idle",
+                "label": f"Asleep till {schedule_mod.fmt_clock(sched.start_minute)}",
+                "detail": f"{window}{detail}"}
+
+    # 5. The timer fires every 15 minutes, so an hour of silence is the
+    #    timer -- unless it only just woke, when the last run is
+    #    legitimately as old as the night.
+    opened = sched.opened_at()
+    just_woke = opened is not None and (
+        sched.now() - opened).total_seconds() < 30 * 60
+    if mins > 60 and just_woke:
+        return {"state": "ok", "label": "Just woke",
+                "detail": f"{window}{detail}"}
+    if mins > 60:
+        return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
+    return {"state": "ok", "label": when, "detail": detail}
+
+
 def create_app(base_cfg: Config) -> FastAPI:
     app = FastAPI(title="Curbside")
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -196,82 +286,10 @@ def create_app(base_cfg: Config) -> FastAPI:
         return schedule_mod.load(store, base_cfg.schedule)
 
     def _health(paused, hunts, sched) -> dict:
-        """The state of the bot itself, on every page, in one pill.
-
-        This is the ONLY place a pause is announced. The banner that used to
-        sit on every page said the same thing, took a block of every screen to
-        say it, and pushed the first listing below the fold.
-
-        So the order below is the whole design: the most actionable true fact
-        wins, and the pill links to /runs where the switch to undo it lives.
-        Several of these are true at once most of the time -- asleep AND
-        paused AND quiet -- and picking the wrong one is how the pill starts
-        lying. It reported "Asleep till 12pm" over a bot with every hunt
-        switched off, which is the exact failure it exists to prevent.
-        """
-        row = store.conn.execute(
+        return health(store.conn.execute(
             "SELECT started_at, error, (julianday('now') - julianday(started_at))"
-            " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone()
-        window = "" if sched.always_on else f"Awake {sched.window_label}. "
-        detail = f"Last run {row['started_at']}" if row else "Nothing has fetched yet."
-
-        # 1. Everything is off. Nothing is running, so nothing else here is the
-        #    reason nothing is happening -- not the hours, not a stale error.
-        if hunts and len(paused) == len(hunts):
-            return {"state": "warn", "label": "Paused",
-                    "detail": f"Every hunt is off. Nothing is being collected. "
-                              f"{window}{detail}"}
-
-        # 2. A fetch that died. Louder than anything below it -- but a run
-        #    that fetched fine and then stood aside from the plan quota writes
-        #    that to the SAME column, and 108 of the 112 errors on the live box
-        #    were exactly that. Reporting a routine quota pause as a red
-        #    "Fetch failing" is the same lie as the last one.
-        if row is not None and row["error"]:
-            if row["error"].startswith("scoring skipped"):
-                return {"state": "warn", "label": "Judging paused",
-                        "detail": f"Collecting normally. {row['error']}. {detail}"}
-            return {"state": "bad", "label": "Fetch failing",
-                    "detail": f"{detail} — {row['error']}"}
-
-        # 3. Some hunts off. Indefinite, and only you can undo it.
-        if paused:
-            n = len(paused)
-            return {"state": "warn",
-                    "label": f"{n} hunt{'' if n == 1 else 's'} off",
-                    "detail": f"{', '.join(h.name for h in paused)} paused. "
-                              f"{window}{detail}"}
-
-        if row is None:
-            return {"state": "idle", "label": "No runs yet",
-                    "detail": f"{window}Nothing has fetched yet."}
-
-        mins = int(row["mins"] or 0)
-        when = "just now" if mins < 1 else (
-            f"{mins}m ago" if mins < 60 else
-            f"{mins // 60}h ago" if mins < 2880 else f"{mins // 1440}d ago")
-
-        # 4. Asleep on purpose is not quiet and is not broken. A schedule the
-        #    interface does not admit to is the same trap as a pause switch
-        #    nobody can see: the bot looks dead for eight hours a day and you
-        #    stop trusting the page.
-        if not sched.is_open():
-            return {"state": "idle",
-                    "label": f"Asleep till {schedule_mod.fmt_clock(sched.start_minute)}",
-                    "detail": f"{window}{detail}"}
-
-        # 5. The timer fires every 15 minutes, so an hour of silence is the
-        #    timer -- unless it only just woke, when the last run is
-        #    legitimately as old as the night.
-        opened = sched.opened_at()
-        just_woke = opened is not None and (
-            sched.now() - opened).total_seconds() < 30 * 60
-        if mins > 60 and just_woke:
-            return {"state": "ok", "label": "Just woke",
-                    "detail": f"{window}{detail}"}
-        if mins > 60:
-            return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
-        return {"state": "ok", "label": when, "detail": detail}
+            " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone(),
+            paused, hunts, sched)
 
     def ctx(request: Request, **kw):
         # Every page carries the paused state. A bot that has been switched off
@@ -282,6 +300,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         paused = [h for h in cfg.hunts if h.id in off]
         all_paused = bool(cfg.hunts) and len(paused) == len(cfg.hunts)
         return {"request": request, "hunts": cfg.hunts,
+                "assets": asset_version(),
                 "paused_hunts": paused,
                 "all_paused": all_paused,
                 "bin_counts": _counts(),
@@ -365,8 +384,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         rise above its own path -- at /static/sw.js it could only ever see
         /static. `no-cache` so a fixed worker is picked up on the next load
         rather than in a day's time."""
-        stamp = max((int(f.stat().st_mtime) for f in STATIC.iterdir()
-                     if f.is_file()), default=0)
+        stamp = asset_version()
         return Response(
             (STATIC / "sw.js").read_text().replace("__VERSION__",
                                                    f"curbside-{stamp}"),

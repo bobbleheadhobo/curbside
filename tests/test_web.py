@@ -1,5 +1,6 @@
 """Dashboard rendering of data we collect. All of this existed in the database
 and none of it was visible."""
+import pytest
 from dealbot.web.app import _sparkline
 
 
@@ -384,7 +385,7 @@ def test_the_card_actions_row_carries_two_labels_and_no_more(tmp_path):
     assert 'aria-label="Never show me things like this"' in base
     assert "white-space:nowrap" in (
         Path(__file__).resolve().parents[1]
-        / "dealbot/web/templates/base.html").read_text()
+        / "dealbot/web/static/app.css").read_text()
 
     client, _ = _client(tmp_path)
     # ...and the listing page still offers it.
@@ -468,9 +469,9 @@ def test_every_section_hue_is_declared_in_both_themes(tmp_path):
     hues are also plain custom properties, which cascade by specificity -- easy
     to add a light one that silently outranks the dark one."""
     import re
-    client, _ = _client(tmp_path)
-    css = client.get("/").text
-    css = css[css.index("<style>"):css.index("</style>")]
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
     sections = set(re.findall(r"body\[data-page=(\w+)\]\s*\{--tint", css))
     assert {"free", "saved", "skipped", "runs", "settings", "wants"} <= sections
     for page in sections:
@@ -484,3 +485,87 @@ def test_each_destination_declares_which_section_it_is(tmp_path):
                        ("/skipped", "skipped"), ("/runs", "runs"),
                        ("/settings", "settings"), ("/wants/new", "settings")):
         assert f'<body data-page="{page}"' in client.get(path).text, path
+
+
+def test_the_browser_code_is_syntactically_valid(tmp_path):
+    """It lived inline in a Jinja template for a day, where nothing could check
+    it: two of its bugs this session were only found by reading. It is a real
+    file now, so a parser can have an opinion."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    js = Path(__file__).resolve().parents[1] / "dealbot/web/static/app.js"
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to parse with")
+    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_the_page_links_the_assets_with_a_cache_buster(tmp_path):
+    """Served cache-first by the service worker, so an unversioned URL is an
+    icon or a stylesheet that never updates on an installed phone."""
+    import re
+    client, _ = _client(tmp_path)
+    body = client.get("/").text
+    assert re.search(r'href="/static/app\.css\?v=\d+"', body)
+    assert re.search(r'src="/static/app\.js\?v=\d+"', body)
+    assert "<style>" not in body and "<script>" not in body
+    assert client.get("/static/app.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
+
+
+# --- the health ladder, without a web server in the way ----------------------
+
+def _row(mins_ago=5, error=None):
+    from datetime import datetime, timedelta, timezone
+    when = datetime.now(timezone.utc) - timedelta(minutes=mins_ago)
+    return {"started_at": when.isoformat(timespec="seconds"),
+            "error": error, "mins": mins_ago}
+
+
+def _hunts(n=3):
+    return [type("H", (), {"id": f"h{i}", "name": f"h{i}"})() for i in range(n)]
+
+
+def _sched(open_=True):
+    from dealbot.schedule import Schedule
+    from datetime import datetime
+    at = datetime(2026, 9, 11, 13 if open_ else 3, 0)
+    s = Schedule(enabled=True, start_minute=12 * 60, end_minute=20 * 60)
+    return type("S", (), {
+        "always_on": False, "window_label": s.window_label,
+        "start_minute": s.start_minute,
+        "is_open": lambda self: open_,
+        "opened_at": lambda self: s.opened_at(at),
+        "now": lambda self: at})()
+
+
+def test_the_health_ladder_picks_the_most_actionable_true_fact():
+    """Asleep, paused and quiet are usually all true at once, and picking the
+    wrong one is how the pill starts lying -- which it has done twice."""
+    from dealbot.web.app import health
+    hunts = _hunts()
+
+    # every hunt off beats everything, including a stale error and the clock
+    assert health(_row(error="boom"), hunts, hunts, _sched(open_=False)
+                  )["label"] == "Paused"
+    # a failing fetch beats a partial pause
+    assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched()
+                  )["label"] == "Fetch failing"
+    # a quota pause is not a failing fetch: the fetch worked
+    assert health(_row(error="scoring skipped: daily spend ceiling reached"),
+                  [], hunts, _sched())["label"] == "Judging paused"
+    # some hunts off beats the clock
+    assert health(_row(), hunts[:2], hunts, _sched(open_=False)
+                  )["label"] == "2 hunts off"
+    assert health(_row(), hunts[:1], hunts, _sched())["label"] == "1 hunt off"
+    # nothing else to say, so the clock
+    assert health(_row(), [], hunts, _sched(open_=False)
+                  )["label"] == "Asleep till 12pm"
+    # a pause is announced before there has ever been a run
+    assert health(None, hunts, hunts, _sched())["label"] == "Paused"
+    assert health(None, [], hunts, _sched())["label"] == "No runs yet"
+    # and the ordinary case
+    assert health(_row(mins_ago=3), [], hunts, _sched())["label"] == "3m ago"
+    assert health(_row(mins_ago=200), [], hunts, _sched())["label"].startswith("Quiet")

@@ -60,7 +60,11 @@ dealbot/web/
     runs.html       /runs    the Searching panel, every fetch attempt, the hunts
     settings.html   /settings  waking hours, sweep cadence, the wants list
     want_form.html  /wants/new and /wants/<name>  add or edit one want
-  static/           icons, manifest.webmanifest, sw.js, offline.html
+  static/
+    app.css         ALL the CSS. Two themes, one file, no build step
+    app.js          the interaction layer. Progressive enhancement only
+    sw.js           service worker; caches assets and photos, never a page
+    icons, manifest.webmanifest, offline.html
 ```
 
 `static/` is generated except for `sw.js`, `offline.html` and the manifest —
@@ -81,9 +85,21 @@ endpoint and the internal noun.
 *and* to the counts behind them. Keep those two together: the counts drifting
 from the cards is how "12 waiting" ends up over ten of them.
 
-**All CSS lives in `base.html`** as custom properties on `:root`, with a
+**All CSS lives in `static/app.css`** as custom properties on `:root`, with a
 `prefers-color-scheme` block *and* a `[data-theme=dark]` block carrying the
-same tokens. Both themes are real; check any change in both. To screenshot
+same tokens.
+
+It lived inside `base.html` until that template reached 1112 lines — 693 of
+them CSS and 302 JavaScript, against 92 of actual markup. The JavaScript was
+the worse half: inline in a Jinja template nothing could lint it, syntax-check
+it or diff it sensibly, and two of its bugs were found only by reading. Both
+are plain static files now — still no build step, still one file each — and
+`tests/test_web.py` runs `node --check` over the script.
+
+Both are linked with `?v={{ assets }}`, the newest mtime under `static/`. That
+one number busts three caches together: the browser's, the service worker's own
+name, and therefore everything the worker holds cache-first. Without it a
+regenerated icon or a CSS fix never reaches a phone with the app installed. Both themes are real; check any change in both. To screenshot
 dark, temporarily add `data-theme="dark"` to the `<html>` tag — headless
 Chrome has no reliable flag for the media query.
 
@@ -271,6 +287,11 @@ which is where the switch to undo any of it lives.
 found by the class name `strike`, the sweep switch by the words "pause
 free-stuff searches", and the empty-view check by `"count num">0`. Rename
 those and the tests tell you.
+
+**`health()` is a pure function** taking the latest `runs` row, the paused
+hunts, all hunts and the schedule. It is out at module level so every branch of
+its precedence ladder is unit-testable — it has been wrong twice, and a ladder
+you can only exercise through HTTP is one nobody checks all of.
 
 **Asleep is a state the interface has to admit to.** The health pill reports
 it (`Asleep till 12pm`) ahead of "quiet" and behind "Fetch failing", and the

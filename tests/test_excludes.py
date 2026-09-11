@@ -234,7 +234,7 @@ def test_the_script_and_the_markup_still_agree(tmp_path):
         assert needed in body, needed
 
     script = (Path(__file__).resolve().parents[1]
-              / "dealbot/web/templates/base.html").read_text()
+              / "dealbot/web/static/app.js").read_text()
     # It must stay a progressive enhancement: real forms, intercepted.
     assert 'preventDefault' in script and 'X-Requested-With' in script
     assert '"/triage"' in script and '"/settings/exclude"' in script

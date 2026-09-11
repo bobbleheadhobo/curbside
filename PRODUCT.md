@@ -123,8 +123,8 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
 - `price_cents == 0` is *free*; `None` is *no price shown*. Not the same.
 - No authentication in the app itself; auth is the reverse proxy's job. Do
   not add mutating endpoints casually.
-- Server-rendered Jinja, no build step, no framework. Everything ships in
-  templates the FastAPI app already serves.
+- Server-rendered Jinja, no build step, no framework. One stylesheet and one
+  script, served static and versioned by mtime; the templates hold markup.
 - Every test is offline (`tests/test_web.py`), and every view must render on
   an empty database.
 
