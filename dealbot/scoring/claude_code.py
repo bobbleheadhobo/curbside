@@ -270,7 +270,21 @@ class ClaudeCodeScorer:
             self.store.set_setting(
                 UTIL_AT, datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
-        rejected = (facts.rate_limit_status not in (None, "allowed")
+        # Claude Code warns LONG before it refuses. `allowed_warning` means the
+        # window passed `surpassedThreshold` -- 0.75 in the wild -- and the
+        # call carrying it SUCCEEDED: is_error false, terminal_reason
+        # "completed", a full answer, billed.
+        #
+        # Treating that as a refusal threw the paid-for answer away and paused
+        # scoring until the window reset, which for the seven-day window is up
+        # to a week. It accounted for 203 of the 246 runs that fetched and then
+        # judged nothing. The utilisation ceilings above are the mechanism for
+        # standing aside when a window gets tight; this is not.
+        #
+        # Unknown statuses still count as refusals, because the alternative is
+        # spending into something we do not understand.
+        allowed = (None, "allowed", "allowed_warning")
+        rejected = (facts.rate_limit_status not in allowed
                     or (facts.failed and "rate limit" in facts.text.lower()))
         if rejected:
             self._pause(facts.resets_at, f"rate limit ({facts.rate_limit_type})")

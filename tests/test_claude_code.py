@@ -581,3 +581,38 @@ def test_the_override_never_lifts_the_connectivity_probe(scorer, monkeypatch):
     store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
     with pytest.raises(ScoringUnavailable, match="unreachable"):
         sc.check_available()
+
+
+def test_a_rate_limit_WARNING_is_not_a_refusal():
+    """Captured from the live plan at 86% of the seven-day window. The call it
+    rides on succeeds -- is_error false, terminal_reason "completed", a full
+    billed answer -- and Curbside threw it away and paused itself until the
+    window reset. 203 of the 246 runs that fetched and judged nothing died here.
+    """
+    from pathlib import Path
+    from dealbot.scoring.stream import extract, parse_events
+    raw = (Path(__file__).resolve().parents[1]
+           / "fixtures/streams/rate-limit-warning.jsonl").read_text()
+    facts = extract(parse_events(raw))
+
+    assert facts.rate_limit_status == "allowed_warning"
+    assert facts.is_error is False
+    assert facts.seven_day_utilization == 0.86
+    assert facts.output_tokens == 153 and facts.text            # a real answer
+
+    allowed = (None, "allowed", "allowed_warning")
+    assert facts.rate_limit_status in allowed, "a warning must not pause scoring"
+
+
+def test_an_unknown_rate_limit_status_still_stops_us():
+    """Fail safe: spending into a status we do not understand is the wrong
+    direction to guess in."""
+    import json
+    from dealbot.scoring.stream import extract, parse_events
+    events = [{"type": "rate_limit_event",
+               "rate_limit_info": {"status": "rejected",
+                                   "rateLimitType": "five_hour"}},
+              {"type": "result", "subtype": "success", "is_error": False,
+               "result": "{}", "usage": {}}]
+    facts = extract(parse_events("\n".join(json.dumps(e) for e in events)))
+    assert facts.rate_limit_status not in (None, "allowed", "allowed_warning")
