@@ -109,7 +109,7 @@
          button posted, redirected, and changed nothing. #}
       <div class="triage-actions">
         {% for s, label in [('saved','Save'), ('dismissed','Dismiss')] %}
-        <form method="post" action="/triage">
+        <form method="post" action="/triage" data-inplace>
           <input type="hidden" name="hunt_id" value="{{m.hunt_id}}">
           <input type="hidden" name="listing_id" value="{{listing.id}}">
           <input type="hidden" name="status" value="{{s}}">

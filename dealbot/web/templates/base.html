@@ -888,10 +888,69 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
     });
   }
 
+  /* Any form marked data-inplace saves without navigating.
+   *
+   * Rather than patching the DOM by hand for each one -- a toggle changes the
+   * pill, a blocked word changes a count, saving hours changes a sentence --
+   * it re-fetches this same page and swaps in the affected panel. The server
+   * stays the single source of truth for every label on it, and your scroll
+   * position never moves, which is the entire complaint this fixes.
+   *
+   * data-inplace takes an optional selector; default is the closest panel.
+   */
+  function refresh(sel) {
+    return fetch(location.href, {credentials: "same-origin"})
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        [sel, ".health"].forEach(function (s) {
+          var fresh = doc.querySelector(s), cur = document.querySelector(s);
+          if (fresh && cur) cur.replaceWith(fresh);
+        });
+      });
+  }
+
+  function inplace(form) {
+    var sel = form.getAttribute("data-inplace");
+    if (!sel) {
+      var panel = form.closest(".panel");
+      if (panel && !panel.id) panel.id = "p" + Math.random().toString(36).slice(2);
+      sel = panel ? "#" + panel.id : "main";
+    }
+    var note = form.getAttribute("data-toast");
+    var refocus = form.getAttribute("data-refocus");
+    fetch(form.getAttribute("action"), {
+      method: "POST", credentials: "same-origin",
+      headers: {"X-Requested-With": "fetch"},
+      body: new URLSearchParams(new FormData(form))
+    }).then(function (r) {
+      var type = r.headers.get("content-type") || "";
+      if (!r.ok) throw new Error(r.status);
+      return type.indexOf("json") >= 0 ? r.json() : null;
+    }).then(function (body) {
+      if (body && body.ok === false) { toast(body.error, null, null, true); return; }
+      return refresh(sel).then(function () {
+        if (note) toast(note);
+        if (refocus) {
+          var el = document.querySelector(sel + " [name=" + refocus + "]");
+          if (el) { el.value = ""; el.focus(); }
+        }
+      });
+    }).catch(function () {
+      toast("That did not save. Still connected?", null, null, true);
+    });
+  }
+
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
     var card = form.closest && form.closest("article.card");
-    if (!card) return;                       // the listing page reloads; fine
+    if (!card) {
+      if (form.hasAttribute && form.hasAttribute("data-inplace")) {
+        ev.preventDefault();
+        inplace(form);
+      }
+      return;
+    }
 
     if (form.getAttribute("action") === "/triage") {
       var kind = form.querySelector('[name=status]').value;
@@ -939,7 +998,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
     var hunt = card.getAttribute("data-hunt");
     var listing = card.getAttribute("data-listing");
     var was = card.getAttribute("data-status");
-    post("/settings/exclude.json", {hunt_id: hunt, term: term})
+    post("/settings/exclude", {hunt_id: hunt, term: term})
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (!res.ok) { toast(res.error, null, null, true); return; }
@@ -947,7 +1006,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
         return post("/triage", {hunt_id: hunt, listing_id: listing,
                                 status: "dismissed"}).then(function () {
           toast("Never showing “" + term + "” again.", "Undo", function () {
-            post("/settings/exclude.json", {hunt_id: hunt, term: term, remove: "1"});
+            post("/settings/exclude", {hunt_id: hunt, term: term, remove: "1"});
             post("/triage", {hunt_id: hunt, listing_id: listing,
                              status: was || "free_find"}).then(restore);
           });

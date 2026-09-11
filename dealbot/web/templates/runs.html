@@ -21,7 +21,7 @@
       <small>{% if sweeps_paused %}Off. Want hunts still run and can still put
         things here.{% else %}Running every 15 minutes.{% endif %}</small></span>
     <div class="triage-actions">
-      <form method="post" action="/hunts/toggle">
+      <form method="post" action="/hunts/toggle" data-inplace="main">
         <input type="hidden" name="kind" value="sweep">
         <input type="hidden" name="enable" value="{{ '1' if sweeps_paused else '0' }}">
         <input type="hidden" name="back" value="/runs">
@@ -38,7 +38,7 @@
         being collected.{% else %}{{hunts|length}} hunt{{ '' if hunts|length == 1 else 's' }},
         wants and sweeps.{% endif %}</small></span>
     <div class="triage-actions">
-      <form method="post" action="/hunts/toggle">
+      <form method="post" action="/hunts/toggle" data-inplace="main">
         <input type="hidden" name="kind" value="all">
         <input type="hidden" name="enable" value="{{ '1' if all_paused else '0' }}">
         <input type="hidden" name="back" value="/runs">

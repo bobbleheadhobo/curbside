@@ -86,7 +86,7 @@ def test_blocking_a_word_you_are_hunting_for_is_refused(app):
     assert r.headers["location"] == "/settings?err=wanted:tv-stand"
     assert "console" not in store.hunt_excludes().get(SWEEP, ())
 
-    j = client.post("/settings/exclude.json",
+    j = client.post("/settings/exclude", headers={"X-Requested-With": "fetch"},
                     data={"hunt_id": SWEEP, "term": "ottoman"}).json()
     assert j["ok"] is False and "stacked-ottoman" in j["error"]
 
@@ -96,8 +96,9 @@ def test_a_word_too_short_to_be_safe_is_refused(app):
     assert client.post("/settings/exclude", data={"hunt_id": SWEEP, "term": "ab"},
                        follow_redirects=False
                        ).headers["location"] == "/settings?err=short"
-    assert client.post("/settings/exclude.json",
-                       data={"hunt_id": SWEEP, "term": "ab"}).json()["ok"] is False
+    assert client.post("/settings/exclude", headers={"X-Requested-With": "fetch"},
+                       data={"hunt_id": SWEEP, "term": "ab"}
+                       ).json()["ok"] is False
     assert "ab" not in store.hunt_excludes().get(SWEEP, ())
 
 
@@ -233,7 +234,8 @@ def test_the_script_and_the_markup_still_agree(tmp_path):
               / "dealbot/web/templates/base.html").read_text()
     # It must stay a progressive enhancement: real forms, intercepted.
     assert 'preventDefault' in script and 'X-Requested-With' in script
-    assert '"/triage"' in script and '"/settings/exclude.json"' in script
+    assert '"/triage"' in script and '"/settings/exclude"' in script
+    assert 'data-inplace' in script
 
 
 def test_undo_can_put_a_skipped_card_back(app):
@@ -248,3 +250,50 @@ def test_undo_can_put_a_skipped_card_back(app):
     client.post("/triage", headers={"X-Requested-With": "fetch"},
                 data={"hunt_id": SWEEP, "listing_id": lst.id, "status": "scored"})
     assert store.statuses(SWEEP)[lst.id] == "scored"
+
+
+# --- nothing that saves should throw you back to the top --------------------
+
+INPLACE = [
+    ("/hunts/toggle", {"kind": "sweep", "enable": "0"}),
+    ("/settings/hours", {"enabled": "1", "start": "12:00", "end": "20:00"}),
+    ("/settings/interval", {"hunt_id": SWEEP, "minutes": "60"}),
+    ("/settings/exclude", {"hunt_id": SWEEP, "term": "firewood"}),
+    ("/wants/archive", {"name": "tv-stand", "restore": "1"}),
+    ("/triage", {"hunt_id": "h", "listing_id": "x", "status": "saved"}),
+]
+
+
+@pytest.mark.parametrize("path,data", INPLACE)
+def test_every_saving_endpoint_answers_a_fetch_without_navigating(app, path, data):
+    """A 303 sends the browser somewhere, which on a settings screen means
+    reloading and hunting for where you were. These answer 204 or JSON to a
+    fetch, and keep the redirect for when the script is absent."""
+    client, _, _ = app
+    r = client.post(path, data=data, headers={"X-Requested-With": "fetch"},
+                    follow_redirects=False)
+    assert r.status_code in (200, 204), path
+    if r.status_code == 200:
+        assert r.json().get("ok") is True, path
+
+    plain = client.post(path, data={**data, "back": "/settings"},
+                        follow_redirects=False)
+    assert plain.status_code == 303, path          # still works with no script
+
+
+def test_every_in_place_form_posts_to_one_of_those(tmp_path):
+    """The attribute and the endpoint have to agree. A form marked
+    data-inplace whose endpoint still redirects would fetch the redirect,
+    download a page, and silently do nothing visible."""
+    import re
+    from pathlib import Path
+    answers = {path for path, _ in INPLACE}
+    root = Path(__file__).resolve().parents[1] / "dealbot/web/templates"
+    found = 0
+    for tpl in root.glob("*.html"):
+        for m in re.finditer(r'<form[^>]*\bdata-inplace\b[^>]*>', tpl.read_text()):
+            action = re.search(r'action="([^"]+)"', m.group(0))
+            assert action, f"{tpl.name}: data-inplace form with no action"
+            assert action.group(1) in answers, f"{tpl.name}: {action.group(1)}"
+            found += 1
+    assert found >= 7, f"expected the settings and runs forms, found {found}"

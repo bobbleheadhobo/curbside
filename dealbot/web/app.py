@@ -146,6 +146,17 @@ def create_app(base_cfg: Config) -> FastAPI:
     store = Store(base_cfg.db_path)
     thumbs = ThumbnailStore(base_cfg.db_path.parent / "thumbs")
 
+    def _answer(request: Request, back: str, payload: dict | None = None):
+        """303 to a form post, 204 (or JSON) to a fetch.
+
+        Every mutating endpoint here answers both ways, so the same form works
+        with the script absent -- it just reloads and drops you at the top of
+        the page, which on a settings screen means hunting for where you were.
+        """
+        if request.headers.get("x-requested-with") == "fetch":
+            return payload if payload is not None else Response(status_code=204)
+        return RedirectResponse(back, status_code=303)
+
     def _live() -> Config:
         """The config as it stands right now, wants and cadences included.
 
@@ -424,8 +435,9 @@ def create_app(base_cfg: Config) -> FastAPI:
             "It is logged. The other views should still work.")
 
     @app.post("/hunts/toggle")
-    def toggle_hunts(enable: str = Form(...), kind: str = Form(""),
-                     hunt_id: str = Form(""), back: str = Form("/")):
+    def toggle_hunts(request: Request, enable: str = Form(...),
+                     kind: str = Form(""), hunt_id: str = Form(""),
+                     back: str = Form("/")):
         """Switch a whole class of hunt on or off.
 
         Pausing a sweep stops the fetching as well as the judging, so nothing is
@@ -437,7 +449,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         for h in _live().hunts:
             if h.id == hunt_id or (kind and kind in ("all", h.kind)):
                 store.set_hunt_enabled(h.id, want_on)
-        return RedirectResponse(back, status_code=303)
+        return _answer(request, back)
 
     @app.post("/triage")
     def triage(request: Request, hunt_id: str = Form(...),
@@ -513,8 +525,9 @@ def create_app(base_cfg: Config) -> FastAPI:
             end=schedule_mod.fmt_hhmm(sched.end_minute)))
 
     @app.post("/settings/hours")
-    def save_hours(enabled: str = Form("0"), start: str = Form(""),
-                   end: str = Form(""), back: str = Form("/settings")):
+    def save_hours(request: Request, enabled: str = Form("0"),
+                   start: str = Form(""), end: str = Form(""),
+                   back: str = Form("/settings")):
         """The window the bot is awake. Stored in `settings`, so a hand edit of
         config.yaml and a tap on the phone are never fighting over one file."""
         current = _schedule()
@@ -524,13 +537,13 @@ def create_app(base_cfg: Config) -> FastAPI:
             store, enabled=enabled == "1",
             start_minute=current.start_minute if start_m is None else start_m,
             end_minute=current.end_minute if end_m is None else end_m)
-        return RedirectResponse(back, status_code=303)
+        return _answer(request, back)
 
     @app.post("/settings/interval")
-    def save_interval(hunt_id: str = Form(...), minutes: int = Form(...),
-                      back: str = Form("/settings")):
+    def save_interval(request: Request, hunt_id: str = Form(...),
+                      minutes: int = Form(...), back: str = Form("/settings")):
         store.set_hunt_interval(hunt_id, _clean_interval(minutes))
-        return RedirectResponse(back, status_code=303)
+        return _answer(request, back)
 
     # --- never show me this again ------------------------------------------
     #
@@ -561,36 +574,29 @@ def create_app(base_cfg: Config) -> FastAPI:
         return None
 
     @app.post("/settings/exclude")
-    def save_exclude(hunt_id: str = Form(...), term: str = Form(""),
-                     remove: str = Form("0"), back: str = Form("/settings")):
+    def save_exclude(request: Request, hunt_id: str = Form(...),
+                     term: str = Form(""), remove: str = Form("0"),
+                     back: str = Form("/settings")):
+        """Add or drop one blocked word. Answers JSON to a fetch and a redirect
+        to a form post, so the settings panel and the card both use it."""
         term = " ".join(term.lower().split())
+        wants_json = request.headers.get("x-requested-with") == "fetch"
+
+        def refuse(code: str, message: str):
+            if wants_json:
+                return {"ok": False, "error": message}
+            return RedirectResponse(f"{back}?err={code}", status_code=303)
+
         if remove == "1":
             store.remove_hunt_exclude(hunt_id, term)
-            return RedirectResponse(back, status_code=303)
-
-        cfg = _live()
+            return _answer(request, back, {"ok": True, "term": term})
         if len(term) < MIN_TERM:
-            return RedirectResponse(f"{back}?err=short", status_code=303)
-        if (clash := _would_block_a_want(cfg, term)):
-            return RedirectResponse(f"{back}?err=wanted:{clash}", status_code=303)
-        store.add_hunt_exclude(hunt_id, term)
-        return RedirectResponse(back, status_code=303)
-
-    @app.post("/settings/exclude.json")
-    def save_exclude_async(hunt_id: str = Form(...), term: str = Form(""),
-                           remove: str = Form("0")):
-        """The same thing from a card, which cannot afford a page reload."""
-        term = " ".join(term.lower().split())
-        if remove == "1":
-            store.remove_hunt_exclude(hunt_id, term)
-            return {"ok": True, "term": term}
-        if len(term) < MIN_TERM:
-            return {"ok": False, "error": "Too short to block safely."}
+            return refuse("short", "Too short to block safely.")
         if (clash := _would_block_a_want(_live(), term)):
-            return {"ok": False,
-                    "error": f"You are hunting for {clash}. Not blocking that."}
+            return refuse(f"wanted:{clash}",
+                          f"You are hunting for {clash}. Not blocking that.")
         store.add_hunt_exclude(hunt_id, term)
-        return {"ok": True, "term": term}
+        return _answer(request, back, {"ok": True, "term": term})
 
     # --- wants -------------------------------------------------------------
 
@@ -669,8 +675,8 @@ def create_app(base_cfg: Config) -> FastAPI:
         return RedirectResponse("/settings", status_code=303)
 
     @app.post("/wants/archive")
-    def archive_want(name: str = Form(...), restore: str = Form("0"),
-                     back: str = Form("/settings")):
+    def archive_want(request: Request, name: str = Form(...),
+                     restore: str = Form("0"), back: str = Form("/settings")):
         """Deleting a want stops its hunt. It does NOT delete anything: every
         listing it matched, every score and every dismissal stays where it is,
         readable at /hunt/want:<name>, because nothing in this project is ever
@@ -679,7 +685,7 @@ def create_app(base_cfg: Config) -> FastAPI:
             store.restore_want(name)
         else:
             store.archive_want(name)
-        return RedirectResponse(back, status_code=303)
+        return _answer(request, back)
 
     @app.get("/runs")
     def runs(request: Request):

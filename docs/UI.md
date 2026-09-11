@@ -299,6 +299,28 @@ there for stranger-written titles and it will happily break *Dismiss* one
 letter per line. `.actions button` carries `white-space:nowrap` so that failure
 mode is loud (overflow) rather than silent (a column of letters).
 
+**Nothing that saves should throw you back to the top of the page.** Every
+mutating form outside the card is marked `data-inplace`, and every endpoint
+behind one answers **204 or JSON to a fetch and 303 to a form post** (see
+`_answer` in `app.py`). With the script absent they all still work, they just
+reload.
+
+Rather than patching the DOM by hand for each — a toggle changes the health
+pill, a blocked word changes a count, saving hours changes a sentence — the
+handler re-fetches the current page and swaps in the affected panel, plus
+`.health`. The server stays the single source of truth for every label, and
+the scroll position never moves. `data-inplace` takes an optional selector and
+defaults to the closest `.panel`; `data-toast` adds a confirmation, and
+`data-refocus` names an input to clear and re-focus afterwards.
+
+`tests/test_excludes.py` asserts both halves: every listed endpoint answers a
+fetch *and* a form post, and every `data-inplace` form in every template posts
+to one of them. A form marked `data-inplace` whose endpoint still redirected
+would fetch the redirect, download a page, and appear to do nothing.
+
+**The two forms that SHOULD navigate are on the want editor**: saving a want
+and removing the want you are editing both end that page's job.
+
 **Triage is a progressive enhancement, and must stay one.** Every Save and
 Dismiss is a real `<form method=post action="/triage">`. A script intercepts
 the submit, posts it with `X-Requested-With: fetch`, gets a 204 instead of a

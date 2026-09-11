@@ -21,7 +21,8 @@
     <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
     <span><b>{{ schedule.state_label() }}</b>{% if schedule.tz_name %} &middot; {{ schedule.tz_name }}{% endif %}</span>
   </div>
-  <form method="post" action="/settings/hours">
+  <form method="post" action="/settings/hours" data-inplace
+        data-toast="Hours saved.">
     <div class="field inline-check">
       <input type="checkbox" id="sched-on" name="enabled" value="1"
              {% if schedule.enabled %}checked{% endif %}>
@@ -48,7 +49,8 @@
 <div class="panel" style="margin-bottom:18px">
   <h2>Free stuff</h2>
   {% for s in sweeps %}
-  <form method="post" action="/settings/interval">
+  <form method="post" action="/settings/interval" data-inplace
+        data-toast="Saved.">
     <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
     <div class="field">
       <label class="lbl" for="iv-{{ loop.index }}">How often to sweep</label>
@@ -75,6 +77,13 @@
    card -- and a footnote under "how often to sweep" is not findable. #}
 <div class="panel" id="blocked" style="margin-bottom:18px">
   <h2>Never show me</h2>
+  {# Said plainly, at the top. The scope is not guessable from a list of words,
+     and guessing it wrong in the other direction -- thinking this filters your
+     wants -- would make the page look broken. #}
+  <div class="state-line">
+    <svg class="i" aria-hidden="true"><use href="#i-free"/></svg>
+    <span><b>Free stuff only.</b> Your wants are never filtered this way.</span>
+  </div>
   {% if err %}
   <p class="formerr" role="alert">
     <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
@@ -90,7 +99,7 @@
       {% for t in s.terms %}
       <span class="term">{{ t.term }}
         {%- if t.n %} <b class="num" title="listings dropped">{{ t.n }}</b>{% endif %}
-        <form method="post" action="/settings/exclude">
+        <form method="post" action="/settings/exclude" data-inplace="#blocked">
           <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
           <input type="hidden" name="term" value="{{ t.term }}">
           <input type="hidden" name="remove" value="1">
@@ -104,7 +113,8 @@
     <p class="hint">Nothing is blocked. Use <b>Never show</b> on a free listing,
       or add a word here.</p>
     {% endif %}
-    <form class="addterm" method="post" action="/settings/exclude">
+    <form class="addterm" method="post" action="/settings/exclude"
+          data-inplace="#blocked" data-refocus="term">
       <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
       <input type="text" name="term" placeholder="mattress" autocapitalize="none"
              autocomplete="off" spellcheck="false">
@@ -113,7 +123,10 @@
     <p class="hint">A blocked word drops free listings before they are judged
       or shown, so it costs nothing. The number beside it is how many it has
       dropped. Matching is by whole word with plurals, so <code>bed</code> will
-      not catch <code>bedroom</code>. A word you are hunting for is refused.</p>
+      not catch <code>bedroom</code>.</p>
+    <p class="hint">Want hunts have no list like this, on purpose: the useful
+      word to block there is usually the thing you are hunting for. A word that
+      matches one of your wants is refused here too.</p>
   </div>
   {% endfor %}
 </div>
@@ -160,7 +173,7 @@
       <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
         still readable.</small>
     </a>
-    <form method="post" action="/wants/archive">
+    <form method="post" action="/wants/archive" data-inplace data-toast="Restored.">
       <input type="hidden" name="name" value="{{ r.w.name }}">
       <input type="hidden" name="restore" value="1">
       <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>
