@@ -88,7 +88,7 @@
         searched for. The free sweep still matches against it.{% else %}Running
         on its own clock.{% endif %}</small></span>
     <div class="triage-actions">
-      <form method="post" action="/hunts/toggle" data-inplace>
+      <form method="post" action="/hunts/toggle" data-inplace="main">
         <input type="hidden" name="hunt_id" value="{{ hid }}">
         <input type="hidden" name="enable"
                value="{{ '0' if hid not in paused_ids else '1' }}">

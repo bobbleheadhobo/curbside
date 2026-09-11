@@ -493,18 +493,24 @@ class Store:
         )
 
     def set_status(self, hunt_id: str, listing_id: str, status: str,
-                   note: str | None = None) -> None:
+                   note: str | None = None) -> int:
+        """Returns the number of rows changed, which the dashboard checks.
+
+        A triage that matches nothing used to be a silent no-op. That was
+        survivable while every button reloaded the page -- you saw the listing
+        still sitting there -- and became a lie the moment the card started
+        folding away and a toast started saying "Dismissed"."""
         # COALESCE, because `note` defaults to None and the pipeline never
         # passes one: without it every status transition wiped the note that
         # explained the previous one. Dismissing with a reason and later saving
         # the same listing erased the reason. A note is only ever replaced by
         # another note.
-        self.conn.execute(
+        return self.conn.execute(
             "UPDATE hunt_matches SET status=?, "
             "dismiss_note=COALESCE(?, dismiss_note), updated_at=? "
             "WHERE hunt_id=? AND listing_id=?",
             (status, note, _now(), hunt_id, listing_id),
-        )
+        ).rowcount
 
     def due_for_recheck(self, statuses: Sequence[str], older_than: str | None,
                         limit: int) -> list[tuple[str, str, Listing]]:

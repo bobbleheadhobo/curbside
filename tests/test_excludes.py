@@ -154,12 +154,15 @@ def test_the_list_has_its_own_section_and_the_free_page_points_at_it(app):
 def test_triage_answers_a_fetch_without_a_redirect(app):
     """204 to a script, 303 to a form, so one endpoint serves both and the
     buttons keep working with JavaScript off."""
-    client, _, _ = app
+    client, _, store = app
+    lst = make_listing(lid="fixture:probe", title="A thing", price_cents=0)
+    store.upsert_listing(lst)
+    store.mark_matches(SWEEP, [lst])
     assert client.post("/triage", headers={"X-Requested-With": "fetch"},
-                       data={"hunt_id": "h", "listing_id": "x",
+                       data={"hunt_id": SWEEP, "listing_id": lst.id,
                              "status": "saved"}).status_code == 204
     assert client.post("/triage", follow_redirects=False,
-                       data={"hunt_id": "h", "listing_id": "x",
+                       data={"hunt_id": SWEEP, "listing_id": lst.id,
                              "status": "saved", "back": "/free"}
                        ).status_code == 303
 
@@ -260,8 +263,18 @@ INPLACE = [
     ("/settings/interval", {"hunt_id": SWEEP, "minutes": "60"}),
     ("/settings/exclude", {"hunt_id": SWEEP, "term": "firewood"}),
     ("/wants/archive", {"name": "tv-stand", "restore": "1"}),
-    ("/triage", {"hunt_id": "h", "listing_id": "x", "status": "saved"}),
+    ("/triage", {"hunt_id": SWEEP, "listing_id": "fixture:probe",
+                 "status": "saved"}),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _a_listing_to_triage(app):
+    """`/triage` 404s on a pair it cannot find, so the probe needs a real row."""
+    _, _, store = app
+    lst = make_listing(lid="fixture:probe", title="A thing", price_cents=0)
+    store.upsert_listing(lst)
+    store.mark_matches(SWEEP, [lst])
 
 
 @pytest.mark.parametrize("path,data", INPLACE)
@@ -297,3 +310,49 @@ def test_every_in_place_form_posts_to_one_of_those(tmp_path):
             assert action.group(1) in answers, f"{tpl.name}: {action.group(1)}"
             found += 1
     assert found >= 7, f"expected the settings and runs forms, found {found}"
+
+
+@pytest.mark.parametrize("template,route", [
+    ("settings.html", "/settings"),
+    ("runs.html", "/runs"),
+    ("listing.html", None),
+    ("want_form.html", "/wants/tv-stand"),
+])
+def test_every_in_place_target_is_something_the_server_renders(app, template, route):
+    """The handler swaps the target element for the same element in a freshly
+    fetched copy of the page, so the selector must resolve in BOTH. It used to
+    invent an id on the live element when a form named no target, then ask the
+    fresh html for that id and find nothing: the save went through, the toast
+    fired, and the panel kept showing stale state."""
+    import re
+    from pathlib import Path
+    client, _, _ = app
+    tpl = (Path(__file__).resolve().parents[1] / "dealbot/web/templates"
+           / template).read_text()
+    targets = [t for t in re.findall(r'data-inplace="([^"]*)"', tpl) if t]
+    assert len(targets) == len(re.findall(r'\bdata-inplace\b', tpl)), (
+        f"{template}: a data-inplace with no target relies on the default")
+    if route is None:
+        return
+    body = client.get(route).text
+    for t in targets:
+        if t == "main":
+            assert "<main" in body
+        else:
+            assert f'id="{t[1:]}"' in body, f"{template}: {t} is not rendered"
+
+
+def test_a_triage_that_matches_nothing_says_so(app):
+    """It was a silent no-op. Survivable while every button reloaded the page
+    and you saw the listing still sitting there; a lie once the card folds away
+    and a toast says "Dismissed"."""
+    client, _, _ = app
+    r = client.post("/triage", headers={"X-Requested-With": "fetch"},
+                    data={"hunt_id": SWEEP, "listing_id": "fixture:ghost",
+                          "status": "dismissed"})
+    assert r.status_code == 404
+
+    bad = client.post("/triage", headers={"X-Requested-With": "fetch"},
+                      data={"hunt_id": SWEEP, "listing_id": "fixture:probe",
+                            "status": "nonsense"})
+    assert bad.status_code == 400

@@ -15,13 +15,13 @@
   </p>
 </div>
 
-<div class="panel" style="margin-bottom:18px">
+<div class="panel" id="hours" style="margin-bottom:18px">
   <h2>Hours</h2>
   <div class="state-line">
     <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
     <span><b>{{ schedule.state_label() }}</b>{% if schedule.tz_name %} &middot; {{ schedule.tz_name }}{% endif %}</span>
   </div>
-  <form method="post" action="/settings/hours" data-inplace
+  <form method="post" action="/settings/hours" data-inplace="#hours"
         data-toast="Hours saved.">
     <div class="field inline-check">
       <input type="checkbox" id="sched-on" name="enabled" value="1"
@@ -46,10 +46,10 @@
 </div>
 
 {% if sweeps %}
-<div class="panel" style="margin-bottom:18px">
+<div class="panel" id="sweep" style="margin-bottom:18px">
   <h2>Free stuff</h2>
   {% for s in sweeps %}
-  <form method="post" action="/settings/interval" data-inplace
+  <form method="post" action="/settings/interval" data-inplace="#sweep"
         data-toast="Saved.">
     <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
     <div class="field">
@@ -173,7 +173,8 @@
       <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
         still readable.</small>
     </a>
-    <form method="post" action="/wants/archive" data-inplace data-toast="Restored.">
+    <form method="post" action="/wants/archive" data-inplace="main"
+            data-toast="Restored.">
       <input type="hidden" name="name" value="{{ r.w.name }}">
       <input type="hidden" name="restore" value="1">
       <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>

@@ -911,12 +911,12 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   }
 
   function inplace(form) {
-    var sel = form.getAttribute("data-inplace");
-    if (!sel) {
-      var panel = form.closest(".panel");
-      if (panel && !panel.id) panel.id = "p" + Math.random().toString(36).slice(2);
-      sel = panel ? "#" + panel.id : "main";
-    }
+    /* The target has to be a selector the SERVER also produces. An earlier
+       version invented an id on the live element and then asked the freshly
+       fetched page for it, which of course did not have one -- so the save
+       went through, the toast fired, and the panel kept showing stale state.
+       Default to <main>; narrow it with data-inplace="#some-panel-id". */
+    var sel = form.getAttribute("data-inplace") || "main";
     var note = form.getAttribute("data-toast");
     var refocus = form.getAttribute("data-refocus");
     fetch(form.getAttribute("action"), {

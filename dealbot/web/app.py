@@ -464,12 +464,16 @@ def create_app(base_cfg: Config) -> FastAPI:
         # `scored` is here for undo, not for the buttons: a card on /skipped
         # is `scored`, and undoing a dismiss there has to put it back exactly
         # where it was or the list lies about what the database holds.
-        if status in ("saved", "dismissed", "contacted", "wanted", "free_find",
-                      "scored"):
-            store.set_status(hunt_id, listing_id, status, note or None)
-        if request.headers.get("x-requested-with") == "fetch":
-            return Response(status_code=204)
-        return RedirectResponse(back, status_code=303)
+        if status not in ("saved", "dismissed", "contacted", "wanted",
+                          "free_find", "scored"):
+            raise StarletteHTTPException(400, f"unknown status {status!r}")
+        if not store.set_status(hunt_id, listing_id, status, note or None):
+            # Nothing matched. Say so: the card is already folding away and the
+            # toast is about to claim it worked, and a triage that silently
+            # does nothing is the one failure this page cannot show you.
+            raise StarletteHTTPException(
+                404, f"no listing {listing_id!r} in hunt {hunt_id!r}")
+        return _answer(request, back)
 
     # --- settings: waking hours, cadence, and the wants list ---------------
     #
