@@ -487,6 +487,18 @@ class ClaudeCodeScorer:
                 self._unbilled_usd += spent
                 continue
 
+            # Free instrumentation for the only cost question left open.
+            # Appraisals average ~895 output tokens and the JSON we keep
+            # accounts for perhaps 300 of them. If the rest is prose wrapped
+            # around the object, tightening it is most of the appraisal bill
+            # for no loss at all -- and if it is not, the bill is simply what
+            # the schema costs. One real run answers it; guessing does not.
+            kept = json.dumps(data, separators=(",", ":"))
+            log.info("appraisal %s: %d output tokens, %d raw chars, "
+                     "%d kept chars (%.0f%% of the response is the object)",
+                     c.listing.id, facts.output_tokens, len(facts.text),
+                     len(kept), 100 * len(kept) / max(len(facts.text), 1))
+
             est = self._as_float(data.get("est_value_usd"))
             score_val = self._as_float(data.get("deal_score")) or 0.0
             match = str(data.get("match", "unknown")).lower()
