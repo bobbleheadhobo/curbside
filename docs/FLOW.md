@@ -27,10 +27,17 @@ Companion to DESIGN.md. This is *what it does* and *how control moves through it
 | F12 | **Dismissal learning** | dismissed listings become negative examples in that hunt's prompt |
 | F13 | Re-score on material change | price drop ≥15% re-opens a listing we already judged |
 
-### v2
+### v2 — what actually shipped
 
-ntfy push · comparables drawn from our own price history · second source adapter ·
-auto-populated seller blocklist from repeat dismissals · scheduled runs (systemd timer)
+Push became **Discord**, two channels, not ntfy. The systemd timer, the second
+source (Craigslist), the availability re-check, waking hours, and a settings
+page that owns the wants list all shipped. Still not built: comparables from
+our own price history (they need a month of observations), an auto-populated
+seller blocklist, and any search over the archive.
+
+**`docs/ARCHITECTURE.md` is authoritative for behaviour.** This file is the
+feature and type reference, and where the two disagree it is this one that has
+drifted.
 
 ### Deliberately out of scope
 
@@ -56,62 +63,53 @@ look like fresh listings forever and you keep re-scoring and re-surfacing the sa
 
 ## Part 2 — Types
 
-```python
-@dataclass(frozen=True)
-class RawListing:                  # what a source yields, untouched
-    source: str
-    source_id: str
-    payload: dict
-    fetched_at: datetime
+Kept in sync with `dealbot/models.py`; the docstrings there carry the reasoning.
 
+```python
 @dataclass(frozen=True)
 class Listing:                     # normalized, what the store holds
     id: str                        # f"{source}:{source_id}"
     source: str; source_id: str
-    title: str
-    description: str | None
-    price_cents: int | None        # 0 = free; None = no price shown
-    currency: str
-    url: str
+    title: str; description: str | None
+    price_cents: int | None        # 0 = free; None = no price shown. NOT the same
+    currency: str; url: str
+    previous_price_cents: int | None   # Facebook's strikethrough price
     city: str | None; lat: float | None; lng: float | None; distance_mi: float | None
     seller_id: str | None; seller_name: str | None
-    images: tuple[str, ...]
-    category: str | None
-    posted_at: datetime | None
-    fingerprint: str               # for relist detection
+    images: tuple[str, ...]        # a listing with none of these is never judged
+    category: str | None; posted_at: datetime | None
     raw: dict
+    # computed: dup_key (same item cross-source), fingerprint (relists, inert)
 
 @dataclass(frozen=True)
-class UpsertResult:
-    listing_id: str
-    is_new: bool
-    price_changed: bool
-    previous_price_cents: int | None
-    is_relist: bool
+class Score:
+    listing_id: str; hunt_id: str; model: str; scored_at: datetime
+    match: str                     # "yes" | "no" | "unknown" -- three-way, not a bool
+    deal_score: float              # 0-10, scored AS IF the unknowns resolve well
+    est_value_cents: int | None; condition: str | None; matched_want: str | None
+    worth_grabbing: bool           # independent of match; only a SWEEP acts on it
+    unknowns: tuple[str, ...]      # what a human should check
+    requirements: tuple[dict, ...] # [{req, met, evidence}] -- auditable
+    red_flags: tuple[str, ...]; reasoning: str
+    needs_images: bool; image_question: str | None; images_checked: bool
+    input_tokens: int; output_tokens: int; cache_read_tokens: int; cost_usd: float
 
 @dataclass(frozen=True)
 class Candidate:                   # survived the gate, headed for the model
     listing: Listing
-    reason: str                    # "new" | "price_drop" | "relist"
+    reason: str                    # "new" | "price_drop" | "relist" | "backlog"
     previous_score: Score | None
 
 @dataclass(frozen=True)
-class GateResult:
-    candidates: list[Candidate]
-    rejected: list[tuple[str, str]]   # (listing_id, reason) — recorded, not discarded
-
-@dataclass(frozen=True)
-class Score:
-    listing_id: str; hunt_id: str
-    model: str; scored_at: datetime
-    is_relevant: bool
-    deal_score: float              # 0-10
-    est_value_cents: int | None
-    condition: str | None          # new|like_new|good|fair|parts
-    red_flags: tuple[str, ...]
-    reasoning: str
-    input_tokens: int; output_tokens: int; cost_usd: float
+class StoredWant:                  # a want as the DATABASE holds it
+    want: Want
+    origin: str                    # "config" when seeded from the file
+    archived_at: str | None        # soft delete; the name stays taken
+    created_at: str | None; updated_at: str | None
 ```
+
+`Score.is_relevant` is a property, not a field: `match in (yes, unknown)` or
+`worth_grabbing`.
 
 ## Part 3 — Interfaces
 
@@ -119,21 +117,33 @@ class Score:
 class Source(Protocol):
     name: str
     def search(self, hunt: Hunt) -> Iterator[RawListing]: ...
-    def parse(self, raw: RawListing) -> Listing | None: ...   # source-specific; None = unusable
+    def parse(self, raw: RawListing) -> Listing | None: ...   # None = unusable
+    # optional: detail(listing) -> Listing | None, the enrichment fetch
+    # optional: reset_budget(), the per-pass request cap
 
 class Scorer(Protocol):
-    def score(self, hunt: Hunt, candidates: list[Candidate]) -> list[Score]: ...
+    def triage(self, hunt, candidates) -> TriageResult: ...   # batched, coarse
+    def appraise(self, hunt, candidates) -> list[Score]: ...  # one call each
+    # ClaudeCodeScorer adds: resolve_with_images, check_available, begin_run,
+    # drain_unbilled, overridden
 
 class Notifier(Protocol):
     def notify(self, hunt: Hunt, surfaced: list[tuple[Listing, Score]]) -> None: ...
+    # optional: notify_price_drop(hunt, listing, score, was_cents) -> bool
 ```
 
-`parse` lives on the source because parsing is inherently source-specific, but it returns
-the shared `Listing` type and `normalize.validate()` checks it before anything is written.
-A broken adapter yields garbage that gets rejected and logged — it can't corrupt the store.
+Scoring is **two calls, not one**: triage is batched and coarse because every
+invocation pays a fixed ~2,500-token prefix whatever the prompt size, and
+appraisal is per listing because its output is per listing. A third, the image
+pass, runs only where the model asked for one.
 
-`DashboardNotifier` is a near-no-op that just flips status to `surfaced`; the dashboard
-reads the DB directly. It exists so `NtfyNotifier` later is a drop-in, not a refactor.
+`parse` lives on the source because parsing is source-specific, but it returns
+the shared `Listing` and `validate()` checks it before anything is written. A
+broken adapter yields garbage that gets rejected and logged; it cannot corrupt
+the store.
+
+`DashboardNotifier` is a near-no-op that flips status and stamps `notified_at`;
+the dashboard reads the database directly. `DiscordNotifier` is the real one.
 
 ## Part 4 — The main flow
 
@@ -148,34 +158,27 @@ cli.once()
 ```
 
 ```
-run_hunt(store, hunt, source, scorer, notifiers):
+run_hunt(store, hunt, source, scorer, notifiers, location):
 
-  1. run_id = store.start_run(hunt, source)
-
-  2. FETCH        raw = list(source.search(hunt))
-                  ── on exception: store.finish_run(run_id, error=...) and RETURN.
-                     A dead scraper must fail loudly in the runs table, never silently
-                     look like a quiet day.
-
-  3. PARSE        listings = [l for r in raw if (l := source.parse(r)) and validate(l)]
-
-  4. STORE        for each listing:
-                      up = store.upsert_listing(listing)   -> UpsertResult
-                      store.record_price(listing.id, listing.price_cents)   # always
-                  store.mark_matches(hunt.id, listings)    # hunt_matches rows, status=new
-
-  5. GATE         gr = filters.gate(hunt, listings, store) -> GateResult
-                  store.record_rejections(hunt.id, gr.rejected)   # status=filtered + reason
-
-  6. SCORE        scores = scorer.score(hunt, gr.candidates)
-                  store.save_scores(scores)                       # status=scored
-
-  7. SURFACE      surfaced = [(l, s) for (l, s) in scores
-                              if s.is_relevant and s.deal_score >= hunt.min_deal_score]
-                  for n in notifiers: n.notify(hunt, surfaced)    # status=surfaced
-
-  8. store.finish_run(run_id, n_fetched, n_new, n_scored, n_surfaced, cost_usd)
+  1. start_run                 every attempt gets a row, success or failure
+  2. FETCH                     a dead source fails LOUDLY here, never quietly
+  3. PARSE + validate
+  4. STORE                     upsert, record_price, mark_matches, mark_gone
+  5. GATE                      filters.gate(); rejections are RECORDED
+  5a. CAP at max_results       newest first
+  5b. TOP UP from the backlog  spare capacity goes to listings never judged
+  6. ENRICH survivors          description, coordinates, all photos
+  6a. re-check distance, age, exclude terms   (only knowable after enrichment)
+  6b. drop no-photo listings   nothing for the image pass to open
+  6c. cross-source duplicates
+  7. TRIAGE                    one batched call, coarse keep/drop
+  8. APPRAISE                  one call each, survivors only
+  9. IMAGES                    where needs_images AND it would reach a bin
+ 10. ROUTE                     wants / free finds / filed
+ 11. notifiers, thumbnails, finish_run
 ```
+
+`docs/ARCHITECTURE.md` has the reasoning for each stage and the order.
 
 Every step is idempotent. Re-running the same hunt five minutes later re-upserts the same
 listings, appends identical price observations (cheap), gates out everything already scored
@@ -280,13 +283,19 @@ counts as triaged, but nothing surfaces it any more.
 ## Part 6 — CLI
 
 ```
-dealbot once   [--hunt NAME] [--dry-run] [--no-score]   one pass; --dry-run skips writes
-dealbot run    [--interval 15m]                          loop over all enabled hunts
-dealbot serve  [--port 8080]                             dashboard
-dealbot hunts                                            list hunts + last run + counts
-dealbot backfill --rescore [--hunt NAME]                 re-score against current criteria
-dealbot fixtures capture --hunt NAME                     save live responses as test fixtures
+dealbot once   [--hunt N] [--dry-run] [--no-score] [--due]  one pass
+dealbot run    [--interval 15m]                             loop on each cadence
+dealbot serve  [--host H] [--port 8080]                     dashboard, localhost
+dealbot hunts                                               hunts, last run, the window
+dealbot notify [--hunt N]                                   flush alerts; no fetch, no cost
+dealbot recheck [--limit N] [--all]                         still for sale? requests, no quota
+dealbot seed-demo [--db PATH]                               an offline database to develop on
+dealbot prune-thumbs                                        drop cached photos no longer needed
 ```
+
+`--due` is what the timer passes: each hunt decides whether enough time has
+passed, and the whole pass is skipped outside the waking hours. `backfill` and
+`fixtures capture` were planned here and never built.
 
 `--no-score` is the everyday debugging flag: run the whole pipeline, spend nothing, see
 what the gate would have admitted.
@@ -325,7 +334,7 @@ unconfirmed TV stand belongs next to a 9.0 confirmed one.
 
 ```
 match in (yes, unknown)  and deal_score >= min_deal_score      -> wanted
-match == no and worth_grabbing
+match == no and worth_grabbing and the hunt is a SWEEP
                          and deal_score >= free_find_min_score -> free_find
 otherwise                                                      -> scored (filed)
 ```
@@ -335,6 +344,11 @@ stand I want" clears a high bar (7.0) because you will drive across town for it;
 "is this free thing worth a look" is browsing (5.0). Holding both to 7.0 meant a
 free working treadmill scored 5 and was never shown, which is the whole point of
 the second bin.
+
+Only a sweep fills the free bin. A want hunt that met an unrelated bargain used
+to route it there too, which put seven priced items into a tab named for free
+things. A listing also appears in exactly one bin: saved outranks wanted
+outranks free find.
 
 `worth_grabbing` is an axis independent of `match`, and it is the half of the
 sweep that finds things you never thought to search for. It first failed at
@@ -366,8 +380,16 @@ re-litigate affordability and blend that back into the match decision.
 
 ## Part 9 — Still open
 
-- Whether this Fedora container on koda is persistent enough to host the systemd
-  timer, or whether that belongs on koda's host. Matters at P4, not before.
+- **The tv-stand hunt asks an unanswerable question.** "At least 70 inches wide"
+  is stated in 5 of 104 listings, so 49% of its judgements come back `unknown`
+  and $2.17 of $5.63 of all appraisal spend went on them. Every want-hunt
+  dismissal so far was an unconfirmed width. Either the requirement becomes
+  something checkable or the bin is accepted as a "go and look at the photos"
+  queue.
+- **Dismissal learning is wired but unproven**, and measurably wrong on want
+  hunts: 31 listings share the title "tv stand", so dismissing one teaches that
+  hunt to suppress the thing it hunts for. Blocked words on `/free` are the
+  auditable counterpart; the prompt block has no such account of itself.
 - `max_price` on both wants is a guess (tv-stand $250, ottoman $150).
 - The stacked-ottoman description is an interpretation of "3 round stacks" and
-  should be checked against a real example before it is trusted.
+  should be checked against a real example.

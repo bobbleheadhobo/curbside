@@ -220,7 +220,7 @@ invalidates everything after it:
 ```
 prompts/rubric.md        editable; how to judge          ← stable for weeks
 hunt wants + requires    what you want                   ← stable until you edit config
-(dismissed examples)     designed, not yet wired         ← daily snapshot when built
+dismissed titles         negative examples, WIRED         ← snapshotted daily
 the listing              volatile
 ```
 
@@ -445,4 +445,5 @@ from one geometry so the browser tab and the home-screen tile cannot drift.
   is why the timer matters more than the polish.
 - **`worth_grabbing` runs conservative** — a free piano scored 2.0. Tune it in
   `prompts/rubric.md`.
-- **Notifications** are not built yet (Discord, two channels).
+- **No search over the archive.** 800+ listings and the only ways in are the
+  bins and the per-hunt views, both capped at 200.
