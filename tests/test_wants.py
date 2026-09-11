@@ -207,3 +207,44 @@ def test_seeding_never_overwrites_an_edited_want(tmp_path):
     store.save_want(Want("lamp", "edited on the phone", 9900, ("lamp",)))
     store.seed_wants([Want("lamp", "from the file", 2000, ("lamp",))])
     assert store.get_want("lamp").want.description == "edited on the phone"
+
+
+def test_the_four_tuning_levers_reach_the_hunts(app):
+    """The wants bar especially: /skipped exists so the threshold can be judged
+    rather than guessed at, and until now there was no way to act on what you
+    learned there without an ssh session."""
+    client, cfg, store = app
+    client.post("/settings/tuning", data={
+        "min_deal_score": "6.5", "free_find_min_score": "4",
+        "max_results": "12", "radius_miles": "45"})
+    live = with_store(cfg, store)
+    assert live.defaults.min_deal_score == 6.5
+    assert live.location.radius_miles == 45
+    for hunt in live.hunts:
+        assert hunt.min_deal_score == 6.5
+        assert hunt.free_find_min_score == 4
+        assert hunt.max_results == 12
+
+
+def test_a_lever_cannot_be_set_somewhere_silly(app):
+    """These are settings rows typed on a phone. A score of 99 or a radius of
+    a thousand miles should be clamped, not obeyed, and a value that will not
+    parse must not be able to stop the timer."""
+    client, cfg, store = app
+    client.post("/settings/tuning", data={
+        "min_deal_score": "99", "free_find_min_score": "-4",
+        "max_results": "9999", "radius_miles": "banana"})
+    live = with_store(cfg, store)
+    assert live.defaults.min_deal_score == 10.0
+    assert live.defaults.free_find_min_score == 0.0
+    assert live.defaults.max_results == 50
+    assert live.location.radius_miles == cfg.location.radius_miles   # unchanged
+
+
+def test_the_tuning_panel_shows_what_each_lever_costs(app):
+    """A threshold you cannot see the effect of is one you guess at."""
+    client, _, _ = app
+    body = client.get("/settings").text
+    assert 'id="tuning"' in body
+    assert "Wants bar" in body and "Radius" in body
+    assert "config.yaml" in body          # and says what is deliberately not here

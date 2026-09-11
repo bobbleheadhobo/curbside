@@ -586,10 +586,32 @@ def create_app(base_cfg: Config) -> FastAPI:
                 # not consulted again, so this is the whole list.
                 "terms": [{"term": t, "n": counts.get(t, 0)} for t in h.exclude],
             })
+        # Each lever shows what it is currently costing, so it is tuned against
+        # evidence rather than adjusted and forgotten.
+        bar = cfg.defaults.min_deal_score
+        near = store.conn.execute(
+            """SELECT COUNT(*) c FROM hunt_matches m JOIN scores s
+                 ON s.id=(SELECT MAX(id) FROM scores WHERE hunt_id=m.hunt_id
+                          AND listing_id=m.listing_id)
+               WHERE m.status='scored' AND s.deal_score >= ? AND s.deal_score < ?""",
+            (bar - 2, bar)).fetchone()["c"]
+        far = {r["filter_reason"]: r["n"] for r in store.conn.execute(
+            "SELECT filter_reason, COUNT(*) n FROM hunt_matches "
+            "WHERE filter_reason IN ('too_far','too_far_by_city') "
+            "GROUP BY filter_reason")}
+        tuning = {
+            "min_deal_score": cfg.defaults.min_deal_score,
+            "free_find_min_score": cfg.defaults.free_find_min_score,
+            "max_results": cfg.defaults.max_results,
+            "radius_miles": cfg.location.radius_miles,
+            "near_miss": near,
+            "too_far": sum(far.values()),
+            "backlog": sum(store.unjudged_counts().values()),
+        }
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
             request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,
             intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
-            err=err,
+            err=err, tuning=tuning,
             start=schedule_mod.fmt_hhmm(sched.start_minute),
             end=schedule_mod.fmt_hhmm(sched.end_minute)))
 
@@ -606,6 +628,26 @@ def create_app(base_cfg: Config) -> FastAPI:
             store, enabled=enabled == "1",
             start_minute=current.start_minute if start_m is None else start_m,
             end_minute=current.end_minute if end_m is None else end_m)
+        return _answer(request, back)
+
+    @app.post("/settings/tuning")
+    def save_tuning(request: Request, min_deal_score: str = Form(""),
+                    free_find_min_score: str = Form(""),
+                    max_results: str = Form(""), radius_miles: str = Form(""),
+                    back: str = Form("/settings")):
+        """The four numbers worth a thumb. Everything else in config.yaml stays
+        in config.yaml -- the source rate limits especially, which exist to keep
+        Facebook from blocking you and live inside the adapter precisely so a
+        caller cannot bypass them."""
+        for key, raw in (("min_deal_score", min_deal_score),
+                         ("free_find_min_score", free_find_min_score),
+                         ("max_results", max_results),
+                         ("radius_miles", radius_miles)):
+            if str(raw).strip():
+                try:
+                    store.set_tuning(key, raw)
+                except (TypeError, ValueError):
+                    continue
         return _answer(request, back)
 
     @app.post("/settings/interval")

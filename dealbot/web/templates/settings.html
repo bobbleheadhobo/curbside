@@ -71,6 +71,48 @@
 
 {% endif %}
 
+{# The four numbers worth a thumb. Each one says what it is currently costing,
+   because a threshold you cannot see the effect of is one you guess at. #}
+<div class="panel" id="tuning" style="margin-bottom:18px">
+  <h2>Tuning</h2>
+  <form method="post" action="/settings/tuning" data-inplace="#tuning"
+        data-toast="Saved.">
+    <div class="field">
+      <div class="row">
+        <label><span class="lbl">Wants bar</span>
+          <input type="text" inputmode="decimal" name="min_deal_score"
+                 value="{{ '%g'|format(tuning.min_deal_score) }}"></label>
+        <label><span class="lbl">Free finds bar</span>
+          <input type="text" inputmode="decimal" name="free_find_min_score"
+                 value="{{ '%g'|format(tuning.free_find_min_score) }}"></label>
+      </div>
+      <p class="hint">Out of 10. {% if tuning.near_miss %}<a href="/skipped">{{ tuning.near_miss }}
+        judged just under the wants bar</a> right now, which is the pile to read
+        before moving it.{% else %}Nothing is sitting just under the wants bar.{% endif %}</p>
+    </div>
+    <div class="field">
+      <div class="row">
+        <label><span class="lbl">Judge per run</span>
+          <input type="text" inputmode="numeric" name="max_results"
+                 value="{{ tuning.max_results }}"></label>
+        <label><span class="lbl">Radius (miles)</span>
+          <input type="text" inputmode="decimal" name="radius_miles"
+                 value="{{ '%g'|format(tuning.radius_miles) }}"></label>
+      </div>
+      <p class="hint">Per hunt, per source, each run. {% if tuning.backlog %}{{ tuning.backlog }}
+        collected and not yet judged; raising this drains them faster and costs
+        more.{% else %}Nothing is waiting, so raising it would change nothing.{% endif %}
+        {% if tuning.too_far %}<br>{{ tuning.too_far }} listings have been dropped
+        as too far.{% endif %}</p>
+    </div>
+    <div class="formactions"><button class="primary">Save</button></div>
+  </form>
+  <p class="settings-note">Everything else stays in <code>config.yaml</code>.
+    The source rate limits especially: they are what keeps Facebook from
+    blocking you, and they live inside the adapter so that nothing can bypass
+    them by accident.</p>
+</div>
+
 {% if sweeps %}
 {# Its own panel, not a field at the bottom of another one. This is a list you
    come looking for -- from the free page, or after blocking something from a

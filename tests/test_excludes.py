@@ -266,6 +266,8 @@ INPLACE = [
     ("/triage", {"hunt_id": SWEEP, "listing_id": "fixture:probe",
                  "status": "saved"}),
     ("/quota/override", {"minutes": "120"}),
+    ("/settings/tuning", {"min_deal_score": "7", "free_find_min_score": "5",
+                          "max_results": "5", "radius_miles": "32"}),
 ]
 
 

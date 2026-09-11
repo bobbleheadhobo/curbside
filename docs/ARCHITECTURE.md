@@ -405,6 +405,7 @@ either the seed or is not consulted at all:
 |---|---|---|
 | wants | `wants` table | **seeds each name once** |
 | cadences | `settings` `hunt_interval:<id>` | default |
+| the two score bars, the per-run cap, the radius | `settings` `tune:<name>` | default |
 | blocked words | `settings` `hunt_exclude:<id>` | **seeds each hunt once** |
 | waking hours | `settings` `schedule.*` | starting values |
 | timezone | `config.yaml` | the only home. It is a fact, not a preference |

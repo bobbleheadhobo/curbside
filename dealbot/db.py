@@ -841,6 +841,37 @@ class Store:
 
     # --- settings -----------------------------------------------------------
 
+    # The four numbers you would actually reach for, overriding config.yaml.
+    # Deliberately NOT everything in that file: the source rate limits protect
+    # you from being blocked by Facebook and live inside the adapter so a caller
+    # cannot bypass them, which a tap on a phone would be.
+    TUNING = {
+        "min_deal_score": (float, 0.0, 10.0),
+        "free_find_min_score": (float, 0.0, 10.0),
+        "max_results": (int, 1, 50),
+        "radius_miles": (float, 1.0, 200.0),
+    }
+
+    def tuning(self) -> dict[str, float | int]:
+        """Whatever has been set from the dashboard, parsed and clamped.
+
+        A value that will not parse is ignored rather than raised on: these are
+        settings rows, and a bad one must not be able to stop the timer."""
+        out: dict[str, float | int] = {}
+        for key, (cast, lo, hi) in self.TUNING.items():
+            raw = self.get_setting(f"tune:{key}")
+            if raw is None:
+                continue
+            try:
+                out[key] = max(lo, min(cast(raw), hi))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def set_tuning(self, key: str, value) -> None:
+        cast, lo, hi = self.TUNING[key]
+        self.set_setting(f"tune:{key}", str(max(lo, min(cast(value), hi))))
+
     def hunt_intervals(self) -> dict[str, int]:
         """Per-hunt cadence set from the dashboard, overriding config.yaml.
 

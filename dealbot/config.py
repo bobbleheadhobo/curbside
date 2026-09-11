@@ -253,7 +253,20 @@ def with_store(cfg: Config, store) -> Config:
     from_file.update({f"want:{n}": spec.exclude
                       for n, spec in cfg.want_hunts.items()})
     store.seed_excludes(from_file)
-    return replace(cfg,
+
+    # The four numbers the dashboard owns. Same shape as the cadences: the file
+    # supplies the default and a settings row wins.
+    tune = store.tuning()
+    defaults = replace(
+        cfg.defaults,
+        min_deal_score=tune.get("min_deal_score", cfg.defaults.min_deal_score),
+        free_find_min_score=tune.get("free_find_min_score",
+                                     cfg.defaults.free_find_min_score),
+        max_results=tune.get("max_results", cfg.defaults.max_results))
+    location = replace(cfg.location,
+                       radius_miles=tune.get("radius_miles",
+                                             cfg.location.radius_miles))
+    return replace(cfg, defaults=defaults, location=location,
                    wants=tuple(s.want for s in store.wants()),
                    interval_overrides=store.hunt_intervals(),
                    exclude_extra=store.hunt_excludes(),
