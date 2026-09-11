@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS hunt_matches (
   -- Paces the re-check pass: one detail fetch per listing per interval, so a
   -- bin of forty things cannot turn into forty requests every run.
   rechecked_at  TEXT,
+  -- The price we last told you about. A saved listing dropping from $200 to
+  -- $120 is the best message this bot can send, and every observation needed
+  -- to notice it was already on disk and unread.
+  alerted_price_cents INTEGER,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (hunt_id, listing_id)
 );
@@ -211,7 +215,8 @@ class Store:
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("status_before_gone", "TEXT"),
                               ("notified_at", "TEXT"),
-                              ("rechecked_at", "TEXT"))),
+                              ("rechecked_at", "TEXT"),
+                              ("alerted_price_cents", "INTEGER"))),
             ("runs", (("warning", "TEXT"),
                       ("n_worth_a_look", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
@@ -681,6 +686,82 @@ class Store:
                JOIN (SELECT listing_id, MAX(id) AS mx FROM scores
                      WHERE hunt_id=? GROUP BY listing_id) m
                  ON s.id = m.mx""", (hunt_id,))}
+
+    def price_drops(self, threshold: float = 0.15,
+                    statuses: Sequence[str] = ("saved", "contacted", "wanted",
+                                               "free_find"),
+                    limit: int = 20) -> list[tuple[str, Listing, Score, int]]:
+        """Things in a bin that are materially cheaper than when you last heard.
+
+        The baseline is the price we last told you about, falling back to the
+        price it carried when it was judged. So a listing that slides $200 ->
+        $180 -> $160 announces itself once at $160, not twice, and a second
+        alert needs another real drop from there.
+
+        A drop to free is included, and is the headline case: `$500 -> FREE` is
+        the strongest signal in the whole dataset.
+        """
+        rows = self.conn.execute(
+            f"""SELECT m.hunt_id, m.listing_id, l.*,
+                       COALESCE(m.alerted_price_cents, s.priced_at_cents) AS was
+                FROM hunt_matches m
+                JOIN listings l ON l.id = m.listing_id
+                JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
+                                         WHERE hunt_id=m.hunt_id
+                                           AND listing_id=m.listing_id)
+                WHERE m.status IN ({','.join('?' * len(statuses))})
+                  AND l.sold_at IS NULL
+                  AND l.price_cents IS NOT NULL
+                  AND COALESCE(m.alerted_price_cents, s.priced_at_cents) > 0
+                  AND l.price_cents <= ? * COALESCE(m.alerted_price_cents,
+                                                    s.priced_at_cents)
+                ORDER BY l.last_seen DESC LIMIT ?""",
+            (*statuses, 1.0 - threshold, limit)).fetchall()
+        out = []
+        for r in rows:
+            score = self._row_to_score(self.conn.execute(
+                "SELECT * FROM scores WHERE hunt_id=? AND listing_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (r["hunt_id"], r["listing_id"])).fetchone())
+            out.append((r["hunt_id"], self._row_to_listing(r), score, r["was"]))
+        return out
+
+    def mark_price_alerted(self, hunt_id: str, listing_id: str,
+                           price_cents: int) -> None:
+        self.conn.execute(
+            "UPDATE hunt_matches SET alerted_price_cents=?, updated_at=? "
+            "WHERE hunt_id=? AND listing_id=?",
+            (price_cents, _now(), hunt_id, listing_id))
+
+    def unjudged(self, hunt_id: str, source: str,
+                 limit: int) -> list[Listing]:
+        """Listings this hunt collected and never judged, newest first.
+
+        The cap in the pipeline leaves the overflow at `new` on the theory that
+        it "drains over the next few runs". It does not: candidates only ever
+        came from the CURRENT fetch, and by the next run those listings have
+        fallen off page one and are never seen again. 130 of them were stranded
+        that way, the oldest 47 hours old.
+
+        Excludes anything confirmed off the market, so a backlog cannot resurrect
+        something `recheck` already retired.
+        """
+        if limit <= 0:
+            return []
+        return [self._row_to_listing(r) for r in self.conn.execute(
+            """SELECT l.* FROM hunt_matches m JOIN listings l ON l.id = m.listing_id
+               WHERE m.hunt_id = ? AND m.status = 'new' AND l.source = ?
+                 AND l.sold_at IS NULL
+               ORDER BY COALESCE(l.posted_at, l.first_seen) DESC
+               LIMIT ?""", (hunt_id, source, limit))]
+
+    def unjudged_counts(self) -> dict[str, int]:
+        """Per hunt, for the dashboard. Collected and never judged is the one
+        failure the runs view could not show you: every individual run looks
+        healthy while a third of what arrives is quietly discarded."""
+        return {r["hunt_id"]: r["n"] for r in self.conn.execute(
+            "SELECT hunt_id, COUNT(*) n FROM hunt_matches WHERE status='new' "
+            "GROUP BY hunt_id")}
 
     # --- wants --------------------------------------------------------------
 

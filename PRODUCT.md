@@ -95,6 +95,10 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   Confirmed 2026-09-09: the user does not want to track whether they messaged
   a seller, so `contacted` is never offered, though the pipeline still honours
   it as an already-triaged state.
+- **A price drop on something in a bin is announced**, added 2026-09-11. The
+  baseline is the price you were last told, so each real drop announces once.
+- **Collected-but-never-judged is visible on `/runs`.** Every individual run
+  looked healthy while a third of what arrived was silently discarded.
 - **Dismissing is not cosmetic.** Dismissed titles become negative examples
   in that hunt's next prompt. The button is part of how the bot learns.
   Measured 2026-09-10 against 18 real dismissals: on the free sweep this is

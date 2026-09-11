@@ -231,3 +231,120 @@ def test_the_embed_stays_inside_discord_limits():
     assert len(e["description"]) <= 4096
     assert all(len(f["value"]) <= 1024 for f in e["fields"])
     assert len(e["fields"]) <= 25
+
+
+def _bin_with_score(store, lid, price, hunt="want:tv-stand", status="saved"):
+    from datetime import datetime, timezone
+    from dealbot.models import Score
+    from conftest import make_listing
+    l = make_listing(lid=lid, price_cents=price)
+    store.upsert_listing(l)
+    store.mark_matches(hunt, [l])
+    store.save_score(Score(listing_id=l.id, hunt_id=hunt, model="m",
+                           scored_at=datetime.now(timezone.utc), match="yes",
+                           deal_score=8.0, est_value_cents=None, condition=None,
+                           matched_want="tv-stand", worth_grabbing=False,
+                           unknowns=(), requirements=(), red_flags=(),
+                           reasoning="r"), priced_at_cents=price)
+    store.set_status(hunt, l.id, status)
+    return l
+
+
+def test_a_saved_listing_getting_cheaper_is_announced_once(tmp_path):
+    """What the append-only price history was for. Alerts only ever fired when
+    a listing first reached a bin, so a saved $200 credenza falling to $120
+    said nothing at all -- with every observation needed to spot it on disk."""
+    from dealbot.db import Store
+    from dealbot.pipeline import announce_price_drops
+    from conftest import make_listing
+    store = Store(tmp_path / "t.db")
+    _bin_with_score(store, "x:1", 20000)
+
+    sent = []
+    class Fake:
+        name = "fake"
+        def notify_price_drop(self, hunt, listing, score, was):
+            sent.append((listing.id, was, listing.price_cents))
+            return True
+
+    assert announce_price_drops(store, [Fake()]) == 0      # nothing moved yet
+
+    store.upsert_listing(make_listing(lid="x:1", price_cents=12000))
+    assert announce_price_drops(store, [Fake()]) == 1
+    assert sent == [("x:1", 20000, 12000)]
+
+    # ...and not again on the next run, for the same drop.
+    assert announce_price_drops(store, [Fake()]) == 0
+
+    # A further real drop re-arms it, measured from what you were last told.
+    store.upsert_listing(make_listing(lid="x:1", price_cents=0))
+    assert announce_price_drops(store, [Fake()]) == 1
+    assert sent[-1] == ("x:1", 12000, 0)
+
+
+def test_a_nudge_down_is_not_a_price_drop(tmp_path):
+    """Sellers move prices constantly; 15% is the same bar the gate uses."""
+    from dealbot.db import Store
+    from dealbot.pipeline import announce_price_drops
+    from conftest import make_listing
+    store = Store(tmp_path / "t.db")
+    _bin_with_score(store, "x:2", 10000)
+    store.upsert_listing(make_listing(lid="x:2", price_cents=9500))
+    class Fake:
+        name = "fake"
+        def notify_price_drop(self, *a): return True
+    assert announce_price_drops(store, [Fake()]) == 0
+
+
+def test_a_drop_is_stamped_even_when_no_webhook_takes_it(tmp_path):
+    """Otherwise the same drop re-queues itself on every future run."""
+    from dealbot.db import Store
+    from dealbot.pipeline import announce_price_drops
+    from conftest import make_listing
+    store = Store(tmp_path / "t.db")
+    _bin_with_score(store, "x:3", 20000)
+    store.upsert_listing(make_listing(lid="x:3", price_cents=10000))
+    class Silent:
+        name = "silent"
+        def notify_price_drop(self, *a): return False
+    assert announce_price_drops(store, [Silent()]) == 0
+    assert store.price_drops() == []          # stamped, not left queued
+
+
+def test_something_confirmed_sold_is_not_announced(tmp_path):
+    from dealbot.db import Store
+    from dealbot.pipeline import announce_price_drops
+    from conftest import make_listing
+    store = Store(tmp_path / "t.db")
+    _bin_with_score(store, "x:4", 20000)
+    store.upsert_listing(make_listing(lid="x:4", price_cents=9000))
+    store.mark_sold("x:4", "sold")
+    class Fake:
+        name = "fake"
+        def notify_price_drop(self, *a): return True
+    assert announce_price_drops(store, [Fake()]) == 0
+
+
+def test_the_drop_message_leads_with_the_move(tmp_path):
+    from dealbot.notify.discord import DiscordNotifier
+    from dealbot.db import Store
+    from conftest import make_listing
+    from datetime import datetime, timezone
+    from dealbot.models import Hunt, Score
+    store = Store(tmp_path / "t.db")
+    posted = {}
+    n = DiscordNotifier(store, wants_webhook="https://example/hook",
+                        dashboard_url="http://d")
+    n._post = lambda hook, payload: posted.update(payload) or True
+    listing = make_listing(lid="x:5", price_cents=12000)
+    score = Score(listing_id="x:5", hunt_id="h", model="m",
+                  scored_at=datetime.now(timezone.utc), match="yes",
+                  deal_score=8.0, est_value_cents=None, condition=None,
+                  matched_want="tv-stand", worth_grabbing=False, unknowns=(),
+                  requirements=(), red_flags=(), reasoning="r")
+    hunt = Hunt(id="h", name="h", kind="want", queries=(), max_price_cents=None,
+                exclude=(), wants=(), min_deal_score=7.0, free_find_min_score=5.0,
+                interval_minutes=60, max_results=5)
+    assert n.notify_price_drop(hunt, listing, score, 20000) is True
+    assert "$200" in posted["content"] and "$120" in posted["content"]
+    assert "40%" in posted["embeds"][0]["title"]

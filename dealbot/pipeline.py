@@ -207,6 +207,28 @@ def run_hunt(
         log.info("capped at %d candidates; %d deferred to a later run",
                  hunt.max_results, result.n_deferred)
 
+    # --- 4a2. top up from what was collected and never judged ----------------
+    # The cap above says the overflow "drains over the next few runs". It did
+    # not. Candidates only ever came from the current fetch, so a listing that
+    # was capped out and then fell off page one was never fetched again and
+    # never judged -- 130 of them, the oldest 47 hours old, while every
+    # individual run looked healthy.
+    #
+    # So when a run has room under its own cap, it spends it on the backlog
+    # rather than on nothing. In steady state the backlog is empty and this
+    # changes nothing, which keeps "re-running costs nothing" intact.
+    room = hunt.max_results - len(gr.candidates)
+    if room > 0:
+        already = {c.listing.id for c in gr.candidates}
+        older = [Candidate(l, "backlog")
+                 for l in store.unjudged(hunt.id, source.name, room + len(already))
+                 if l.id not in already][:room]
+        if older:
+            log.info("topping up with %d listings collected earlier and never "
+                     "judged", len(older))
+            gr = GateResult(candidates=gr.candidates + older,
+                            rejected=gr.rejected)
+
     # --- 4b. enrich survivors ------------------------------------------------
     # The search feed is a cheap index -- no description, no coordinates. Detail
     # is fetched only for listings that already passed the gate, which is what
@@ -513,3 +535,38 @@ def dry_run(store: Store, hunt: Hunt, source: Source, location: Location) -> dic
         "candidates": [(c.listing.id, c.listing.title, c.reason) for c in gr.candidates],
         "rejected": gr.rejected,
     }
+
+
+def announce_price_drops(store: Store, notifiers: Sequence[Notifier], *,
+                         threshold: float = 0.15, limit: int = 20) -> int:
+    """Tell the user when something already in a bin got materially cheaper.
+
+    Costs no quota and no requests: the prices were collected by the re-check
+    pass, which is already running, and every observation needed to spot this
+    has been on disk since day one with nothing reading it.
+
+    The baseline is the price last announced, so a listing sliding down in
+    steps announces each real drop once rather than every run.
+    """
+    sent = 0
+    for hunt_id, listing, score, was in store.price_drops(threshold, limit=limit):
+        hunt = Hunt(id=hunt_id, name=hunt_id.split(":", 1)[-1],
+                    kind=hunt_id.split(":", 1)[0], queries=(),
+                    max_price_cents=None, exclude=(), wants=(),
+                    min_deal_score=0.0, free_find_min_score=0.0,
+                    interval_minutes=0, max_results=0)
+        told = False
+        for n in notifiers:
+            if not hasattr(n, "notify_price_drop"):
+                continue
+            try:
+                told = n.notify_price_drop(hunt, listing, score, was) or told
+            except Exception:                              # noqa: BLE001
+                log.exception("price-drop notice failed via %s", n.name)
+        # Stamped either way: a webhook that is off should not leave the same
+        # drop queued to announce itself on every future run.
+        store.mark_price_alerted(hunt_id, listing.id, listing.price_cents or 0)
+        sent += bool(told)
+    if sent:
+        log.info("announced %d price drop(s)", sent)
+    return sent

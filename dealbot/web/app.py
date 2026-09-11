@@ -798,7 +798,8 @@ def create_app(base_cfg: Config) -> FastAPI:
     def runs(request: Request):
         rows = [dict(r) for r in store.conn.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
-        return TEMPLATES.TemplateResponse(
-            request, "runs.html", ctx(request, runs=rows, quota=_quota_state()))
+        return TEMPLATES.TemplateResponse(request, "runs.html", ctx(
+            request, runs=rows, quota=_quota_state(),
+            backlog=store.unjudged_counts()))
 
     return app

@@ -17,7 +17,7 @@ from .env import load_env
 from .images import FixtureImageProvider, HttpImageProvider
 from .notify.dashboard import DashboardNotifier
 from .notify.discord import DiscordNotifier
-from .pipeline import dry_run, run_hunt
+from .pipeline import announce_price_drops, dry_run, run_hunt
 from .recheck import recheck
 from .scoring.claude_code import ClaudeCodeScorer
 from .scoring.stub import StubScorer
@@ -179,6 +179,11 @@ def cmd_once(args) -> int:
             print(f"{'recheck':24} {'':11} checked={rc.n_checked} "
                   f"sold={rc.n_sold} removed={rc.n_removed} "
                   f"listed={rc.n_listed}" + (f" {rc.error}" if rc.error else ""))
+    # Rides along after the re-check that just refreshed those prices. No
+    # quota, no requests: it reads what is already on disk.
+    if not args.dry_run:
+        announce_price_drops(store, notifiers)
+
     store.close()
     return 0
 
@@ -226,6 +231,7 @@ def cmd_notify(args) -> int:
             except Exception:                              # noqa: BLE001
                 log.exception("notifier %s failed", n.name)
         total += len(pending)
+    total += announce_price_drops(store, notifiers)
     still = sum(len(store.pending_notifications(h.id))
                 for h in _hunts(cfg, args.hunt, store))
     print(f"queued {total}, {still} still pending (per-run caps defer the rest)")

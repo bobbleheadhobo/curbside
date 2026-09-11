@@ -50,7 +50,12 @@ scorer:
   timeout_seconds: 180
   batch_size: 20
   max_image_checks: 10
-  images_per_check: 2      # photos per image pass; ~260 tokens each
+  # Photos per image pass, ~260 tokens each at 512px. The first N in the
+  # seller's own order. Two was a hedge against the hero shot being a room
+  # photo; 339 of the collected listings have three or more, and the image pass
+  # already changes the bin decision 55% of the time at ~$0.05 per change, so a
+  # third angle is cheap for what it settles.
+  images_per_check: 3
   # A blunt backstop. The real constraint is the one below.
   daily_cost_limit_usd: 10.0
   # Plan quota, shared with otter's incident triage and your own interactive

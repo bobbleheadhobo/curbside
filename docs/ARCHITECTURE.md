@@ -140,9 +140,18 @@ Then two more filters:
   is built on. Undated listings always pass; Craigslist's search feed omits the
   date, so failing closed would discard most of what it returns.
 - **Cap** at `max_results_per_run` (5) per hunt per source, newest first. The
-  overflow stays `new` and drains over later runs, so a cold start arrives
-  gradually rather than as one bill. The deferred count is recorded per run —
-  if it keeps growing, the cap is too low.
+  overflow stays `new` so a cold start arrives gradually rather than as one
+  bill.
+
+  **It does not drain by itself, and for a long time it did not drain at all.**
+  Candidates came only from the *current* fetch, so anything capped out then
+  fell off page one and was never seen again — 130 listings were stranded that
+  way, the oldest 47 hours old, while every individual run looked healthy. A
+  run with room under its own cap now tops up from `store.unjudged()`: still
+  `new`, still this source, not confirmed sold, newest first. In steady state
+  the backlog is empty and nothing changes, so re-running still costs nothing.
+  The count per hunt is on `/runs`, because the one failure that view could not
+  show was collecting things and never judging them.
 - **Cross-source duplicates.** People post the same thing to both marketplaces.
   After enrichment (when both sources have coordinates) a `dup_key` of
   normalised title + exact price + coordinates rounded to ~1km identifies the
@@ -294,6 +303,23 @@ use instead of showing you the same category of junk daily.
 The set is **snapshotted once a day**. Dismissals arrive continuously, and
 rebuilding the block per run would change the cached prefix per run — costing
 ~3x on every call, forever, since everything after it is invalidated too.
+
+## 8a. Price drops on things you already care about
+
+The re-check pass refreshes the price of everything in a bin every six hours,
+and for a long time nothing read it. Alerts only fired when a listing *entered*
+a bin, so a saved $200 credenza falling to $120 said nothing at all — with
+every observation needed to notice it already on disk.
+
+`announce_price_drops` closes that. It costs no quota and no requests: the
+prices are already there.
+
+The baseline is **the price you were last told**, kept in
+`hunt_matches.alerted_price_cents` and falling back to the price the listing
+carried when it was judged. So $200 → $180 → $160 announces once, at $160, and
+the next alert needs a further real drop from there. The bar is the same 15%
+the gate uses, because sellers nudge prices constantly. A drop to free counts,
+and is the headline case.
 
 ## 9. Signals surfaced in the dashboard
 

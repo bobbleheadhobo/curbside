@@ -194,6 +194,34 @@ class DiscordNotifier:
 
     # --- the Notifier interface --------------------------------------------
 
+    def notify_price_drop(self, hunt: Hunt, listing: Listing, score: Score,
+                          was_cents: int) -> bool:
+        """A thing you already care about just got cheaper.
+
+        This is what the append-only price history was FOR. Every observation
+        needed to notice it was already on disk, and nothing read them: alerts
+        only ever fired when a listing first reached a bin, so a saved $200
+        credenza falling to $120 said nothing at all.
+
+        Always the wants channel, muted or not: you decided this one mattered
+        before the price moved, which is exactly what makes the drop worth an
+        interruption.
+        """
+        if not self.wants_webhook:
+            return False
+        embed = build_embed(listing, score, self.dashboard_url)
+        drop = 100 - (listing.price_cents / was_cents * 100) if was_cents else 0
+        embed["title"] = f"\u2193 {int(round(drop))}% \u00b7 {embed.get('title', listing.title)}"
+        embed["color"] = 0x0F7040                       # the good-news green
+        now = "FREE" if not listing.price_cents else _money(listing.price_cents)
+        payload = {
+            "content": f"**{_money(was_cents)} \u2192 {now}** on something you saved",
+            "embeds": [embed],
+        }
+        if self.mention_user_id:
+            payload["content"] = f"<@{self.mention_user_id}> " + payload["content"]
+        return self._post(self.wants_webhook, payload)
+
     def notify(self, hunt: Hunt, surfaced: Sequence[tuple[Listing, Score]]) -> None:
         # Work from everything in a bin that has never been announced, not just
         # what this run produced. Otherwise the per-run cap DROPS rather than

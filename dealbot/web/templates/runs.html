@@ -10,6 +10,9 @@
     {% if failed %}
       <i class="hi"><b>{{failed}}</b> failed</i>{% endif %}
     <i><b>${{ '%.2f'|format(runs|map(attribute='cost_usd')|reject('none')|sum) }}</b> spent</i>
+    {% set waiting = backlog.values()|sum %}
+    {% if waiting %}
+      <i class="hi"><b>{{ waiting }}</b> waiting to be judged</i>{% endif %}
   </p>
   <p>Every fetch attempt, success or failure.</p>
 </div>
@@ -120,6 +123,11 @@
     {% for h in hunts %}
     <a href="/hunt/{{h.id}}">
       <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>{{h.name}}
+      {% if backlog.get(h.id) %}
+      {# Collected and never judged. Every individual run looked healthy while
+         these piled up, which is the one thing this page exists to show. #}
+      <span class="kind">{{ backlog[h.id] }} unjudged</span>
+      {% endif %}
       <span class="kind">{{ 'paused' if h in paused_hunts else h.kind }}</span>
     </a>
     {% else %}

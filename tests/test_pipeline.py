@@ -971,3 +971,63 @@ def test_a_want_hunt_never_fills_the_free_bin(rig):
                      notifiers, cfg.location)
     assert sweep.n_free_find > 0
     store2.close()
+
+
+def test_a_run_with_room_spends_it_on_the_backlog(rig):
+    """The cap says the overflow "drains over the next few runs". It did not:
+    candidates only ever came from the current fetch, so anything capped out
+    that then fell off page one was never fetched again and never judged."""
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"), max_results=2)
+
+    first = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    assert first.n_candidates == 2
+    stranded = store.unjudged_counts().get(hunt.id, 0)
+    assert stranded > 0, "the fixture must be big enough to leave a backlog"
+
+    # A source that has moved on entirely: nothing it returns is new.
+    class Empty:
+        name = source.name
+        def search(self, hunt): return iter(())
+        def parse(self, raw): return None
+
+    second = run_hunt(store, hunt, Empty(), scorer, notifiers, cfg.location)
+    assert second.n_candidates == 2, "spare capacity should go to the backlog"
+    assert second.n_scored > 0
+    assert store.unjudged_counts().get(hunt.id, 0) == stranded - 2
+
+
+def test_the_backlog_never_pushes_a_run_over_its_own_cap(rig):
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"), max_results=3)
+    run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    again = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    assert again.n_candidates <= 3
+
+
+def test_the_backlog_will_not_resurrect_something_confirmed_gone(rig):
+    """`recheck` retires listings it confirmed are off the market. Judging them
+    afterwards is paying to appraise something that does not exist."""
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"), max_results=1)
+    run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+
+    waiting = store.unjudged(hunt.id, source.name, 50)
+    assert waiting
+    for l in waiting:
+        store.mark_sold(l.id, "sold")
+    assert store.unjudged(hunt.id, source.name, 50) == []
+
+
+def test_with_no_backlog_a_second_run_still_costs_nothing(rig):
+    """The invariant the whole poll interval rests on. Topping up must only
+    ever spend capacity that would otherwise go unused."""
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    assert store.unjudged_counts().get(hunt.id, 0) == 0      # cap is high in rig
+    second = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    assert second.n_candidates == 0 and second.n_scored == 0
