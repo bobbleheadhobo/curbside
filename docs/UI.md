@@ -229,14 +229,28 @@ sit on `/free`, which was the wrong page. `/runs` is where you go to ask
 whether the bot is working, so it is where you answer it. `.control-row` is the
 same component as `.triage-row`; the row was generalised rather than copied.
 
-**Paused hunts are announced on every page.** Keep that banner wherever you move
-things; a bot switched off and forgotten looks exactly like a broken one. It
-says *that* something is paused, never *which* things: naming every hunt made
-the banner long on every page for no gain, and `/runs` already lists each hunt
-with its state. It has two forms, all-paused and partly-paused, off
-`all_paused`. The
-health pill in the top bar is the same idea compressed to a dot — last run, or
-"Fetch failing", or "Paused" — and it links to `/runs`.
+**The health pill is the only announcement of a pause, and it is on every
+page.** There used to be a banner as well; it said what the pill says, took a
+block of every screen to say it, and pushed the first listing below the fold.
+
+`_health()` picks one label from several simultaneously-true facts, and the
+ORDER is the design. Most of the time the bot is asleep *and* paused *and*
+quiet; picking the wrong one is how the pill starts lying, which it did —
+reporting "Asleep till 12pm" over a bot with every hunt switched off.
+
+```
+1  every hunt off   → "Paused"          nothing runs, so nothing else explains it
+2  last run errored → "Fetch failing"
+3  some hunts off   → "2 hunts off"     indefinite; only you undo it
+4  no runs at all   → "No runs yet"
+5  outside hours    → "Asleep till 12pm"  self-resolving, so it yields to a pause
+6  just woken       → "Just woke"       the last run is as old as the night
+7  over an hour     → "Quiet 3h ago"
+8  otherwise        → "12m ago"
+```
+
+The `title` carries what the label could not, and the pill links to `/runs`,
+which is where the switch to undo any of it lives.
 
 **`tests/test_web.py` asserts on markup.** The strikethrough treatment is
 found by the class name `strike`, the sweep switch by the words "pause
@@ -274,6 +288,16 @@ be unforgivable. `_want_form` re-renders with `values`, and there is a test.
 
 **The service worker must never cache HTML.** Photos and icons only. Half of
 what this shows is gone within the hour.
+
+**The card's action row holds two labelled buttons and nothing else.** Save
+and Dismiss, each `flex:1`. Blocking is an icon-only button after them, and
+the link out to the marketplace was removed entirely — it lives on the listing
+page, which is one tap away and where you look before driving anywhere.
+
+Three labelled buttons do not fit a phone: `body{overflow-wrap:anywhere}` is
+there for stranger-written titles and it will happily break *Dismiss* one
+letter per line. `.actions button` carries `white-space:nowrap` so that failure
+mode is loud (overflow) rather than silent (a column of letters).
 
 **Triage is a progressive enhancement, and must stay one.** Every Save and
 Dismiss is a real `<form method=post action="/triage">`. A script intercepts

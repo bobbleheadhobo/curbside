@@ -115,7 +115,7 @@ def test_the_runs_page_can_pause_and_resume_sweeps(tmp_path):
 
     page = client.get("/runs").text
     assert "resume free-stuff searches" in page.lower()
-    assert 'class="notice"' in page                       # banner
+    assert "1 hunt off" in page          # the pill, which replaced the banner
     assert "paused" in client.get("/").text.lower()       # ...on every page
 
     client.post("/hunts/toggle", data={"kind": "all", "enable": "1", "back": "/"},
@@ -167,7 +167,11 @@ def test_the_runs_page_can_pause_everything(tmp_path):
 
     page = client.get("/runs").text
     assert "resume all searching" in page.lower()
-    assert "Paused." in client.get("/").text          # banner, on every page
+    # The pill is the only announcement now, and it is on every page.
+    for path in ("/", "/free", "/saved", "/runs"):
+        body = client.get(path).text
+        assert ">Paused<" in body, path
+        assert 'href="/runs"' in body, path           # and it is the way back
 
     client.post("/hunts/toggle", data={"kind": "all", "enable": "1",
                                        "back": "/runs"}, follow_redirects=False)
@@ -342,6 +346,51 @@ def test_the_first_minutes_after_waking_are_not_a_warning(tmp_path, monkeypatch)
                         lambda self: datetime(2026, 9, 10, 12, 5))
     body = client.get("/").text
     assert "Just woke" in body and "Quiet" not in body
+
+
+def test_paused_outranks_asleep(tmp_path, monkeypatch):
+    """Both are true at 3am with the hunts switched off, and the pill reported
+    "Asleep till 12pm" over a bot that was simply off. Asleep resolves itself
+    at noon; a pause does not resolve until you do something about it."""
+    from datetime import datetime
+    from dealbot.schedule import Schedule
+    client, cfg = _client(tmp_path)
+    _one_run(cfg, minutes_ago=30)
+    monkeypatch.setattr(Schedule, "now",
+                        lambda self: datetime(2026, 9, 10, 3, 0))
+    client.post("/hunts/toggle", data={"kind": "all", "enable": "0"})
+    body = client.get("/").text
+    assert ">Paused<" in body
+    assert "Asleep" not in body
+
+
+def test_a_pause_is_announced_even_before_the_first_run(tmp_path):
+    """A fresh install with everything off said "No runs yet", which is true
+    and useless: being off is why there are none."""
+    client, _ = _client(tmp_path)
+    client.post("/hunts/toggle", data={"kind": "all", "enable": "0"})
+    assert ">Paused<" in client.get("/").text
+
+
+def test_the_card_actions_row_carries_two_labels_and_no_more(tmp_path):
+    """Three labelled buttons across a phone broke "Dismiss" one letter per
+    line, because the body sets overflow-wrap:anywhere for stranger-written
+    titles. Save and Dismiss are labelled; blocking is an icon; the link out
+    moved to the listing page, which is one tap away."""
+    from pathlib import Path
+    base = (Path(__file__).resolve().parents[1]
+            / "dealbot/web/templates/_card.html").read_text()
+    assert "btn open" not in base                    # the link-out is gone
+    assert 'aria-label="Never show me things like this"' in base
+    assert "white-space:nowrap" in (
+        Path(__file__).resolve().parents[1]
+        / "dealbot/web/templates/base.html").read_text()
+
+    client, _ = _client(tmp_path)
+    # ...and the listing page still offers it.
+    assert "Open on the marketplace" in (
+        Path(__file__).resolve().parents[1]
+        / "dealbot/web/templates/listing.html").read_text()
 
 
 def test_a_failing_fetch_still_outranks_the_schedule(tmp_path, monkeypatch):

@@ -99,8 +99,12 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   to a dismissal.
 - **`match == "unknown"` is a first-class state**, not an error, and belongs
   beside confirmed matches rather than hidden.
-- **Paused hunts must be announced on every page.** A bot switched off and
-  forgotten looks exactly like a broken one.
+- **Paused hunts must be announced on every page**, because a bot switched
+  off and forgotten looks exactly like a broken one. As of 2026-09-10 the
+  health pill carries this, not a banner: the banner said what the pill said,
+  spent a block of every screen saying it, and pushed the first listing below
+  the fold. The pill states the most actionable true fact and links to
+  `/runs` — **a pause outranks the sleep schedule**, which is self-resolving.
 - **Images go through `/thumb/{id}`**, never the source URL — Facebook's
   image URLs expire in about four days.
 - `price_cents == 0` is *free*; `None` is *no price shown*. Not the same.

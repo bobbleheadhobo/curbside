@@ -349,13 +349,19 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
   display:flex;gap:8px;align-items:center;padding:8px 12px;
   border-top:1px solid var(--line-soft);background:var(--raised)
 }
-.actions form.inline{flex:1}
-.actions button{min-height:var(--tap);width:100%;padding:0 10px}
-.actions .btn.open{flex:none;min-width:var(--tap);min-height:var(--tap)}
+.actions form.inline{flex:1 1 0;min-width:0}
+/* `overflow-wrap:anywhere` on the body is there for stranger-written titles,
+   and it will happily break a BUTTON label one letter per line. Two labelled
+   actions fit a phone; three did not. */
+.actions button{min-height:var(--tap);width:100%;padding:0 10px;white-space:nowrap}
+.actions .blocktoggle{flex:none;width:var(--tap);padding:0;color:var(--dim)}
+.actions .blocktoggle:hover{color:var(--warn);border-color:var(--warn)}
+.actions .blocktoggle[aria-expanded=true]{
+  background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
 @media (min-width:560px){
   .actions form.inline{flex:none}
   .actions button{width:auto;min-height:36px}
-  .actions .btn.open{margin-left:auto;min-height:36px}
+  .actions .blocktoggle{margin-left:auto;min-height:36px;height:36px;width:36px}
 }
 
 /* --- empty ---------------------------------------------------------------- */
@@ -608,6 +614,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .blockrow{
   padding:12px 12px 13px;border-top:1px solid var(--line-soft);background:var(--bg)
 }
+.blockrow b{display:block;font-size:13.5px;font-weight:620;margin-bottom:5px}
 .blockrow p{margin:0 0 9px;font-size:12.5px;line-height:1.5;color:var(--dim)}
 .chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
 .chips button{
@@ -724,23 +731,10 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 </header>
 
 <main class="{% block mainclass %}{% endblock %}">
-{% if paused_hunts %}
-<div class="notice" role="status">
-  <svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>
-  {# Naming every paused hunt made the banner long on every page for no gain.
-     Which ones is a detail, and /runs already lists each hunt with its state. #}
-  <div>
-    {% if all_paused %}<b>Paused.</b> Nothing new is coming in.
-    {% else %}<b>Partly paused.</b> Some hunts are off.{% endif %}
-    <form class="inline" method="post" action="/hunts/toggle">
-      <input type="hidden" name="kind" value="all">
-      <input type="hidden" name="enable" value="1">
-      <input type="hidden" name="back" value="{{ request.url.path }}">
-      <button>Resume everything</button>
-    </form>
-  </div>
-</div>
-{% endif %}
+{# The paused banner used to sit here on every page. It said what the health
+   pill in the top bar already says, took a block of every screen to say it,
+   and pushed the first listing down the fold. The pill carries the state now
+   and links to /runs, where the switch to undo it lives. #}
 {% block content %}{% endblock %}
 </main>
 

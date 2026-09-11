@@ -158,45 +158,75 @@ def create_app(base_cfg: Config) -> FastAPI:
     def _schedule():
         return schedule_mod.load(store, base_cfg.schedule)
 
-    def _health(paused_all: bool, sched) -> dict:
-        """The state of the bot itself, on every page. `runs` already answers
-        "quiet day or broken scraper"; this is that answer compressed to a dot,
-        so the question gets asked without having to go and look."""
+    def _health(paused, hunts, sched) -> dict:
+        """The state of the bot itself, on every page, in one pill.
+
+        This is the ONLY place a pause is announced. The banner that used to
+        sit on every page said the same thing, took a block of every screen to
+        say it, and pushed the first listing below the fold.
+
+        So the order below is the whole design: the most actionable true fact
+        wins, and the pill links to /runs where the switch to undo it lives.
+        Several of these are true at once most of the time -- asleep AND
+        paused AND quiet -- and picking the wrong one is how the pill starts
+        lying. It reported "Asleep till 12pm" over a bot with every hunt
+        switched off, which is the exact failure it exists to prevent.
+        """
         row = store.conn.execute(
             "SELECT started_at, error, (julianday('now') - julianday(started_at))"
             " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        window = "" if sched.always_on else f"Awake {sched.window_label}. "
+        detail = f"Last run {row['started_at']}" if row else "Nothing has fetched yet."
+
+        # 1. Everything is off. Nothing is running, so nothing else here is the
+        #    reason nothing is happening -- not the hours, not a stale error.
+        if hunts and len(paused) == len(hunts):
+            return {"state": "warn", "label": "Paused",
+                    "detail": f"Every hunt is off. Nothing is being collected. "
+                              f"{window}{detail}"}
+
+        # 2. A fetch that died. Louder than anything below it.
+        if row is not None and row["error"]:
+            return {"state": "bad", "label": "Fetch failing",
+                    "detail": f"{detail} — {row['error']}"}
+
+        # 3. Some hunts off. Indefinite, and only you can undo it.
+        if paused:
+            n = len(paused)
+            return {"state": "warn",
+                    "label": f"{n} hunt{'' if n == 1 else 's'} off",
+                    "detail": f"{', '.join(h.name for h in paused)} paused. "
+                              f"{window}{detail}"}
+
         if row is None:
             return {"state": "idle", "label": "No runs yet",
-                    "detail": "Nothing has fetched yet."}
+                    "detail": f"{window}Nothing has fetched yet."}
+
         mins = int(row["mins"] or 0)
         when = "just now" if mins < 1 else (
             f"{mins}m ago" if mins < 60 else
             f"{mins // 60}h ago" if mins < 2880 else f"{mins // 1440}d ago")
-        detail = f"Last run {row['started_at']}"
-        if row["error"]:
-            return {"state": "bad", "label": "Fetch failing",
-                    "detail": f"{detail} — {row['error']}"}
-        # Asleep on purpose is not quiet and is not broken, and it outranks
-        # both. A schedule the interface does not admit to is the same trap as
-        # a pause switch nobody can see: the bot looks dead for eight hours a
-        # day and you stop trusting the page.
+
+        # 4. Asleep on purpose is not quiet and is not broken. A schedule the
+        #    interface does not admit to is the same trap as a pause switch
+        #    nobody can see: the bot looks dead for eight hours a day and you
+        #    stop trusting the page.
         if not sched.is_open():
             return {"state": "idle",
                     "label": f"Asleep till {schedule_mod.fmt_clock(sched.start_minute)}",
-                    "detail": f"Awake {sched.window_label}. {detail}"}
-        if paused_all:
-            return {"state": "warn", "label": "Paused", "detail": detail}
-        # The timer fires every 15 minutes, so an hour of silence is the timer,
-        # not a slow day -- unless it only just woke up, when the last run is
-        # legitimately as old as the night.
+                    "detail": f"{window}{detail}"}
+
+        # 5. The timer fires every 15 minutes, so an hour of silence is the
+        #    timer -- unless it only just woke, when the last run is
+        #    legitimately as old as the night.
         opened = sched.opened_at()
         just_woke = opened is not None and (
             sched.now() - opened).total_seconds() < 30 * 60
-        if mins > 60 and not just_woke:
-            return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
-        if just_woke and mins > 60:
+        if mins > 60 and just_woke:
             return {"state": "ok", "label": "Just woke",
-                    "detail": f"Awake {sched.window_label}. {detail}"}
+                    "detail": f"{window}{detail}"}
+        if mins > 60:
+            return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
         return {"state": "ok", "label": when, "detail": detail}
 
     def ctx(request: Request, **kw):
@@ -211,7 +241,7 @@ def create_app(base_cfg: Config) -> FastAPI:
                 "paused_hunts": paused,
                 "all_paused": all_paused,
                 "bin_counts": _counts(),
-                "health": _health(all_paused, sched),
+                "health": _health(paused, cfg.hunts, sched),
                 "schedule": sched,
                 "sweeps_paused": all(h.id in off for h in cfg.hunts
                                      if h.kind == "sweep")
