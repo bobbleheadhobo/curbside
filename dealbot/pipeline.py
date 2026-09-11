@@ -324,33 +324,34 @@ def run_hunt(
             log.info("%d listings excluded on their description", len(excluded))
         gr = GateResult(candidates=keep, rejected=gr.rejected + excluded)
 
-    # --- 4b4. nothing to go on at all ----------------------------------------
-    # No description AND no photograph. Not "thin" -- empty: there is no text to
-    # read and no picture to look at, so an appraisal is the model guessing from
-    # a title, and the image pass has nothing to open.
+    # --- 4b4. nothing to go on -----------------------------------------------
+    # A photograph is the minimum. Without one there is nothing for the image
+    # pass to open, and on Craigslist a photoless post is usually not a listing
+    # at all: of the 51 collected, the titles run "Gone", "Free junk metal
+    # removal", "I need HELP please", "Anyone willing to donate bikes for kids".
+    # Wanted-ads and noise. Eight were appraised for $0.20 and not one ever
+    # reached a bin.
     #
-    # Deliberately NOT "no description". On Facebook a bare listing usually
-    # means the seller let the photos do the talking, and those listings score
-    # BETTER than the ones with words: 5.65 average against 4.89, 9 of 17 over
-    # 7, and one of them is sitting in the wants bin right now. Dropping them
-    # would cost finds to save about fifty cents.
+    # Missing TEXT is not disqualifying on its own -- on Facebook a bare listing
+    # usually means the seller let the photos do the talking, and those score
+    # better than the ones with words. The two reasons stay separate so the
+    # hunt page can tell an empty post from a photoless one.
     #
-    # After enrichment, because that is where descriptions arrive -- Craigslist's
-    # search feed carries none at all, so run before this every listing looks
-    # empty.
+    # After enrichment, because that is where both arrive: Craigslist's search
+    # feed carries no description at all, and Facebook's carries one photo.
     if gr.candidates:
-        judgeable, empty = [], []
+        judgeable, nothing = [], []
         for cand in gr.candidates:
-            has_words = bool((cand.listing.description or "").strip())
-            if has_words or cand.listing.images:
+            if cand.listing.images:
                 judgeable.append(cand)
-            else:
-                empty.append((cand.listing.id, "nothing_to_judge"))
-        if empty:
-            store.record_rejections(hunt.id, empty)
-            log.info("%d listings had neither a description nor a photo",
-                     len(empty))
-        gr = GateResult(candidates=judgeable, rejected=gr.rejected + empty)
+                continue
+            has_words = bool((cand.listing.description or "").strip())
+            nothing.append((cand.listing.id,
+                            "no_photo" if has_words else "nothing_to_judge"))
+        if nothing:
+            store.record_rejections(hunt.id, nothing)
+            log.info("%d listings had no photograph", len(nothing))
+        gr = GateResult(candidates=judgeable, rejected=gr.rejected + nothing)
 
     # --- 4c. cross-source duplicates -----------------------------------------
     # People post the same thing to both marketplaces. This runs for EVERY

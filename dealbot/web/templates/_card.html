@@ -63,8 +63,10 @@
         {% if show_status and i.status %}<span>{{i.status}}</span>{% endif %}
       </p>
 
+      {% set no_words = not (i.description or '').strip() %}
       {% if i.matched_want or i.images_checked or motivated or (i.age_days or 0) >= 21
-            or (i.price_moves or 0) >= 2 or i.red_flags or i.sold_at or i.filter_reason %}
+            or (i.price_moves or 0) >= 2 or i.red_flags or i.sold_at or i.filter_reason
+            or no_words %}
       <p class="tags">
         {% if i.matched_want %}
           <span class="chip {{'unk' if i.match=='unknown' else 'want'}}">
@@ -83,6 +85,10 @@
           <span class="chip drop">{{i.price_moves}} price drops</span>{% endif %}
         {% if i.images_checked %}
           <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>photos checked</span>{% endif %}
+        {# Amber, because it is a caution rather than a fault: the seller wrote
+           nothing, so every judgement here rests on the photographs. #}
+        {% if no_words %}
+          <span class="chip unk"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>no description</span>{% endif %}
         {% for f in i.red_flags %}
           <span class="chip flag"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></span>{% endfor %}
         {# Confirmed off the market by the re-check pass. `removed` is the weaker

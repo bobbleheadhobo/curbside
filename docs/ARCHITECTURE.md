@@ -88,7 +88,8 @@ REJECT   already saved/dismissed/contacted   → "triaged"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
          older than the hunt's max_age_days     → "too_old"
-         no description AND no photo            → "nothing_to_judge"
+         no photo, and no description either    → "nothing_to_judge"
+         no photo                               → "no_photo"
          matches an exclude phrase             → "excluded_kw:<term>"
          already scored, nothing changed       → "unchanged"
 
@@ -153,16 +154,23 @@ Then two more filters:
   the backlog is empty and nothing changes, so re-running still costs nothing.
   The count per hunt is on `/runs`, because the one failure that view could not
   show was collecting things and never judging them.
-- **Nothing to go on.** No description *and* no photograph: there is no text to
-  read and no picture to look at, so an appraisal is the model guessing from a
-  title and the image pass has nothing to open. Runs after enrichment, because
-  that is where descriptions arrive.
+- **A photograph is the minimum.** Without one there is nothing for the image
+  pass to open, and on Craigslist a photoless post is usually not a listing at
+  all: of the 51 collected, the titles run *"Gone"*, *"Free junk metal
+  removal"*, *"I need HELP please"*, *"Anyone willing to donate bikes for
+  kids"*. Wanted-ads and noise. Eight were appraised for $0.20 and not one ever
+  reached a bin. Two reasons are recorded so the hunt page can tell an empty
+  post (`nothing_to_judge`) from a photoless one (`no_photo`).
 
-  It is deliberately **not** "no description". On Facebook a bare listing
-  usually means the seller let the photos do the talking, and measured against
-  the collected data those score *better* than the ones with words — 5.65
-  average against 4.89, 9 of 17 above 7, one of them in the wants bin. A
-  no-description rule would cost finds to save about fifty cents.
+  Missing **text** is deliberately not disqualifying. On Facebook a bare
+  listing usually means the seller let the photos do the talking, and those
+  score *better* than the ones with words — 5.65 average against 4.89, 9 of 17
+  above 7, one of them in the wants bin. Those listings carry an amber
+  *no description* badge on the card instead, because the judgement rests
+  entirely on the photographs.
+
+  Both run after enrichment, because that is where both arrive: Craigslist's
+  search feed carries no description at all, and Facebook's carries one photo.
 - **Cross-source duplicates.** People post the same thing to both marketplaces.
   After enrichment (when both sources have coordinates) a `dup_key` of
   normalised title + exact price + coordinates rounded to ~1km identifies the

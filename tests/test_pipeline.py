@@ -594,7 +594,10 @@ def test_a_cross_source_duplicate_is_not_appraised_twice(rig):
                            title=original["title"], description="d",
                            price_cents=original["price_cents"], currency="USD",
                            url="u", lat=original["lat"], lng=original["lng"],
-                           distance_mi=1.0)
+                           distance_mi=1.0,
+                           # A photo is the minimum now; without one this is
+                           # rejected before the dedupe step it is testing.
+                           images=("a.jpg",))
 
     r = run_hunt(store, hunt, Twin(), scorer, notifiers, cfg.location)
     assert r.n_candidates == 0
@@ -1081,3 +1084,40 @@ def test_a_photo_with_no_words_is_still_judged(rig):
     result = gate(hunt, [photo_only], cfg.location, statuses={},
                   last_scores={}, upserts={})
     assert [c.listing.id for c in result.candidates] == ["fixture:p"]
+
+
+def test_a_listing_with_no_photograph_is_not_judged(rig):
+    """All 51 collected were Craigslist, and the titles say what they are:
+    "Gone", "Free junk metal removal", "I need HELP please", "Anyone willing
+    to donate bikes for kids". Wanted-ads and noise. Eight were appraised and
+    not one ever reached a bin."""
+    from dealbot.models import RawListing
+    from datetime import datetime, timezone
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+
+    class Bare:
+        name = "fixture"
+        def search(self, hunt):
+            now = datetime.now(timezone.utc)
+            return iter([RawListing("fixture", f"bare{i}", {}, now)
+                         for i in (1, 2, 3)])
+        def parse(self, raw):
+            from conftest import make_listing
+            kind = raw.source_id
+            return make_listing(
+                lid=f"fixture:{kind}", title="Free junk metal removal",
+                price_cents=0,
+                description=None if kind == "bare1" else "come and take it",
+                images=() if kind in ("bare1", "bare2") else ("a.jpg",))
+
+    r = run_hunt(store, hunt, Bare(), scorer, notifiers, cfg.location)
+    reasons = dict(store.conn.execute(
+        "SELECT listing_id, filter_reason FROM hunt_matches WHERE hunt_id=?",
+        (hunt.id,)))
+    # Nothing at all, versus words but no picture: kept apart so the hunt page
+    # can tell an empty post from a photoless one.
+    assert reasons["fixture:bare1"] == "nothing_to_judge"
+    assert reasons["fixture:bare2"] == "no_photo"
+    assert reasons.get("fixture:bare3") is None
+    assert r.n_candidates == 1

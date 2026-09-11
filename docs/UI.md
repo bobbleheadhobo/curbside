@@ -246,6 +246,11 @@ optional `note`, and `back`. Status must be one of `saved` / `dismissed` /
 titles become negative examples in that hunt's next prompt, so the button is
 part of how the bot learns.
 
+**A listing with no description wears an amber `no description` chip.** It is
+a caution, not a fault: those listings score *better* than the ones with words,
+and the badge says only that every judgement on the card rests on the
+photographs. A listing with no *photograph* never reaches a card at all.
+
 **`match == "unknown"` is a first-class state**, not an error. It means the
 listing plausibly matches but something could not be verified from the text.
 It is routed by score exactly like `yes`: over `min_deal_score` it sits in Wants

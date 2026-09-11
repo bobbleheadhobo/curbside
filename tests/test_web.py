@@ -569,3 +569,31 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     # and the ordinary case
     assert health(_row(mins_ago=3), [], hunts, _sched())["label"] == "3m ago"
     assert health(_row(mins_ago=200), [], hunts, _sched())["label"].startswith("Quiet")
+
+
+def test_a_listing_with_no_words_wears_an_amber_badge(tmp_path):
+    """Not a fault, a caution: the seller wrote nothing, so every judgement on
+    the card rests on the photographs."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    store = Store(cfg.db_path)
+    for lid, desc in (("x:9", None), ("x:8", "a real description")):
+        l = Listing(id=lid, source="x", source_id=lid[-1], title=f"Thing {lid}",
+                    description=desc, price_cents=0, currency="USD", url="u",
+                    images=("a.jpg",))
+        store.upsert_listing(l)
+        store.mark_matches("sweep:free-nearby", [l])
+        store.save_score(Score(listing_id=lid, hunt_id="sweep:free-nearby",
+                               model="m", scored_at=datetime.now(timezone.utc),
+                               match="no", deal_score=6.0, est_value_cents=None,
+                               condition=None, matched_want=None,
+                               worth_grabbing=True, unknowns=(), requirements=(),
+                               red_flags=(), reasoning="r"), priced_at_cents=0)
+        store.set_status("sweep:free-nearby", lid, "free_find")
+
+    body = client.get("/free").text
+    assert body.count("no description") == 1        # only the wordless one
+    card = body[body.index('data-listing="x:9"'):]
+    assert 'class="chip unk"' in card[:card.index("</article>")]
