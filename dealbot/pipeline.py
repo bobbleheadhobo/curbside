@@ -64,7 +64,8 @@ def _would_bin(score: Score, hunt: Hunt, listing: Listing) -> bool:
     """
     if score.match in ("yes", "unknown"):
         return score.deal_score >= hunt.min_deal_score
-    return (bool(score.worth_grabbing)
+    return (hunt.kind == "sweep"
+            and bool(score.worth_grabbing)
             and score.deal_score >= hunt.free_find_min_score
             and _is_a_bargain(score, listing))
 
@@ -438,10 +439,18 @@ def run_hunt(
     wanted = [s for s in scores
               if s.match in ("yes", "unknown")
               and s.deal_score >= hunt.min_deal_score]
-    free_finds = [s for s in scores
-                  if s.match == "no" and s.worth_grabbing
-                  and s.deal_score >= hunt.free_find_min_score
-                  and _is_a_bargain(s, by_id[s.listing_id])]
+    # Only the SWEEP fills the free bin. A want hunt that stumbles on an
+    # unrelated bargain used to put it there too, which is how a $40
+    # entertainment centre ended up in a tab called "Free finds" -- seven of
+    # the ten things in that bin were priced, and every one came from a want
+    # hunt. The sweep is free-only by construction, so this makes the bin's
+    # name true: everything in it is actually free. A want hunt's non-matches
+    # stay `scored` and remain findable in /skipped.
+    free_finds = [] if hunt.kind != "sweep" else [
+        s for s in scores
+        if s.match == "no" and s.worth_grabbing
+        and s.deal_score >= hunt.free_find_min_score
+        and _is_a_bargain(s, by_id[s.listing_id])]
 
     for s in wanted:
         store.set_status(hunt.id, s.listing_id, "wanted")

@@ -892,7 +892,11 @@ def test_a_fairly_priced_listing_is_not_a_free_find(rig):
 
 
 def test_a_priced_bargain_still_reaches_the_free_bin(rig):
-    """The rule must not cost you the $60 credenza worth $300."""
+    """The value multiple must not cost you the $60 credenza worth $300.
+
+    Run as a SWEEP, because only a sweep fills the free bin now. A sweep with
+    a price cap above zero is the case this rule exists for; the live one is
+    free-only, so there the multiple never bites."""
     from dataclasses import replace
     from datetime import datetime, timezone
 
@@ -900,7 +904,8 @@ def test_a_priced_bargain_still_reaches_the_free_bin(rig):
     from dealbot.scoring.base import TriageResult
 
     cfg, store, source, _, notifiers = rig
-    hunt = next(h for h in cfg.hunts if h.name == "stacked-ottoman")
+    hunt = replace(next(h for h in cfg.hunts if h.name == "stacked-ottoman"),
+                   kind="sweep")
 
     class Valuer:
         """Everything is a non-match worth grabbing; only the value moves."""
@@ -925,4 +930,44 @@ def test_a_priced_bargain_still_reaches_the_free_bin(rig):
     store2 = Store(Path(store.path).parent / "again.db")
     bargain = run_hunt(store2, hunt, source, Valuer(3.0), notifiers, cfg.location)
     assert bargain.n_free_find == bargain.n_candidates
+    store2.close()
+
+
+def test_a_want_hunt_never_fills_the_free_bin(rig):
+    """A want hunt that stumbles on an unrelated bargain used to file it under
+    Free finds. That is how a $40 entertainment centre ended up in a tab named
+    for free things, carrying a green tv-stand chip, in a bin where seven of
+    the ten entries were priced. Non-matches stay `scored` and are still
+    findable in /skipped."""
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from dealbot.models import Score
+    from dealbot.scoring.base import TriageResult
+
+    cfg, store, source, _, notifiers = rig
+    want = next(h for h in cfg.hunts if h.name == "stacked-ottoman")
+    assert want.kind == "want"
+
+    class Grabbable:
+        name = "grabbable"
+        def triage(self, hunt, cands):
+            return TriageResult(list(cands), {})
+        def appraise(self, hunt, cands):
+            now = datetime.now(timezone.utc)
+            return [Score(listing_id=c.listing.id, hunt_id=hunt.id, model="m",
+                          scored_at=now, match="no", deal_score=9.0,
+                          est_value_cents=999_00, condition=None,
+                          matched_want=None, worth_grabbing=True, unknowns=(),
+                          requirements=(), red_flags=(), reasoning="")
+                    for c in cands]
+
+    r = run_hunt(store, want, source, Grabbable(), notifiers, cfg.location)
+    assert r.n_candidates > 0
+    assert r.n_free_find == 0
+    # ...and the same scorer against the same listings as a sweep does bin them
+    store2 = Store(Path(store.path).parent / "sweepish.db")
+    sweep = run_hunt(store2, replace(want, kind="sweep"), source, Grabbable(),
+                     notifiers, cfg.location)
+    assert sweep.n_free_find > 0
     store2.close()

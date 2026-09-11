@@ -402,3 +402,85 @@ def test_a_failing_fetch_still_outranks_the_schedule(tmp_path, monkeypatch):
     monkeypatch.setattr(Schedule, "now",
                         lambda self: datetime(2026, 9, 10, 3, 0))
     assert "Fetch failing" in client.get("/").text
+
+
+def test_one_listing_shows_in_exactly_one_bin(tmp_path):
+    """`hunt_matches` is per (hunt, listing) on purpose, so the same physical
+    thing could be a card in Wants and a card in Free finds at once. That is
+    defensible and still reads as a bug."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    store = Store(cfg.db_path)
+    lst = Listing(id="x:1", source="x", source_id="1", title="A sectional",
+                  description=None, price_cents=0, currency="USD", url="u")
+    store.upsert_listing(lst)
+    for hunt_id, status in (("want:tv-stand", "wanted"),
+                            ("sweep:free-nearby", "free_find")):
+        store.mark_matches(hunt_id, [lst])
+        store.save_score(Score(listing_id=lst.id, hunt_id=hunt_id, model="m",
+                               scored_at=datetime.now(timezone.utc),
+                               match="unknown", deal_score=8.0,
+                               est_value_cents=None, condition=None,
+                               matched_want=None, worth_grabbing=True,
+                               unknowns=(), requirements=(), red_flags=(),
+                               reasoning="r"), priced_at_cents=0)
+        store.set_status(hunt_id, lst.id, status)
+
+    assert client.get("/").text.count('data-listing="x:1"') == 1
+    assert client.get("/free").text.count('data-listing="x:1"') == 0
+
+    # Saving it anywhere outranks both, and it leaves the other bins.
+    store.set_status("sweep:free-nearby", lst.id, "saved")
+    assert client.get("/saved").text.count('data-listing="x:1"') == 1
+    assert client.get("/").text.count('data-listing="x:1"') == 0
+
+
+def test_the_tab_counts_match_the_cards_on_the_page(tmp_path):
+    """"12 waiting" over a list of ten reads as a bug, so the counts are
+    deduplicated exactly like the bins are."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    store = Store(cfg.db_path)
+    lst = Listing(id="x:2", source="x", source_id="2", title="A thing",
+                  description=None, price_cents=0, currency="USD", url="u")
+    store.upsert_listing(lst)
+    for hunt_id in ("want:tv-stand", "want:stacked-ottoman"):
+        store.mark_matches(hunt_id, [lst])
+        store.save_score(Score(listing_id=lst.id, hunt_id=hunt_id, model="m",
+                               scored_at=datetime.now(timezone.utc),
+                               match="yes", deal_score=8.0, est_value_cents=None,
+                               condition=None, matched_want=None,
+                               worth_grabbing=False, unknowns=(), requirements=(),
+                               red_flags=(), reasoning="r"), priced_at_cents=0)
+        store.set_status(hunt_id, lst.id, "wanted")
+    body = client.get("/").text
+    assert body.count('data-listing="x:2"') == 1
+    assert "<b data-bincount>1</b>" in body
+
+
+def test_every_section_hue_is_declared_in_both_themes(tmp_path):
+    """The dashboard is opened outdoors in daylight and in bed at night, so a
+    colour defined in one theme and not the other is a half-built colour. The
+    hues are also plain custom properties, which cascade by specificity -- easy
+    to add a light one that silently outranks the dark one."""
+    import re
+    client, _ = _client(tmp_path)
+    css = client.get("/").text
+    css = css[css.index("<style>"):css.index("</style>")]
+    sections = set(re.findall(r"body\[data-page=(\w+)\]\s*\{--tint", css))
+    assert {"free", "saved", "skipped", "runs", "settings", "wants"} <= sections
+    for page in sections:
+        assert f":root:not([data-theme=light]) body[data-page={page}]" in css, page
+        assert f":root[data-theme=dark] body[data-page={page}]" in css, page
+
+
+def test_each_destination_declares_which_section_it_is(tmp_path):
+    client, _ = _client(tmp_path)
+    for path, page in (("/", "wants"), ("/free", "free"), ("/saved", "saved"),
+                       ("/skipped", "skipped"), ("/runs", "runs"),
+                       ("/settings", "settings"), ("/wants/new", "settings")):
+        assert f'<body data-page="{page}"' in client.get(path).text, path

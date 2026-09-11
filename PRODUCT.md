@@ -58,6 +58,18 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
 
 ## Capabilities and Constraints
 
+- **One listing appears in exactly one bin.** `hunt_matches` stays per
+  (hunt, listing) so triage state is independent, but the bin views pick one
+  row per listing by what you already decided: saved outranks wanted outranks
+  free find. Confirmed 2026-09-10 after the same item showed twice.
+- **The free bin only ever holds free things.** Only the sweep fills it; a want
+  hunt that meets an unrelated bargain leaves it `scored`. Seven of the ten
+  entries in that bin were priced items from want hunts, one of them a $40
+  entertainment centre wearing a green tv-stand chip under a tab called
+  "Free finds".
+- **The word "triage" does not appear in the interface.** The user did not
+  recognise it. It survives as the endpoint name and in these documents, where
+  the audience is whoever maintains this.
 - **Four bins are fixed destinations** and the user has confirmed they stay
   with their current meanings: `/` wants, `/free` free finds, `/saved`,
   `/skipped` judged and passed over (renamed from `/near`, which read as
@@ -140,6 +152,13 @@ straight.** Offered a rolled visual direction (highway guide signage) and
 three challengers, the user took the standing exit. Convention is the
 commitment here, and future work executes it at full fidelity rather than
 smuggling in a point of view.
+
+**Amended 2026-09-10: one accent was too few.** The user found the result
+bland, so each destination now owns a hue (`--tint`): wants blue, free green,
+saved violet, skipped slate, runs teal, settings amber. It is still colour with
+a job — it says which bin you are in — and semantic green/amber/red keep their
+own meanings and are never borrowed for it. The score is a filled pill rather
+than a coloured digit. Both themes must define every hue.
 
 The craft bar the user named is **Apple's structure with Stripe's
 discipline**: grouped inset lists, thumb-sized rows and a bottom tab bar,

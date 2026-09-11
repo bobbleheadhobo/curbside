@@ -66,6 +66,21 @@ dealbot/web/
 `static/` is generated except for `sw.js`, `offline.html` and the manifest —
 run `tools/make_icons.py` rather than editing an icon by hand.
 
+**Each section owns a hue.** `<body data-page="free">` selects `--tint` /
+`--tint-soft`, spent on the current tab, its count pip, and the live numbers in
+the page head — never on a button, which stays `--accent`, and never on
+anything semantic. Every hue is declared three times (light, system dark,
+forced dark) and a test asserts it; a light-only hue silently outranks the dark
+`body` rule on specificity, so a half-built colour looks fine until dusk.
+
+**Say "your call", not "triage".** The word appeared once, as the heading on
+the listing page, and the user did not recognise it. `/triage` stays as the
+endpoint and the internal noun.
+
+**One listing, one bin.** `ONE_BIN` in `app.py` is appended to every bin query
+*and* to the counts behind them. Keep those two together: the counts drifting
+from the cards is how "12 waiting" ends up over ten of them.
+
 **All CSS lives in `base.html`** as custom properties on `:root`, with a
 `prefers-color-scheme` block *and* a `[data-theme=dark]` block carrying the
 same tokens. Both themes are real; check any change in both. To screenshot

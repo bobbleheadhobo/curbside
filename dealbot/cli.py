@@ -422,7 +422,11 @@ def main(argv: list[str] | None = None) -> int:
     # manual `dealbot serve` behave the same way rather than being reachable
     # only from the box it runs on. There is no auth in the app -- keep it on a
     # trusted network, or behind the reverse proxy that provides one.
-    s.add_argument("--host", default="0.0.0.0")
+    # Localhost by default. There is no authentication in the app and
+    # there are now half a dozen mutating endpoints; the systemd unit
+    # passes --host 0.0.0.0 explicitly, so a wide default buys nothing
+    # and hands anyone on the wifi a button to delete your wants.
+    s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8080)
     s.set_defaults(func=cmd_serve)
 

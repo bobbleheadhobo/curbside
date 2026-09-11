@@ -202,10 +202,23 @@ split the cache. Missing or empty falls back to the built-in default.
 ## 5. Routing — two bins, two bars
 
 ```
-match = no,  worth_grabbing, score ≥ 5.0, and a bargain   → free finds
-match = yes or unknown,      score ≥ 7.0                  → wants
-everything else                                           → filed, still searchable
+match = yes or unknown,       score ≥ 7.0                  → wants
+match = no, worth_grabbing,   score ≥ 5.0, a bargain,
+                              AND the hunt is a SWEEP      → free finds
+everything else                                            → filed, still searchable
 ```
+
+**Only a sweep fills the free bin.** A want hunt that met an unrelated bargain
+used to route it there too: seven of the ten entries in the live bin were
+priced items from want hunts, including a $40 entertainment centre carrying a
+green tv-stand chip in a tab called "Free finds". The sweep is free-only by
+construction, so this makes the bin's name true. A want hunt's non-matches stay
+`scored` and are still findable in `/skipped`.
+
+**And a listing appears in exactly one bin.** `hunt_matches` remains per
+(hunt, listing) — independent triage state is worth keeping — but the views
+pick one row per listing: saved outranks wanted outranks free find, ties inside
+a bin going to the first hunt by name so the choice is stable between loads.
 
 `unknown` lands in **wants**, flagged — a 9.0 unconfirmed TV stand belongs next
 to a confirmed one. `deal_score` is judged *as if* unknowns resolve favourably,

@@ -90,16 +90,42 @@ WHERE listing_id = ? ORDER BY id
 
 PAGE_LIMIT = 200
 
+# One listing appears in exactly ONE bin.
+#
+# `hunt_matches` is per (hunt, listing) on purpose -- a listing matched by two
+# hunts keeps independent triage state, and that is worth keeping. But it meant
+# the same physical thing could be a card in Wants and a card in Free finds at
+# the same time, which reads as a bug however well justified it is.
+#
+# So the bin views pick one row per listing, by what you have already decided:
+# something you saved outranks something merely wanted, which outranks a free
+# find. Ties inside a bin go to the first hunt by name, so the choice is stable
+# between page loads rather than moving around.
+ONE_BIN = """
+  AND m.rowid = (SELECT x.rowid FROM hunt_matches x
+                 WHERE x.listing_id = m.listing_id
+                   AND x.status IN ('saved','contacted','wanted','free_find')
+                 ORDER BY CASE x.status WHEN 'saved' THEN 0 WHEN 'contacted' THEN 0
+                                        WHEN 'wanted' THEN 1 ELSE 2 END,
+                          x.hunt_id
+                 LIMIT 1)
+"""
+
 # Things you decided to act on. Clicking "saved" used to make a listing vanish:
 # it left the bin and was only findable by digging through a hunt view.
+QUEUE_SQL = QUEUE_SQL.replace("WHERE m.status = ?", "WHERE m.status = ?" + ONE_BIN)
+
 SAVED_SQL = QUEUE_SQL.replace("WHERE m.status = ?",
                               "WHERE m.status IN ('saved', 'contacted')")
 
 # The band just under the bar. `deal_score` is judged as if unknowns resolve
 # favourably, so a 6 means "even if it is what it looks like, it is mediocre" --
 # but you cannot calibrate a threshold you can never see over.
+# /skipped is not a bin -- it is the band under the bar -- so it keeps its own
+# rows and only drops the ONE_BIN clause.
 NEAR_MISS_SQL = QUEUE_SQL.replace(
-    "WHERE m.status = ?", "WHERE m.status = 'scored' AND s.deal_score >= ?")
+    "WHERE m.status = ?" + ONE_BIN,
+    "WHERE m.status = 'scored' AND s.deal_score >= ?")
 
 
 def _rows(store: Store, sql: str, args=()) -> list[dict]:
@@ -196,8 +222,15 @@ def create_app(base_cfg: Config) -> FastAPI:
                     "detail": f"Every hunt is off. Nothing is being collected. "
                               f"{window}{detail}"}
 
-        # 2. A fetch that died. Louder than anything below it.
+        # 2. A fetch that died. Louder than anything below it -- but a run
+        #    that fetched fine and then stood aside from the plan quota writes
+        #    that to the SAME column, and 108 of the 112 errors on the live box
+        #    were exactly that. Reporting a routine quota pause as a red
+        #    "Fetch failing" is the same lie as the last one.
         if row is not None and row["error"]:
+            if row["error"].startswith("scoring skipped"):
+                return {"state": "warn", "label": "Judging paused",
+                        "detail": f"Collecting normally. {row['error']}. {detail}"}
             return {"state": "bad", "label": "Fetch failing",
                     "detail": f"{detail} — {row['error']}"}
 
@@ -260,13 +293,20 @@ def create_app(base_cfg: Config) -> FastAPI:
                 **kw}
 
     def _counts():
-        return {r["status"]: r["n"] for r in store.conn.execute(
+        """Bin counts, deduplicated the same way the bins are -- otherwise the
+        tab pip says 12 over a list of ten cards."""
+        out = {r["status"]: r["n"] for r in store.conn.execute(
             "SELECT status, COUNT(*) n FROM hunt_matches GROUP BY status")}
+        for st in ("wanted", "free_find"):
+            out[st] = store.conn.execute(
+                "SELECT COUNT(*) c FROM hunt_matches m WHERE m.status=?" + ONE_BIN,
+                (st,)).fetchone()["c"]
+        return out
 
     def _bin(request: Request, template: str, status: str, **extra):
         items = _rows(store, QUEUE_SQL, (status, PAGE_LIMIT))
         total = store.conn.execute(
-            "SELECT COUNT(*) c FROM hunt_matches WHERE status=?",
+            "SELECT COUNT(*) c FROM hunt_matches m WHERE m.status=?" + ONE_BIN,
             (status,)).fetchone()["c"]
         return TEMPLATES.TemplateResponse(
             request, template,

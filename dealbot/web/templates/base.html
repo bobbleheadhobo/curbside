@@ -34,6 +34,14 @@
   --good:#0f7040; --good-soft:#e6f4ec;
   --warn:#8a5300; --warn-soft:#fdf1de;
   --bad:#b52424;  --bad-soft:#fdeceb;
+  /* --- the section hue -------------------------------------------------
+     One accent was the standing preference and it left the thing reading
+     grey. This is still colour with a JOB rather than decoration: each
+     destination owns a hue, so the tab you are on, its count, and the live
+     numbers in the page head all agree, and you know where you are from the
+     corner of your eye. Semantic green/amber/red keep their own meanings and
+     are never borrowed for this. */
+  --tint:#2b64d6; --tint-soft:#eaf0fe;
   --shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);
   --shadow-lift:0 4px 12px rgba(16,16,20,.08),0 1px 2px rgba(16,16,20,.06);
   --r:14px; --r-sm:8px;
@@ -61,6 +69,36 @@
   --shadow:0 1px 2px rgba(0,0,0,.5),0 1px 1px rgba(0,0,0,.35);
   --shadow-lift:0 6px 18px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4);
 }
+
+/* Free is green because the thing is free; saved is violet because it is
+   yours; skipped is slate because it is the pile you walked past; runs is
+   teal because it is machinery, not merchandise. Both themes are real, so
+   every hue is declared twice -- once for the system preference and once for
+   an explicit [data-theme=dark] on :root, exactly like the base palette. */
+body[data-page=free]    {--tint:#0d7a4a;--tint-soft:#e4f5ec}
+body[data-page=saved]   {--tint:#6b3fb5;--tint-soft:#f0eafc}
+body[data-page=skipped] {--tint:#4a5568;--tint-soft:#edeff3}
+body[data-page=runs]    {--tint:#0f6d78;--tint-soft:#e2f2f4}
+body[data-page=settings]{--tint:#8a5300;--tint-soft:#fdf1de}
+body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
+
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]) body                 {--tint:#6f9dff;--tint-soft:#1a2237}
+  :root:not([data-theme=light]) body[data-page=free]    {--tint:#4bd08a;--tint-soft:#11291f}
+  :root:not([data-theme=light]) body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
+  :root:not([data-theme=light]) body[data-page=skipped] {--tint:#9aa7bd;--tint-soft:#1c2028}
+  :root:not([data-theme=light]) body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
+  :root:not([data-theme=light]) body[data-page=settings]{--tint:#e8b155;--tint-soft:#2c2213}
+  :root:not([data-theme=light]) body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
+}
+:root[data-theme=dark] body                 {--tint:#6f9dff;--tint-soft:#1a2237}
+:root[data-theme=dark] body[data-page=free]    {--tint:#4bd08a;--tint-soft:#11291f}
+:root[data-theme=dark] body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
+:root[data-theme=dark] body[data-page=skipped] {--tint:#9aa7bd;--tint-soft:#1c2028}
+:root[data-theme=dark] body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
+:root[data-theme=dark] body[data-page=settings]{--tint:#e8b155;--tint-soft:#2c2213}
+:root[data-theme=dark] body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
+
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
@@ -130,7 +168,7 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
     transition:background .15s,color .15s
   }
   .desknav a:hover{background:var(--line-soft);color:var(--fg)}
-  .desknav a[aria-current=page]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .desknav a[aria-current=page]{background:var(--tint-soft);color:var(--tint);font-weight:600}
   .brand{margin-right:20px}
 }
 
@@ -147,11 +185,11 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
   letter-spacing:.005em;position:relative
 }
 .tabbar a svg.i{font-size:22px;stroke-width:1.7}
-.tabbar a[aria-current=page]{color:var(--accent)}
+.tabbar a[aria-current=page]{color:var(--tint)}
 .tabbar a:active{background:var(--line-soft)}
 .tabbar .pip{
   position:absolute;top:6px;left:calc(50% + 7px);min-width:16px;height:16px;
-  border-radius:99px;background:var(--accent);color:var(--on-accent);
+  border-radius:99px;background:var(--tint);color:var(--card);
   font-size:10px;line-height:16px;font-weight:700;text-align:center;padding:0 4px
 }
 @media (min-width:900px){.tabbar{display:none}}
@@ -193,7 +231,7 @@ main.wide{max-width:1100px}
    item instead of stranding a bullet at the end of a line. */
 .stats i + i::before{content:"\00B7";color:var(--line);margin-right:10px}
 .stats b{
-  color:var(--fg);font-weight:640;font-size:15px;letter-spacing:-.01em;
+  color:var(--tint);font-weight:640;font-size:15px;letter-spacing:-.01em;
   font-variant-numeric:tabular-nums
 }
 .stats .hi b{color:var(--warn)}
@@ -241,7 +279,7 @@ form.inline{display:inline-flex}
   max-width:100%;white-space:normal;text-align:left
 }
 .chip svg.i{font-size:12px;stroke-width:2}
-.chip.want{background:var(--line-soft);color:var(--dim)}
+.chip.want{background:var(--good-soft);color:var(--good)}
 .chip.want svg.i{color:var(--good)}
 .chip.unk{background:var(--warn-soft);color:var(--warn)}
 .chip.flag{
@@ -261,7 +299,8 @@ form.inline{display:inline-flex}
 }
 .flags svg.i{font-size:15px;margin-top:1px;flex:none}
 .chip.flag svg.i{margin-top:2px}
-.chip.drop{background:var(--line-soft);color:var(--dim)}
+/* A price that fell is a buy signal, so it gets to look like one. */
+.chip.drop{background:var(--good-soft);color:var(--good)}
 .filterchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
 /* A chip that is a link is a tap target, so it gets a tap target's height. */
 a.chip{transition:background .15s,color .15s;padding:8px 10px;min-height:32px}
@@ -316,9 +355,18 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
   flex:none;text-align:right;display:flex;flex-direction:column;
   align-items:flex-end;gap:1px;padding-left:2px
 }
-.score b{font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1}
+.score b{
+  display:block;min-width:46px;padding:5px 8px 4px;border-radius:9px;
+  font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1;
+  text-align:center
+}
 .score span{font-size:10.5px;font-weight:600;color:var(--faint);letter-spacing:.03em}
-.s-hi b{color:var(--good)} .s-mid b{color:var(--warn)} .s-lo b{color:var(--faint)}
+/* Filled, because the score is the most-scanned thing on the card and a
+   coloured digit on white was doing none of the work a colour can do. Still
+   semantic: this is the judgement, not the section. */
+.s-hi b{color:var(--good);background:var(--good-soft)}
+.s-mid b{color:var(--warn);background:var(--warn-soft)}
+.s-lo b{color:var(--faint);background:var(--line-soft)}
 
 /* the judgement, folded away: price and photo decide, the words confirm */
 .why{border-top:1px solid var(--line-soft)}
@@ -662,7 +710,14 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   .why>summary .chev{transition:none}
   .card-main:active{transform:none}
 }
-</style></head><body>
+</style></head>
+{# The section hue keys off this: each destination owns a colour so you know
+   where you are from the corner of your eye. Detail pages (listing, hunt, a
+   want editor) deliberately fall through to the default accent. #}
+{% set _seg = request.url.path.lstrip('/').split('/')[0] %}
+{% set page = 'wants' if request.url.path == '/'
+              else ('settings' if _seg == 'wants' else _seg) %}
+<body data-page="{{ page }}">
 <!--
   THESIS: One person, one phone, deciding in two seconds whether a thing is
   worth driving across town for. Photo and price decide; the model's words
