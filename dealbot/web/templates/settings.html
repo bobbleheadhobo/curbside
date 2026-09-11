@@ -72,36 +72,40 @@
 {# The four numbers worth a thumb. Each one says what it is currently costing,
    because a threshold you cannot see the effect of is one you guess at. #}
 <div class="panel" id="tuning" style="margin-bottom:18px">
-  <h2>Tuning</h2>
+  <h2>Limits</h2>
   <form method="post" action="/settings/tuning" data-inplace="#tuning"
         data-toast="Saved.">
     <div class="field">
       <div class="row">
-        <label><span class="lbl">Wants bar</span>
+        <label><span class="lbl">Show a want scoring at least</span>
           <input type="text" inputmode="decimal" name="min_deal_score"
                  value="{{ '%g'|format(tuning.min_deal_score) }}"></label>
-        <label><span class="lbl">Free finds bar</span>
+        <label><span class="lbl">Show a free find scoring at least</span>
           <input type="text" inputmode="decimal" name="free_find_min_score"
                  value="{{ '%g'|format(tuning.free_find_min_score) }}"></label>
       </div>
-      <p class="hint">Out of 10.
-        {%- if tuning.near_miss %} <a href="/skipped">{{ tuning.near_miss }} sitting
-        just under</a>.{% endif %}</p>
+      <p class="hint">Out of 10. Anything the model scores below this is judged
+        but not shown to you. Lower it to see more.
+        {%- if tuning.near_miss %} <a href="/skipped">{{ tuning.near_miss }} are
+        sitting just below the wants number</a>.{% endif %}</p>
     </div>
     <div class="field">
-      <label class="lbl" for="t-run">Judge per run</label>
+      <label class="lbl" for="t-run">Listings to send to the model each run</label>
       <input type="text" inputmode="numeric" id="t-run" name="max_results"
              value="{{ tuning.max_results }}">
-      <p class="hint">Per hunt, per source.
-        {%- if tuning.backlog %} {{ tuning.backlog }} waiting to be judged.
-        {%- else %} Nothing is waiting.{% endif %}</p>
+      <p class="hint">Counted per hunt and per site, so {{ tuning.max_results }}
+        here means up to {{ tuning.max_results * tuning.combos }} judged on a
+        busy pass. Raising it clears the queue faster and costs more.
+        {%- if tuning.backlog %} {{ tuning.backlog }} are queued now.{% endif %}</p>
     </div>
     <div class="field">
-      <label class="lbl" for="t-radius">Radius</label>
+      <label class="lbl" for="t-radius">How far you will drive, in miles</label>
       <input type="text" inputmode="decimal" id="t-radius" name="radius_miles"
              value="{{ '%g'|format(tuning.radius_miles) }}">
-      <p class="hint">Miles, straight line.
-        {%- if tuning.too_far %} {{ tuning.too_far }} dropped as too far.{% endif %}</p>
+      <p class="hint">Straight line from home, so real driving is further.
+        Anything beyond it is never collected.
+        {%- if tuning.too_far %} {{ tuning.too_far }} have been dropped for being
+        too far.{% endif %}</p>
     </div>
     <div class="formactions"><button class="primary">Save</button></div>
   </form>

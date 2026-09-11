@@ -241,10 +241,26 @@ def test_a_lever_cannot_be_set_somewhere_silly(app):
     assert live.location.radius_miles == cfg.location.radius_miles   # unchanged
 
 
-def test_the_tuning_panel_shows_what_each_lever_costs(app):
-    """A threshold you cannot see the effect of is one you guess at."""
+def test_each_limit_says_what_it_does_and_what_it_costs(app):
+    """A threshold you cannot see the effect of is one you guess at -- and a
+    label that names an internal concept ("Wants bar", "Judge per run") is one
+    only the person who built it can read."""
     client, _, _ = app
     body = client.get("/settings").text
     assert 'id="tuning"' in body
-    assert "Wants bar" in body and "Radius" in body
+    for label in ("Show a want scoring at least",
+                  "Show a free find scoring at least",
+                  "Listings to send to the model each run",
+                  "How far you will drive"):
+        assert label in body, label
     assert "config.yaml" in body          # and says what is deliberately not here
+
+
+def test_the_batch_cap_explains_itself_from_live_numbers(app):
+    """The cap is per hunt per source, so what it means depends on how many of
+    each there are. A typed number goes stale the moment a want is added."""
+    client, cfg, store = app
+    client.post("/settings/tuning", data={"max_results": "4"})
+    live = with_store(cfg, store)
+    combos = len(live.hunts) * len(live.sources)
+    assert f"means up to {4 * combos} judged" in client.get("/settings").text

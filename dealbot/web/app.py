@@ -607,6 +607,10 @@ def create_app(base_cfg: Config) -> FastAPI:
             "near_miss": near,
             "too_far": sum(far.values()),
             "backlog": sum(store.unjudged_counts().values()),
+            # The cap is per hunt per source, so what it means in practice
+            # depends on how many of each there are. Computed, because a typed
+            # number here goes stale the moment a want is added.
+            "combos": len([h for h in cfg.hunts if h.id not in off]) * len(cfg.sources),
         }
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
             request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,

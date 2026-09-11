@@ -103,12 +103,23 @@ regenerated icon or a CSS fix never reaches a phone with the app installed. Both
 dark, temporarily add `data-theme="dark"` to the `<html>` tag — headless
 Chrome has no reliable flag for the media query.
 
-**A hint states a fact, not a rationale.** The settings copy drifted into
-explaining *why* each control exists, which is what these documents are for.
-"Asleep it does nothing at all" earns its place; the list of what "nothing"
-covers does not. Where a number appears in copy it comes from the data, never
-typed in: the sweep row said "Running every 15 minutes" for a week after the
-interval was changed to 30.
+**A label says what the control does; a hint says what it costs.** Neither
+explains why the feature exists, which is what these documents are for.
+
+Both halves were got wrong in one day. First the copy explained itself at
+length ("Asleep it does nothing at all. No searching, no judging, no checking
+whether saved things are still there"). Cutting that left labels like *Wants
+bar* and *Judge per run* — internal names, readable only by whoever built it —
+and hints stating bare numbers with no idea what they measured. The rationale
+was the right thing to cut and the wrong half to cut *first*.
+
+So: **Show a want scoring at least**, not *Wants bar*. **How far you will
+drive, in miles**, not *Radius*. Then the count of what it is currently costing.
+
+**A number in copy comes from the data, never typed in.** The sweep row read
+"Running every 15 minutes" for a week after the interval was changed to 30, and
+the batch-cap hint said "up to 30 judged" from a hardcoded `* 6` that would
+have gone wrong the moment a want was added.
 
 **Every page head is a live stat line, not prose.** `h1` carries the name
 alone; under it `.stats` states what is actually waiting — counts in tabular
