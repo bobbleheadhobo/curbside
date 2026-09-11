@@ -21,8 +21,8 @@
   <h2>Searching</h2>
   <div class="control-row">
     <span class="who">Free-stuff sweeps
-      <small>{% if sweeps_paused %}Off. Want hunts still run and can still put
-        things here.{% else %}Running every 15 minutes.{% endif %}</small></span>
+      <small>{% if sweeps_paused %}Off. Want hunts still run.
+        {%- else %}Every {{ (hunts|selectattr('kind','equalto','sweep')|first).interval_minutes }} minutes.{% endif %}</small></span>
     <div class="triage-actions">
       <form method="post" action="/hunts/toggle" data-inplace="main">
         <input type="hidden" name="kind" value="sweep">
@@ -41,12 +41,10 @@
   <div class="control-row">
     <span class="who">Judging
       <small>
-        {%- if quota.override %}Spending anyway for another
-          {{ quota.override_mins }} min. Normal limits resume by themselves.
-        {%- elif quota.paused %}Paused: {{ quota.reason }}. {{ quota.mins }} min
-          left. Listings keep piling up and get judged when it lifts.
-        {%- else %}Running. Stands aside when the plan window gets tight, so it
-          does not crowd out your own use.{% endif %}</small></span>
+        {%- if quota.override %}Spending anyway for {{ quota.override_mins }} more min.
+        {%- elif quota.paused %}{{ quota.reason }}, {{ quota.mins }} min left.
+          Collecting carries on.
+        {%- else %}Running. Stands aside when the plan window gets tight.{% endif %}</small></span>
     <div class="triage-actions">
       <form method="post" action="/quota/override" data-inplace="main"
             data-toast="{{ 'Back to normal limits.' if quota.override else 'Judging anyway.' }}">
@@ -61,8 +59,8 @@
   </div>
   <div class="control-row">
     <span class="who">Everything
-      <small>{% if all_paused %}All {{hunts|length}} hunts are off. Nothing is
-        being collected.{% else %}{{hunts|length}} hunt{{ '' if hunts|length == 1 else 's' }},
+      <small>{% if all_paused %}All {{hunts|length}} off. Nothing is being
+        collected.{% else %}{{hunts|length}} hunt{{ '' if hunts|length == 1 else 's' }},
         wants and sweeps.{% endif %}</small></span>
     <div class="triage-actions">
       <form method="post" action="/hunts/toggle" data-inplace="main">

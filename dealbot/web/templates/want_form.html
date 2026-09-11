@@ -4,8 +4,7 @@
 <div class="pagehead">
   <h1>{{ stored.want.name if stored else 'New want' }}</h1>
   <p>{% if stored %}What it looks for, and what you would pay.
-     {% else %}Something you actually want. It gets its own search, and the free
-     sweep starts watching for it too.{% endif %}</p>
+     {% else %}It gets its own search, and the free sweep watches for it too.{% endif %}</p>
 </div>
 
 <div class="panel">
@@ -21,8 +20,7 @@
       <label for="f-name">Name</label>
       <input type="text" id="f-name" name="name" value="{{ v.name or '' }}"
              placeholder="tv stand" autocapitalize="none" required>
-      <p class="hint">Short. It becomes this hunt's address and cannot be
-        changed afterwards, because everything it judges is filed under it.</p>
+      <p class="hint">Short, and cannot be changed later.</p>
     </div>
     {% endif %}
 
@@ -30,34 +28,31 @@
       <label for="f-desc">What you are looking for</label>
       <textarea id="f-desc" name="description" required
         placeholder="A large TV stand for a big TV. Width matters most.">{{ v.description or '' }}</textarea>
-      <p class="hint">This is what every listing gets judged against, in your
-        own words. Say what makes one good and what makes one useless.</p>
+      <p class="hint">What each listing is judged against. Say what makes one
+        good, and what makes one useless.</p>
     </div>
 
     <div class="field">
       <label for="f-price">Most you would pay</label>
       <input type="text" inputmode="decimal" id="f-price" name="max_price"
              value="{{ v.max_price or '' }}" placeholder="250">
-      <p class="hint">Dollars. Anything dearer is dropped before it costs
-        anything to judge.</p>
+      <p class="hint">Dollars. Anything dearer is dropped unjudged.</p>
     </div>
 
     <div class="field">
       <label for="f-queries">Search terms</label>
       <textarea id="f-queries" name="queries"
         placeholder="tv stand&#10;media console&#10;credenza">{{ v.queries or '' }}</textarea>
-      <p class="hint">One per line. Search cannot know that "media console"
-        means the same thing, so give it the words a seller would use. Leave it
-        empty and this want is only checked against free stuff.</p>
+      <p class="hint">One per line, in the words a seller would use. Empty
+        means free stuff only.</p>
     </div>
 
     <div class="field">
       <label for="f-req">Must be true</label>
       <textarea id="f-req" name="requires"
         placeholder="at least 70 inches wide&#10;not a corner unit">{{ v.requires or '' }}</textarea>
-      <p class="hint">One per line, optional. Each is answered separately with
-        its evidence, so a near miss shows up as a near miss instead of
-        disappearing into the score.</p>
+      <p class="hint">One per line, optional. Each is answered separately,
+        with evidence.</p>
     </div>
 
     <div class="field">
@@ -67,7 +62,7 @@
         <option value="{{ mins }}" {% if mins == interval %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p class="hint">Priced things sit for days, so hourly is plenty.</p>
+      <p class="hint">Priced things sit for days.</p>
     </div>
 
     <div class="formactions">
@@ -84,9 +79,8 @@
   <h2>This hunt</h2>
   <div class="control-row">
     <span class="who">{{ 'Paused' if hid in paused_ids else 'Searching' }}
-      <small>{% if hid in paused_ids %}Not being
-        searched for. The free sweep still matches against it.{% else %}Running
-        on its own clock.{% endif %}</small></span>
+      <small>{% if hid in paused_ids %}Not searched for. The free sweep still
+        matches against it.{% else %}Running on its own clock.{% endif %}</small></span>
     <div class="triage-actions">
       <form method="post" action="/hunts/toggle" data-inplace="main">
         <input type="hidden" name="hunt_id" value="{{ hid }}">
@@ -100,14 +94,14 @@
   </div>
   <div class="control-row">
     <span class="who">Everything it found
-      <small>Kept whatever happens to the want.</small></span>
+      <small>Kept whatever happens to this.</small></span>
     <div class="triage-actions">
       <a class="btn" href="/hunt/{{ hid }}">Open the hunt</a>
     </div>
   </div>
   <div class="control-row">
     <span class="who">Remove it
-      <small>Stops the search. Nothing is deleted.</small></span>
+      <small>Stops the search. Deletes nothing.</small></span>
     <div class="triage-actions">
       <form method="post" action="/wants/archive">
         <input type="hidden" name="name" value="{{ stored.want.name }}">

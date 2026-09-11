@@ -38,8 +38,7 @@
         <label><span class="lbl">To</span>
           <input type="time" name="end" value="{{ end }}"></label>
       </div>
-      <p class="hint">Asleep it does nothing at all. No searching, no judging,
-        no checking whether saved things are still there.</p>
+      <p class="hint">Asleep it does nothing at all.</p>
     </div>
     <div class="formactions"><button class="primary">Save hours</button></div>
   </form>
@@ -60,8 +59,7 @@
           {% if mins == s.hunt.interval_minutes %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p class="hint">Free things go in minutes, so this one is worth checking
-        often.{% if s.paused %} Paused right now.{% endif %}</p>
+      <p class="hint">Free things go fast.{% if s.paused %} Paused right now.{% endif %}</p>
     </div>
     <div class="formactions"><button>Save</button></div>
   </form>
@@ -86,31 +84,28 @@
           <input type="text" inputmode="decimal" name="free_find_min_score"
                  value="{{ '%g'|format(tuning.free_find_min_score) }}"></label>
       </div>
-      <p class="hint">Out of 10. {% if tuning.near_miss %}<a href="/skipped">{{ tuning.near_miss }}
-        judged just under the wants bar</a> right now, which is the pile to read
-        before moving it.{% else %}Nothing is sitting just under the wants bar.{% endif %}</p>
+      <p class="hint">Out of 10.
+        {%- if tuning.near_miss %} <a href="/skipped">{{ tuning.near_miss }} sitting
+        just under</a>.{% endif %}</p>
     </div>
     <div class="field">
-      <div class="row">
-        <label><span class="lbl">Judge per run</span>
-          <input type="text" inputmode="numeric" name="max_results"
-                 value="{{ tuning.max_results }}"></label>
-        <label><span class="lbl">Radius (miles)</span>
-          <input type="text" inputmode="decimal" name="radius_miles"
-                 value="{{ '%g'|format(tuning.radius_miles) }}"></label>
-      </div>
-      <p class="hint">Per hunt, per source, each run. {% if tuning.backlog %}{{ tuning.backlog }}
-        collected and not yet judged; raising this drains them faster and costs
-        more.{% else %}Nothing is waiting, so raising it would change nothing.{% endif %}
-        {% if tuning.too_far %}<br>{{ tuning.too_far }} listings have been dropped
-        as too far.{% endif %}</p>
+      <label class="lbl" for="t-run">Judge per run</label>
+      <input type="text" inputmode="numeric" id="t-run" name="max_results"
+             value="{{ tuning.max_results }}">
+      <p class="hint">Per hunt, per source.
+        {%- if tuning.backlog %} {{ tuning.backlog }} waiting to be judged.
+        {%- else %} Nothing is waiting.{% endif %}</p>
+    </div>
+    <div class="field">
+      <label class="lbl" for="t-radius">Radius</label>
+      <input type="text" inputmode="decimal" id="t-radius" name="radius_miles"
+             value="{{ '%g'|format(tuning.radius_miles) }}">
+      <p class="hint">Miles, straight line.
+        {%- if tuning.too_far %} {{ tuning.too_far }} dropped as too far.{% endif %}</p>
     </div>
     <div class="formactions"><button class="primary">Save</button></div>
   </form>
-  <p class="settings-note">Everything else stays in <code>config.yaml</code>.
-    The source rate limits especially: they are what keeps Facebook from
-    blocking you, and they live inside the adapter so that nothing can bypass
-    them by accident.</p>
+  <p class="settings-note">Everything else is in <code>config.yaml</code>.</p>
 </div>
 
 {% if sweeps %}
@@ -152,8 +147,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="hint">Nothing is blocked. Use <b>Never show</b> on a free listing,
-      or add a word here.</p>
+    <p class="hint">Nothing is blocked yet.</p>
     {% endif %}
     <form class="addterm" method="post" action="/settings/exclude"
           data-inplace="#blocked" data-refocus="term">
@@ -162,13 +156,9 @@
              autocomplete="off" spellcheck="false">
       <button>Block</button>
     </form>
-    <p class="hint">A blocked word drops free listings before they are judged
-      or shown, so it costs nothing. The number beside it is how many it has
-      dropped. Matching is by whole word with plurals, so <code>bed</code> will
-      not catch <code>bedroom</code>.</p>
-    <p class="hint">Want hunts have no list like this, on purpose: the useful
-      word to block there is usually the thing you are hunting for. A word that
-      matches one of your wants is refused here too.</p>
+    <p class="hint">Whole words, plurals included, so <code>bed</code> will not
+      catch <code>bedroom</code>. The number is how many it has dropped. A word
+      you are hunting for is refused.</p>
   </div>
   {% endfor %}
 </div>
@@ -200,9 +190,8 @@
     <a class="btn primary" href="/wants/new">
       <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add a want</a>
   </div>
-  <p class="settings-note">A new want is judged against listings found
-    <b>from now on</b>. Things already in the archive were judged against the
-    list as it stood then, and are not judged again.</p>
+  <p class="settings-note">New wants only see listings found <b>from now
+    on</b>.</p>
 </div>
 
 {% if gone %}

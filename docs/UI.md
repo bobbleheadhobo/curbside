@@ -103,6 +103,13 @@ regenerated icon or a CSS fix never reaches a phone with the app installed. Both
 dark, temporarily add `data-theme="dark"` to the `<html>` tag — headless
 Chrome has no reliable flag for the media query.
 
+**A hint states a fact, not a rationale.** The settings copy drifted into
+explaining *why* each control exists, which is what these documents are for.
+"Asleep it does nothing at all" earns its place; the list of what "nothing"
+covers does not. Where a number appears in copy it comes from the data, never
+typed in: the sweep row said "Running every 15 minutes" for a week after the
+interval was changed to 30.
+
 **Every page head is a live stat line, not prose.** `h1` carries the name
 alone; under it `.stats` states what is actually waiting — counts in tabular
 figures, the one that needs a decision tinted amber (`.stats .hi`). The
