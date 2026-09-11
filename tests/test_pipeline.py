@@ -1031,3 +1031,53 @@ def test_with_no_backlog_a_second_run_still_costs_nothing(rig):
     assert store.unjudged_counts().get(hunt.id, 0) == 0      # cap is high in rig
     second = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
     assert second.n_candidates == 0 and second.n_scored == 0
+
+
+def test_a_listing_with_neither_words_nor_pictures_is_not_judged(rig):
+    """An appraisal of one is the model guessing from a title, and the image
+    pass has nothing to open."""
+    from dataclasses import replace
+    from dealbot.models import RawListing
+    from datetime import datetime, timezone
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+
+    class Bare:
+        """Two listings: one empty, one with only a photo."""
+        name = "fixture"
+        def search(self, hunt):
+            now = datetime.now(timezone.utc)
+            for i in (1, 2):
+                yield RawListing(source="fixture", source_id=f"bare{i}",
+                                 payload={}, fetched_at=now)
+        def parse(self, raw):
+            from conftest import make_listing
+            empty = raw.source_id == "bare1"
+            return make_listing(lid=f"fixture:{raw.source_id}",
+                                title="Free stuff", price_cents=0,
+                                description=None,
+                                images=() if empty else ("a.jpg",))
+
+    r = run_hunt(store, hunt, Bare(), scorer, notifiers, cfg.location)
+    reasons = {lid: reason for lid, reason in store.conn.execute(
+        "SELECT listing_id, filter_reason FROM hunt_matches WHERE hunt_id=?",
+        (hunt.id,))}
+    assert reasons.get("fixture:bare1") == "nothing_to_judge"
+    # ...but a photo alone is plenty. Those score BETTER than listings with
+    # words, and the image pass exists precisely for them.
+    assert reasons.get("fixture:bare2") is None
+    assert r.n_candidates == 1
+
+
+def test_a_photo_with_no_words_is_still_judged(rig):
+    """The measured case: 5.65 average against 4.89 for listings that have a
+    description, 9 of 17 over 7, one of them in the wants bin."""
+    from conftest import make_listing
+    from dealbot.filters import gate
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    photo_only = make_listing(lid="fixture:p", price_cents=0, description=None,
+                              images=("a.jpg",))
+    result = gate(hunt, [photo_only], cfg.location, statuses={},
+                  last_scores={}, upserts={})
+    assert [c.listing.id for c in result.candidates] == ["fixture:p"]

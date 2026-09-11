@@ -324,6 +324,34 @@ def run_hunt(
             log.info("%d listings excluded on their description", len(excluded))
         gr = GateResult(candidates=keep, rejected=gr.rejected + excluded)
 
+    # --- 4b4. nothing to go on at all ----------------------------------------
+    # No description AND no photograph. Not "thin" -- empty: there is no text to
+    # read and no picture to look at, so an appraisal is the model guessing from
+    # a title, and the image pass has nothing to open.
+    #
+    # Deliberately NOT "no description". On Facebook a bare listing usually
+    # means the seller let the photos do the talking, and those listings score
+    # BETTER than the ones with words: 5.65 average against 4.89, 9 of 17 over
+    # 7, and one of them is sitting in the wants bin right now. Dropping them
+    # would cost finds to save about fifty cents.
+    #
+    # After enrichment, because that is where descriptions arrive -- Craigslist's
+    # search feed carries none at all, so run before this every listing looks
+    # empty.
+    if gr.candidates:
+        judgeable, empty = [], []
+        for cand in gr.candidates:
+            has_words = bool((cand.listing.description or "").strip())
+            if has_words or cand.listing.images:
+                judgeable.append(cand)
+            else:
+                empty.append((cand.listing.id, "nothing_to_judge"))
+        if empty:
+            store.record_rejections(hunt.id, empty)
+            log.info("%d listings had neither a description nor a photo",
+                     len(empty))
+        gr = GateResult(candidates=judgeable, rejected=gr.rejected + empty)
+
     # --- 4c. cross-source duplicates -----------------------------------------
     # People post the same thing to both marketplaces. This runs for EVERY
     # source, not only ones with a detail fetch -- it lived inside the
