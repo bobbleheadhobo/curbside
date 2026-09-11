@@ -6,7 +6,7 @@
 <div class="pagehead">
   <h1>Free finds</h1>
   <p class="stats">
-    <i><b>{{total}}</b> waiting</i>
+    <i><b data-bincount>{{total}}</b> waiting</i>
     {% if dists %}
       <i>nearest <b>{{ dists|min|round|int }}</b> mi</i>{% endif %}
     {% if sitting %}
@@ -18,7 +18,7 @@
 </div>
 
 <div class="stack">
-{% for i in items %}{{ card(i, '/free') }}{% else %}
+{% for i in items %}{{ card(i, '/free', block=true) }}{% else %}
 <div class="empty">
   <svg class="i" aria-hidden="true"><use href="#i-free"/></svg>
   <b>Nothing worth grabbing right now</b>

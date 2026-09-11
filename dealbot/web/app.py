@@ -8,6 +8,7 @@ explain is a tool you stop opening.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import logging
@@ -23,7 +24,8 @@ from .. import config as config_mod
 from .. import schedule as schedule_mod
 from ..config import Config
 from ..db import Store
-from ..models import WANT_NAME_RE, Want, slugify_want
+from ..filters import matches_any
+from ..models import WANT_NAME_RE, Listing, Want, slugify_want
 from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -404,11 +406,23 @@ def create_app(base_cfg: Config) -> FastAPI:
         return RedirectResponse(back, status_code=303)
 
     @app.post("/triage")
-    def triage(hunt_id: str = Form(...), listing_id: str = Form(...),
-               status: str = Form(...), note: str = Form(""),
-               back: str = Form("/")):
-        if status in ("saved", "dismissed", "contacted", "wanted", "free_find"):
+    def triage(request: Request, hunt_id: str = Form(...),
+               listing_id: str = Form(...), status: str = Form(...),
+               note: str = Form(""), back: str = Form("/")):
+        """The only mutation that happens dozens of times in a sitting.
+
+        Answers 204 to a fetch and 303 to a form post, so the page can act on
+        one card without reloading while the same endpoint still works with
+        JavaScript off. The buttons are real forms; the script intercepts them.
+        """
+        # `scored` is here for undo, not for the buttons: a card on /skipped
+        # is `scored`, and undoing a dismiss there has to put it back exactly
+        # where it was or the list lies about what the database holds.
+        if status in ("saved", "dismissed", "contacted", "wanted", "free_find",
+                      "scored"):
             store.set_status(hunt_id, listing_id, status, note or None)
+        if request.headers.get("x-requested-with") == "fetch":
+            return Response(status_code=204)
         return RedirectResponse(back, status_code=303)
 
     # --- settings: waking hours, cadence, and the wants list ---------------
@@ -434,7 +448,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         return tuple(ln.strip() for ln in (text or "").splitlines() if ln.strip())
 
     @app.get("/settings")
-    def settings_view(request: Request):
+    def settings_view(request: Request, err: str = ""):
         cfg, sched = _live(), _schedule()
         off = store.disabled_hunts()
         rows = []
@@ -448,11 +462,21 @@ def create_app(base_cfg: Config) -> FastAPI:
                     "SELECT COUNT(*) c FROM hunt_matches WHERE hunt_id=?",
                     (sw.hunt_id,)).fetchone()["c"],
             })
-        sweeps = [{"hunt": h, "paused": h.id in off}
-                  for h in cfg.hunts if h.kind == "sweep"]
+        sweeps = []
+        for h in (x for x in cfg.hunts if x.kind == "sweep"):
+            counts = store.exclude_counts(h.id)
+            mine = store.hunt_excludes().get(h.id, ())
+            sweeps.append({
+                "hunt": h, "paused": h.id in off,
+                # The file's terms are shown but not removable here: they are
+                # reviewed lines in a committed file, not a tap.
+                "terms": [{"term": t, "n": counts.get(t, 0), "mine": t in mine}
+                          for t in h.exclude],
+            })
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
             request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,
             intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
+            err=err,
             start=schedule_mod.fmt_hhmm(sched.start_minute),
             end=schedule_mod.fmt_hhmm(sched.end_minute)))
 
@@ -475,6 +499,66 @@ def create_app(base_cfg: Config) -> FastAPI:
                       back: str = Form("/settings")):
         store.set_hunt_interval(hunt_id, _clean_interval(minutes))
         return RedirectResponse(back, status_code=303)
+
+    # --- never show me this again ------------------------------------------
+    #
+    # Dismissing teaches by example and cannot be counted. A blocked word is
+    # the opposite: it is deterministic, it is listed on this page, and every
+    # listing it ever dropped is countable as `excluded_kw:<term>` on the hunt
+    # view. That is the difference between a preference you can audit and one
+    # you have to trust.
+    #
+    # It is also the only rule here that fails CLOSED -- a blocked listing is
+    # gone without being read -- so it is guarded twice: word-start matching in
+    # `filters._term_pattern`, and a refusal to block a word that appears in
+    # something you are hunting for.
+
+    MIN_TERM = 3
+
+    def _would_block_a_want(cfg: Config, term: str) -> str | None:
+        """The guard that matters. Blocking "console" on the sweep would drop
+        the free media console the tv-stand hunt exists to find, and nothing in
+        the interface would ever say so."""
+        probe = Listing(id="probe", source="probe", source_id="probe",
+                        title=term, description=None, price_cents=None,
+                        currency="USD", url="")
+        for want in cfg.wants:
+            for phrase in (want.name.replace("-", " "),) + want.queries:
+                if matches_any(replace(probe, title=phrase), [term]):
+                    return want.name
+        return None
+
+    @app.post("/settings/exclude")
+    def save_exclude(hunt_id: str = Form(...), term: str = Form(""),
+                     remove: str = Form("0"), back: str = Form("/settings")):
+        term = " ".join(term.lower().split())
+        if remove == "1":
+            store.remove_hunt_exclude(hunt_id, term)
+            return RedirectResponse(back, status_code=303)
+
+        cfg = _live()
+        if len(term) < MIN_TERM:
+            return RedirectResponse(f"{back}?err=short", status_code=303)
+        if (clash := _would_block_a_want(cfg, term)):
+            return RedirectResponse(f"{back}?err=wanted:{clash}", status_code=303)
+        store.add_hunt_exclude(hunt_id, term)
+        return RedirectResponse(back, status_code=303)
+
+    @app.post("/settings/exclude.json")
+    def save_exclude_async(hunt_id: str = Form(...), term: str = Form(""),
+                           remove: str = Form("0")):
+        """The same thing from a card, which cannot afford a page reload."""
+        term = " ".join(term.lower().split())
+        if remove == "1":
+            store.remove_hunt_exclude(hunt_id, term)
+            return {"ok": True, "term": term}
+        if len(term) < MIN_TERM:
+            return {"ok": False, "error": "Too short to block safely."}
+        if (clash := _would_block_a_want(_live(), term)):
+            return {"ok": False,
+                    "error": f"You are hunting for {clash}. Not blocking that."}
+        store.add_hunt_exclude(hunt_id, term)
+        return {"ok": True, "term": term}
 
     # --- wants -------------------------------------------------------------
 

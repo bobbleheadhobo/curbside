@@ -15,7 +15,7 @@
 
 {% macro _money(cents) %}{% if cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}{% endmacro %}
 
-{% macro card(i, back, actions=['saved','dismissed'], show_status=false) %}
+{% macro card(i, back, actions=['saved','dismissed'], show_status=false, block=false) %}
 {% set was = i.previous_price_cents if i.previous_price_cents is not none
              else (i.priced_at_cents if i.priced_at_cents is not none
                    and i.price_cents is not none
@@ -23,7 +23,8 @@
 {% set dropped = was is not none and i.price_cents is not none and i.price_cents < was %}
 {% set motivated = (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
 {% set has_why = i.reasoning or i.requirements or i.unknowns or i.red_flags %}
-<article class="card">
+<article class="card" data-hunt="{{i.hunt_id}}" data-listing="{{i.id}}"
+         data-status="{{i.status}}">
   <a class="card-main" href="/listing/{{i.id}}">
     {# The placeholder sits underneath and the photo covers it, so a source URL
        that has expired -- Facebook's last about four days -- degrades to a
@@ -151,9 +152,28 @@
       </button>
     </form>
     {% endfor %}
+    {% if block %}
+    {# Only on the free sweep. A blocked word is deterministic and countable,
+       which is exactly what dismissing is not -- see docs/UI.md. #}
+    <button type="button" class="blocktoggle" aria-expanded="false"
+            title="Stop this kind of thing being collected at all">
+      <svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>Never show</button>
+    {% endif %}
     <a class="btn open" href="{{i.url}}" target="_blank" rel="noopener"
        aria-label="Open on the marketplace">
       <svg class="i" aria-hidden="true"><use href="#i-open"/></svg></a>
   </div>
+  {% if block %}
+  <div class="blockrow" hidden>
+    <p>Drop future free listings containing one of these words. It is counted
+      on the hunt page, so you can see what it cost you.</p>
+    <div class="chips"></div>
+    <form class="addterm">
+      <input type="text" name="term" placeholder="another word"
+             autocapitalize="none" autocomplete="off" spellcheck="false">
+      <button>Block</button>
+    </form>
+  </div>
+  {% endif %}
 </article>
 {% endmacro %}

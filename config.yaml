@@ -153,6 +153,10 @@ sweeps:
     # Do not pay to judge a free listing from a fortnight ago -- it is gone.
     # Want hunts have no such limit: priced things sit, and age is a buy signal.
     max_age_days: 7
+    # Terms here are permanent and reviewed. More can be added from the
+    # dashboard ("Never show" on a free card, or the list on /settings); those
+    # live in the database and are removable there. Matching is by whole word
+    # with plurals, so "bed" will not catch "bedroom".
     exclude:
       - "free estimate"
       - "free delivery"

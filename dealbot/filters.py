@@ -14,7 +14,9 @@ means the scraper is broken.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
+from functools import lru_cache
 from typing import Iterable, Mapping, Sequence
 
 from .geo import approx_distance_miles
@@ -27,6 +29,24 @@ PRICE_DROP_THRESHOLD = 0.15
 TRIAGED = ("saved", "dismissed", "contacted")
 
 
+@lru_cache(maxsize=512)
+def _term_pattern(term: str) -> re.Pattern[str]:
+    """An exclude term, matched at word starts and tolerant of a plural.
+
+    Plain substring matching was wrong in both directions once these became
+    something you type on a phone rather than a line in a reviewed file.
+    "bed" matched *bedroom set*, and this is the one rule here that fails
+    CLOSED -- an over-broad term silently drops the thing you wanted, with only
+    a reject-reason count to show for it. Anchoring to a word start fixes that.
+
+    The trailing `(?:e?s)?` is the other half: an exact-word match would let
+    "mattress" through every listing selling *mattresses*, which is the common
+    case rather than the edge one.
+    """
+    return re.compile(r"(?<!\w)" + re.escape(term.lower().strip())
+                      + r"(?:e?s)?(?!\w)")
+
+
 def matches_any(listing: Listing, terms: Sequence[str]) -> str | None:
     """The first excluded term found in the title or description, if any.
 
@@ -37,7 +57,7 @@ def matches_any(listing: Listing, terms: Sequence[str]) -> str | None:
     """
     haystack = f"{listing.title}\n{listing.description or ''}".lower()
     for term in terms:
-        if term.lower() in haystack:
+        if term.strip() and _term_pattern(term).search(haystack):
             return term
     return None
 

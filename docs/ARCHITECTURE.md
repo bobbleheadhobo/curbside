@@ -88,7 +88,7 @@ REJECT   already saved/dismissed/contacted   → "triaged"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
          older than the hunt's max_age_days     → "too_old"
-         matches an exclude phrase             → "excluded_kw"
+         matches an exclude phrase             → "excluded_kw:<term>"
          already scored, nothing changed       → "unchanged"
 
 ADMIT    never scored for this hunt            → "new"
@@ -108,6 +108,22 @@ pass.
 
 `unchanged` is what makes a tight poll interval affordable: in steady state
 almost everything hits it, so **most ticks make zero model calls**.
+
+`excluded_kw` is the **only rule here that fails closed** — a blocked listing is
+dropped without ever being read. Since these became words you add from a phone
+(*Never show* on a free card, or the list on `/settings`) rather than reviewed
+lines in a committed file, two guards hold it:
+
+* **Word-start matching, plurals allowed.** `bed` no longer matches *bedroom
+  set*; `mattress` still matches *mattresses*. Substring matching was wrong in
+  both directions.
+* **A term that matches one of your wants is refused.** Blocking `console` on
+  the sweep would drop the free media console the tv-stand hunt exists to find,
+  and nothing in the interface would ever say so.
+
+Every term is counted on `/settings` as the number of listings it has dropped,
+which is the difference between a preference you can audit and one you have to
+trust. The file's terms are shown there but only removable in the file.
 
 Then two more filters:
 

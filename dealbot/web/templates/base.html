@@ -556,11 +556,99 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .state-line b{color:var(--fg);font-weight:600}
 
 
+/* --- acting on a card without reloading the page -------------------------- */
+/* The buttons stay real forms; a script intercepts them and the server answers
+   204. With JavaScript off every one of these still works, it just reloads. */
+.card.going{position:relative;pointer-events:none}
+.card.going .card-main,.card.going .why,.card.going .actions{
+  transition:opacity .18s ease;opacity:.35}
+.verdict{
+  position:absolute;inset:0;z-index:2;display:flex;gap:8px;
+  align-items:center;justify-content:center;
+  font-size:14px;font-weight:620;letter-spacing:-.01em;
+  animation:verdict-in .18s ease both
+}
+.verdict svg.i{font-size:19px;stroke-width:2.2}
+.card.saved .verdict{color:var(--good);background:color-mix(in srgb,var(--good-soft) 88%,transparent)}
+.card.dismissed .verdict{color:var(--dim);background:color-mix(in srgb,var(--line-soft) 92%,transparent)}
+.card.blocked .verdict{color:var(--warn);background:color-mix(in srgb,var(--warn-soft) 90%,transparent)}
+@keyframes verdict-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.card.collapsing{
+  overflow:hidden;max-height:0!important;opacity:0;margin-bottom:-10px;
+  transform:scale(.98);
+  transition:max-height .26s cubic-bezier(.4,0,.2,1),opacity .2s ease,
+             transform .26s ease,margin-bottom .26s ease
+}
+/* Saved leans toward the tab it is going to; dismissed just shrinks away. */
+.card.saved.collapsing{transform:translateX(10px) scale(.98)}
+
+.toast{
+  position:fixed;left:50%;transform:translate(-50%,140%);z-index:60;
+  bottom:calc(72px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:12px;max-width:min(92vw,420px);
+  padding:11px 13px 11px 15px;border-radius:12px;
+  background:var(--fg);color:var(--bg);font-size:13.5px;font-weight:500;
+  box-shadow:var(--shadow-lift);opacity:0;
+  transition:transform .26s cubic-bezier(.4,0,.2,1),opacity .2s ease
+}
+.toast.up{transform:translate(-50%,0);opacity:1}
+.toast span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast button{
+  flex:none;min-height:32px;padding:0 11px;border-radius:8px;font-size:13px;
+  font-weight:620;background:transparent;color:var(--bg);
+  border:1px solid color-mix(in srgb,var(--bg) 35%,transparent)
+}
+.toast button:hover{background:color-mix(in srgb,var(--bg) 16%,transparent);
+  border-color:color-mix(in srgb,var(--bg) 55%,transparent)}
+.toast.bad{background:var(--bad);color:#fff}
+.toast.bad button{color:#fff;border-color:rgba(255,255,255,.45)}
+@media (min-width:900px){.toast{bottom:24px}}
+
+/* --- never show me this ---------------------------------------------------- */
+.blockrow{
+  padding:12px 12px 13px;border-top:1px solid var(--line-soft);background:var(--bg)
+}
+.blockrow p{margin:0 0 9px;font-size:12.5px;line-height:1.5;color:var(--dim)}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
+.chips button{
+  min-height:36px;padding:0 12px;border-radius:99px;font-size:13px;font-weight:550;
+  background:var(--card);border:1px solid var(--line);color:var(--fg);width:auto
+}
+.chips button:hover{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+.addterm{display:flex;gap:8px}
+.addterm input{min-height:38px;font-size:15px;padding:7px 11px}
+.addterm button{flex:none;min-height:38px;width:auto}
+
+/* the list of blocked words on /settings */
+.terms{display:flex;flex-wrap:wrap;gap:7px}
+.term{
+  display:inline-flex;align-items:center;gap:7px;padding:5px 7px 5px 11px;
+  border-radius:99px;border:1px solid var(--line);background:var(--card);
+  font-size:13px;font-weight:500
+}
+.term b{
+  font-weight:620;font-size:11.5px;color:var(--dim);
+  background:var(--line-soft);border-radius:99px;padding:2px 7px
+}
+.term.locked{color:var(--dim);background:var(--line-soft);padding-right:11px}
+.term form{display:flex}
+.term button{
+  min-height:26px;width:26px;padding:0;border-radius:99px;border:0;
+  background:transparent;color:var(--faint);font-size:13px
+}
+.term button:hover{background:var(--bad-soft);color:var(--bad)}
+.termnote{margin:9px 0 0;font-size:12.5px;line-height:1.5;color:var(--dim)}
+
 @media (prefers-reduced-motion:reduce){
   /* Not a blanket kill. Colour and background transitions are not motion, and
      they are the only feedback a tap gets here; removing them would make the
      interface feel broken rather than calm. Only real movement goes. */
   *,*::before,*::after{animation:none!important}
+  /* The card-leaving transition is the feedback for a tap, not decoration,
+     so it shortens rather than disappears -- with it gone entirely a card
+     would vanish with no indication of which button did it. */
+  .card.collapsing{transition-duration:.01ms}
+  .toast{transition-duration:.01ms}
   .why>summary .chev{transition:none}
   .card-main:active{transform:none}
 }
@@ -665,6 +753,241 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   </a>
   {% endfor %}
 </nav>
+<script>
+/* Triage without a page reload.
+ *
+ * Every button below is a real <form> that posts to /triage and works with
+ * this script absent -- it just reloads and drops you at the top of the list,
+ * which is what made going through twenty listings miserable. Here we post it
+ * in the background, show which button you pressed on the card itself, fold
+ * the card away and offer an undo.
+ *
+ * Undo matters more than the animation. Dismissing is not cosmetic: the gate
+ * never spends money on that listing again and the title becomes a negative
+ * example, so a mis-tap on a phone is expensive and used to be unrecoverable.
+ */
+(function () {
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ICON = {saved: "i-saved", dismissed: "i-x", blocked: "i-gone"};
+  var LABEL = {saved: "Saved", dismissed: "Dismissed", blocked: "Blocked"};
+  var live;
+
+  function post(url, data) {
+    return fetch(url, {
+      method: "POST", credentials: "same-origin",
+      headers: {"X-Requested-With": "fetch"},
+      body: new URLSearchParams(data)
+    });
+  }
+
+  function announce(text) {
+    if (!live) {
+      live = document.createElement("div");
+      live.className = "sr";
+      live.setAttribute("aria-live", "polite");
+      document.body.appendChild(live);
+    }
+    live.textContent = text;
+  }
+
+  var current;
+  function toast(text, actionLabel, onAction, bad) {
+    if (current) { current.remove(); current = null; }
+    var el = document.createElement("div");
+    el.className = "toast" + (bad ? " bad" : "");
+    var span = document.createElement("span");
+    span.textContent = text;
+    el.appendChild(span);
+    if (actionLabel) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = actionLabel;
+      b.addEventListener("click", function () { close(); onAction(); });
+      el.appendChild(b);
+    }
+    document.body.appendChild(el);
+    requestAnimationFrame(function () { el.classList.add("up"); });
+    var timer = setTimeout(close, actionLabel ? 7000 : 3400);
+    function close() {
+      clearTimeout(timer);
+      if (current === el) current = null;
+      el.classList.remove("up");
+      setTimeout(function () { el.remove(); }, 300);
+    }
+    current = el;
+    announce(text);
+    return close;
+  }
+
+  /* Fold a card away, and hand back a function that puts it exactly where it
+     was -- same position, same markup -- so undo is a real undo. */
+  function leave(card, kind) {
+    var parent = card.parentNode, next = card.nextSibling;
+    var badge = document.createElement("div");
+    badge.className = "verdict";
+    badge.innerHTML = '<svg class="i" aria-hidden="true"><use href="#' +
+      ICON[kind] + '"/></svg>' + LABEL[kind];
+    card.appendChild(badge);
+    card.classList.add("going", kind);
+    card.style.maxHeight = card.offsetHeight + "px";
+
+    setTimeout(function () {
+      card.classList.add("collapsing");
+      setTimeout(function () { card.remove(); emptyCheck(parent); },
+                 reduced ? 20 : 280);
+    }, reduced ? 10 : 300);
+
+    bump(-1);
+    return function restore() {
+      card.classList.remove("going", "collapsing", kind);
+      card.style.maxHeight = "";
+      badge.remove();
+      var done = parent.querySelector(".alldone");
+      if (done) done.remove();
+      parent.insertBefore(card, next);
+      bump(1);
+    };
+  }
+
+  /* The counts are server-rendered, so acting on a card leaves them lying.
+     "12 waiting" over eleven cards reads as a bug. */
+  function bump(delta) {
+    var head = document.querySelector("[data-bincount]");
+    if (head) {
+      var n = Math.max(0, (parseInt(head.textContent, 10) || 0) + delta);
+      head.textContent = n;
+    }
+    var pip = document.querySelector(".tabbar a[aria-current=page] .pip");
+    if (pip) {
+      var m = Math.max(0, (parseInt(pip.textContent, 10) || 0) + delta);
+      if (m) { pip.textContent = m; } else { pip.remove(); }
+    }
+  }
+
+  function emptyCheck(stack) {
+    if (!stack || stack.querySelector("article.card")) return;
+    if (stack.querySelector(".alldone")) return;
+    var d = document.createElement("div");
+    d.className = "empty alldone";
+    d.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-check"/></svg>' +
+      "<b>That is all of them</b><p>Nothing left in this list.</p>";
+    stack.appendChild(d);
+  }
+
+  function act(form, card, kind) {
+    var data = new FormData(form);
+    var was = card.getAttribute("data-status");
+    var restore = leave(card, kind);
+    post("/triage", data).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      toast(LABEL[kind] + ".", "Undo", function () {
+        post("/triage", {hunt_id: data.get("hunt_id"),
+                         listing_id: data.get("listing_id"),
+                         status: was || "wanted"}).then(restore);
+      });
+    }).catch(function () {
+      restore();
+      toast("That did not save. Still connected?", null, null, true);
+    });
+  }
+
+  document.addEventListener("submit", function (ev) {
+    var form = ev.target;
+    var card = form.closest && form.closest("article.card");
+    if (!card) return;                       // the listing page reloads; fine
+
+    if (form.getAttribute("action") === "/triage") {
+      var kind = form.querySelector('[name=status]').value;
+      if (kind !== "saved" && kind !== "dismissed") return;
+      ev.preventDefault();
+      act(form, card, kind);
+      return;
+    }
+    if (form.classList.contains("addterm")) {
+      ev.preventDefault();
+      var input = form.querySelector("input[name=term]");
+      block(card, input.value);
+    }
+  });
+
+  /* --- never show me this again ----------------------------------------- */
+
+  var STOP = ("free the and for with new used good great nice condition pick " +
+    "pickup curb alert must all set cash only firm obo available need gone " +
+    "have has its you your this that from out off not but are was one two " +
+    "three size large small item items stuff excellent like very still work " +
+    "works working please come first serve served today tomorrow asap sale " +
+    "moving take taking away giving give box lot lots plus inch inches").split(" ");
+
+  /* Candidate words off the title, because the useful block is a category --
+     "mattress", "recliner", "firewood" -- and it is almost always a noun that
+     is already in the title. Typed entry stays for everything else. */
+  function suggest(card) {
+    var h = card.querySelector(".info h2");
+    var seen = {}, out = [];
+    (h ? h.textContent : "").toLowerCase().split(/[^a-z0-9]+/).forEach(function (w) {
+      if (w.length < 4 || seen[w] || STOP.indexOf(w) >= 0 || /^\d+$/.test(w)) return;
+      seen[w] = 1;
+      out.push(w);
+    });
+    return out.slice(0, 6);
+  }
+
+  function block(card, term) {
+    term = (term || "").trim().toLowerCase();
+    if (term.length < 3) {
+      toast("Too short to block safely.", null, null, true);
+      return;
+    }
+    var hunt = card.getAttribute("data-hunt");
+    var listing = card.getAttribute("data-listing");
+    var was = card.getAttribute("data-status");
+    post("/settings/exclude.json", {hunt_id: hunt, term: term})
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { toast(res.error, null, null, true); return; }
+        var restore = leave(card, "blocked");
+        return post("/triage", {hunt_id: hunt, listing_id: listing,
+                                status: "dismissed"}).then(function () {
+          toast("Never showing “" + term + "” again.", "Undo", function () {
+            post("/settings/exclude.json", {hunt_id: hunt, term: term, remove: "1"});
+            post("/triage", {hunt_id: hunt, listing_id: listing,
+                             status: was || "free_find"}).then(restore);
+          });
+        });
+      })
+      .catch(function () {
+        toast("That did not save. Still connected?", null, null, true);
+      });
+  }
+
+  document.addEventListener("click", function (ev) {
+    var t = ev.target.closest && ev.target.closest(".blocktoggle, .chips button");
+    if (!t) return;
+    var card = t.closest("article.card");
+    if (t.classList.contains("blocktoggle")) {
+      ev.preventDefault();
+      var row = card.querySelector(".blockrow");
+      var open = row.hidden;
+      row.hidden = !open;
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      var chips = row.querySelector(".chips");
+      if (open && chips && !chips.childElementCount) {
+        suggest(card).forEach(function (w) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = w;
+          chips.appendChild(b);
+        });
+        if (!chips.childElementCount) chips.remove();
+      }
+      return;
+    }
+    ev.preventDefault();
+    block(card, t.textContent);
+  });
+})();
+</script>
 <script>
 // Registered after load so it never delays a first paint, and swallowed
 // entirely on failure: over plain http (a tailscale address, say) this throws,

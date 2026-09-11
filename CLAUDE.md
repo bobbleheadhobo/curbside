@@ -142,6 +142,11 @@ is gated by the hours, so a hand-run `dealbot once` always runs.
 raw source payload. Three separate parser bugs have been repaired from data
 already on disk, with no re-fetching. Price observations are append-only.
 
+**One rule fails closed, on purpose: `excluded_kw`.** A blocked listing is
+dropped before anything reads it. Because these are now words typed on a phone,
+matching is word-start with plurals (`bed` does not catch `bedroom`) and a term
+matching one of your wants is refused outright. Everything else here:
+
 **Fail open, never closed.** Every filter that cannot decide lets the listing
 through. An unrecognised city, an undated listing, a listing whose detail fetch
 failed — all pass, or get deferred. Failing closed silently drops the thing the

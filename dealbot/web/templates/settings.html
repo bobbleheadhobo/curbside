@@ -44,6 +44,14 @@
 {% if sweeps %}
 <div class="panel" style="margin-bottom:18px">
   <h2>Free stuff</h2>
+  {% if err %}
+  <p class="formerr" role="alert">
+    <svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
+    {%- if err == 'short' %}Too short to block safely. Use three letters or more.
+    {%- elif err.startswith('wanted:') %}You are hunting for
+      {{ err.split(':', 1)[1] }}. Blocking that would hide it.
+    {%- else %}That did not work.{% endif %}</p>
+  {% endif %}
   {% for s in sweeps %}
   <form method="post" action="/settings/interval">
     <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
@@ -60,6 +68,42 @@
     </div>
     <div class="formactions"><button>Save</button></div>
   </form>
+
+  {# Blocked words, with what each one has actually cost. Dismissing teaches by
+     example and cannot be counted; this can, which is the whole reason it is
+     on a page rather than in a prompt. #}
+  <div class="field">
+    <span class="lbl">Never show me</span>
+    {% if s.terms %}
+    <div class="terms">
+      {% for t in s.terms %}
+      <span class="term {{ 'locked' if not t.mine }}">{{ t.term }}
+        {%- if t.n %} <b class="num" title="listings dropped">{{ t.n }}</b>{% endif %}
+        {%- if t.mine %}
+        <form method="post" action="/settings/exclude">
+          <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
+          <input type="hidden" name="term" value="{{ t.term }}">
+          <input type="hidden" name="remove" value="1">
+          <button title="Stop blocking {{ t.term }}" aria-label="Stop blocking {{ t.term }}">
+            <svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </form>
+        {%- endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <form class="addterm" method="post" action="/settings/exclude">
+      <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
+      <input type="text" name="term" placeholder="mattress" autocapitalize="none"
+             autocomplete="off" spellcheck="false">
+      <button>Block</button>
+    </form>
+    <p class="hint">A blocked word drops the listing before it is judged or
+      shown, so it costs nothing. The number beside it is how many it has
+      dropped. Matching is by whole word, plurals included, so
+      <code>bed</code> will not catch <code>bedroom</code>. Words from
+      <code>config.yaml</code> are shown but removed there.</p>
+  </div>
   {% endfor %}
 </div>
 {% endif %}

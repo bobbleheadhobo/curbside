@@ -770,6 +770,50 @@ class Store:
     def set_hunt_interval(self, hunt_id: str, minutes: int) -> None:
         self.set_setting(f"hunt_interval:{hunt_id}", str(int(minutes)))
 
+    def hunt_excludes(self) -> dict[str, tuple[str, ...]]:
+        """Words blocked from the dashboard, per hunt. These ADD to whatever
+        `config.yaml` lists; the file's terms cannot be removed from the web,
+        because they are reviewed lines in a committed file and this is a
+        thumb on a phone."""
+        out: dict[str, tuple[str, ...]] = {}
+        for r in self.conn.execute(
+                "SELECT key, value FROM settings WHERE key LIKE 'hunt_exclude:%'"):
+            try:
+                terms = json.loads(r["value"])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(terms, list):
+                out[r["key"].split(":", 1)[1]] = tuple(
+                    str(t) for t in terms if str(t).strip())
+        return out
+
+    def set_hunt_excludes(self, hunt_id: str, terms: Sequence[str]) -> None:
+        # Deduplicated, order kept: the list is read by a person on the
+        # settings page, so it should look like what they added.
+        clean = list(dict.fromkeys(t.strip().lower() for t in terms if t.strip()))
+        self.set_setting(f"hunt_exclude:{hunt_id}", json.dumps(clean))
+
+    def add_hunt_exclude(self, hunt_id: str, term: str) -> None:
+        self.set_hunt_excludes(
+            hunt_id, list(self.hunt_excludes().get(hunt_id, ())) + [term])
+
+    def remove_hunt_exclude(self, hunt_id: str, term: str) -> None:
+        self.set_hunt_excludes(hunt_id, [
+            t for t in self.hunt_excludes().get(hunt_id, ())
+            if t != term.strip().lower()])
+
+    def exclude_counts(self, hunt_id: str) -> dict[str, int]:
+        """How many listings each term has actually blocked.
+
+        This is the whole point of putting the terms on a page. A blocked
+        listing is gone without being read, so a term you cannot count is a
+        term you cannot tell is too broad."""
+        return {r["filter_reason"].split(":", 1)[1]: r["n"] for r in
+                self.conn.execute(
+                    "SELECT filter_reason, COUNT(*) n FROM hunt_matches "
+                    "WHERE hunt_id=? AND filter_reason LIKE 'excluded_kw:%' "
+                    "GROUP BY filter_reason", (hunt_id,))}
+
 
     def hunt_enabled(self, hunt_id: str) -> bool:
         """A runtime override on top of config.yaml's `enabled`.

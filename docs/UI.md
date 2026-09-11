@@ -275,6 +275,35 @@ be unforgivable. `_want_form` re-renders with `values`, and there is a test.
 **The service worker must never cache HTML.** Photos and icons only. Half of
 what this shows is gone within the hour.
 
+**Triage is a progressive enhancement, and must stay one.** Every Save and
+Dismiss is a real `<form method=post action="/triage">`. A script intercepts
+the submit, posts it with `X-Requested-With: fetch`, gets a 204 instead of a
+303, shows which button you pressed on the card, folds the card away and
+offers an undo. With JavaScript off, every button still works -- it just
+reloads and drops you at the top of the list, which is what made going through
+twenty listings miserable.
+
+The script finds things by selector, so a rename in a template breaks the
+interaction *silently* (the buttons keep working, they just reload again).
+`tests/test_excludes.py::test_the_script_and_the_markup_still_agree` asserts
+the contract in both directions; keep it honest rather than deleting it.
+
+**Undo matters more than the animation.** Dismissing is not cosmetic -- the
+gate never spends on that listing again -- so a mis-tap on a phone was
+unrecoverable. The card carries `data-status` for exactly this: undo writes
+back the status the card actually had. `/triage` accepts `scored` only so that
+a card on `/skipped` can be put back.
+
+**Counts are decremented client-side after an action.** "12 waiting" over
+eleven cards reads as a bug. `[data-bincount]` in the page head and the `.pip`
+on the current tab are the two places.
+
+**"Never show" is only on `/free`.** A blocked word on a want hunt would block
+the thing you are hunting -- the guard in `/settings/exclude` refuses a term
+that matches any want's name or queries, but the affordance is absent there
+anyway. The chips are candidate words from the listing's own title, computed in
+the browser; typed entry covers the rest.
+
 **Queries are capped at `PAGE_LIMIT`** with a "showing N of M" line. Do not
 remove the cap — this table grows forever by design.
 

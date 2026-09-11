@@ -160,12 +160,20 @@ class Config:
     defaults: HuntDefaults = HuntDefaults()
     # Cadence set from the dashboard, keyed by hunt id. Overrides the file.
     interval_overrides: Mapping[str, int] = field(default_factory=dict)
+    # Words blocked from the dashboard, keyed by hunt id. These ADD to the
+    # file's `exclude`; a reviewed line in a committed file is not something a
+    # tap should be able to delete.
+    exclude_extra: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     schedule: ScheduleDefaults = ScheduleDefaults()
 
     @property
     def source(self) -> str:
         """Back-compat for single-source callers and tests."""
         return self.sources[0]
+
+    def _exclude(self, hunt_id: str, from_file: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(
+            from_file + tuple(self.exclude_extra.get(hunt_id, ()))))
 
     @property
     def hunts(self) -> tuple[Hunt, ...]:
@@ -189,7 +197,7 @@ class Config:
             hunts.append(Hunt(
                 id=hid, name=s.name, kind="sweep",
                 queries=s.queries, max_price_cents=s.max_price_cents,
-                exclude=s.exclude, wants=self.wants,
+                exclude=self._exclude(hid, s.exclude), wants=self.wants,
                 min_deal_score=(d.min_deal_score if s.min_deal_score is None
                                 else s.min_deal_score),
                 free_find_min_score=(d.free_find_min_score
@@ -210,7 +218,7 @@ class Config:
             hunts.append(Hunt(
                 id=hid, name=w.name, kind="want",
                 queries=w.queries, max_price_cents=w.max_price_cents,
-                exclude=spec.exclude, wants=(w,),
+                exclude=self._exclude(hid, spec.exclude), wants=(w,),
                 min_deal_score=(d.min_deal_score if spec.min_deal_score is None
                                 else spec.min_deal_score),
                 free_find_min_score=(d.free_find_min_score
@@ -235,7 +243,8 @@ def with_store(cfg: Config, store) -> Config:
     store.seed_wants(cfg.wants)
     return replace(cfg,
                    wants=tuple(s.want for s in store.wants()),
-                   interval_overrides=store.hunt_intervals())
+                   interval_overrides=store.hunt_intervals(),
+                   exclude_extra=store.hunt_excludes())
 
 
 def _cents(value: Any) -> int | None:

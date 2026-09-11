@@ -85,6 +85,18 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   it as an already-triaged state.
 - **Dismissing is not cosmetic.** Dismissed titles become negative examples
   in that hunt's next prompt. The button is part of how the bot learns.
+  Measured 2026-09-10 against 18 real dismissals: on the free sweep this is
+  weak but harmless; on want hunts the titles collide badly (31 listings titled
+  exactly `tv stand`), so a dismissal there can teach the hunt to suppress the
+  thing it is hunting. Treat the mechanism as unproven.
+- **Triage acts without reloading the page**, confirmed 2026-09-10 as the
+  daily pain point. The card shows which button was pressed, folds away, and a
+  toast offers **Undo**. The buttons stay real forms and still work with
+  JavaScript off.
+- **"Never show me" blocks a word, on the free sweep only.** Deterministic,
+  listed on `/settings` with a count of what it has dropped, and refused if the
+  word matches something you are hunting for. It is the auditable counterpart
+  to a dismissal.
 - **`match == "unknown"` is a first-class state**, not an error, and belongs
   beside confirmed matches rather than hidden.
 - **Paused hunts must be announced on every page.** A bot switched off and
