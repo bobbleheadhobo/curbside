@@ -15,14 +15,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .db import Store
 from .filters import gate, matches_any
 from .models import GateResult
 from dataclasses import asdict, replace
 
-from .models import Candidate, Hunt, Listing, Location, RunResult, Score
+from .models import (Candidate, Hunt, Listing, Location, RunResult, Score,
+                     UpsertResult)
 from .notify.base import Notifier
 from .scoring.base import Scorer, TriageResult
 from .scoring.claude_code import ScoringUnavailable
@@ -113,6 +114,38 @@ def _drop(store: Store, hunt: Hunt, gr: GateResult,
         store.record_rejections(hunt.id, dropped)
         log.info(note, len(dropped))
     return GateResult(candidates=keep, rejected=gr.rejected + dropped)
+
+
+def freshness(cand: Candidate, upserts: Mapping[str, UpsertResult]) -> datetime:
+    """How new a listing is, by the best date we actually hold.
+
+    The batch cap orders by this, and it used to read `posted_at` alone with
+    `datetime.min` for anything undated. **Craigslist's search feed carries no
+    posting date** -- it only arrives from the item endpoint, after enrichment,
+    which happens after the cap. So every Craigslist candidate tied on
+    `datetime.min`, the sort became a no-op, and a stable sort handed the slots
+    to whatever order the feed returned. On the free sweep -- the one hunt that
+    overflows its cap, by hundreds -- "newest first" was picking nothing of the
+    kind. 83 of the 84 listings stranded at the time had no date at all.
+
+    `first_seen` is the fallback because the store always has it. It is not on
+    the `Listing`: that comes off a search feed, not out of the database, so it
+    rides back on the `UpsertResult` from stage 3.
+
+    Fails OPEN, to the epoch. An unparseable date sorts last rather than
+    raising, because one bad row must not take a whole run's cap with it.
+    """
+    posted = cand.listing.posted_at
+    if posted is not None:
+        return posted if posted.tzinfo else posted.replace(tzinfo=timezone.utc)
+    up = upserts.get(cand.listing.id)
+    if up is not None and up.first_seen:
+        try:
+            seen = datetime.fromisoformat(up.first_seen)
+        except (TypeError, ValueError):
+            return datetime.min.replace(tzinfo=timezone.utc)
+        return seen if seen.tzinfo else seen.replace(tzinfo=timezone.utc)
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
@@ -237,12 +270,13 @@ def run_hunt(
     # -- they keep status `new`, so the backlog drains over the next few runs
     # instead of arriving as one bill. Newest first because that is the half
     # most likely to still be available.
+    #
+    # See `freshness` for why this is not just `posted_at`: Craigslist has no
+    # posting date at this stage, so ordering on that alone silently handed the
+    # slots to feed order on the one hunt that actually overflows.
     if len(gr.candidates) > hunt.max_results:
-        ordered = sorted(
-            gr.candidates,
-            key=lambda c: c.listing.posted_at or datetime.min.replace(
-                tzinfo=timezone.utc),
-            reverse=True)
+        ordered = sorted(gr.candidates,
+                         key=lambda c: freshness(c, upserts), reverse=True)
         result.n_deferred = len(ordered) - hunt.max_results
         gr = GateResult(candidates=ordered[:hunt.max_results],
                         rejected=gr.rejected)

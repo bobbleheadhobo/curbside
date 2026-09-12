@@ -1123,3 +1123,82 @@ def test_a_listing_with_no_photograph_is_not_judged(rig):
     assert reasons["fixture:bare2"] == "no_photo"
     assert reasons.get("fixture:bare3") is None
     assert r.n_candidates == 1
+
+
+# --- the batch cap has to order by a date it actually has --------------------
+
+def _cand(lid, posted=None):
+    from dealbot.models import Candidate
+    from conftest import make_listing
+    return Candidate(make_listing(lid=lid, posted_at=posted), "new")
+
+
+def test_the_cap_orders_craigslist_by_when_we_first_saw_it(tmp_path):
+    """REGRESSION: the cap sorted on `posted_at` alone, with `datetime.min` for
+    anything undated.
+
+    Craigslist's search feed carries no posting date -- it only arrives from the
+    item endpoint, which runs AFTER the cap. So every Craigslist candidate tied
+    on `datetime.min`, the sort collapsed to a no-op, and a stable sort handed
+    the slots to whatever order the feed returned. That is the one hunt that
+    overflows its cap, by hundreds a day: 83 of the 84 listings stranded at the
+    time had no date at all.
+    """
+    from dealbot.models import UpsertResult
+    from dealbot.pipeline import freshness
+
+    upserts = {
+        "cl:old": UpsertResult("cl:old", False, False, None, False,
+                               first_seen="2026-09-01T10:00:00+00:00"),
+        "cl:new": UpsertResult("cl:new", True, False, None, False,
+                               first_seen="2026-09-12T10:00:00+00:00"),
+    }
+    cands = [_cand("cl:old"), _cand("cl:new")]        # feed order: old first
+
+    # The key that shipped. Both listings are undated, so both collapse to the
+    # same value, the stable sort keeps feed order, and the cap takes whatever
+    # Craigslist put first. This line is the bug, kept to show what was wrong.
+    from datetime import datetime, timezone
+    was = sorted(cands, reverse=True,
+                 key=lambda c: c.listing.posted_at
+                 or datetime.min.replace(tzinfo=timezone.utc))
+    assert [c.listing.id for c in was] == ["cl:old", "cl:new"], (
+        "the old key was supposed to be a no-op here")
+
+    ordered = sorted(cands, key=lambda c: freshness(c, upserts), reverse=True)
+    assert [c.listing.id for c in ordered] == ["cl:new", "cl:old"], (
+        "undated listings are being left in feed order")
+
+
+def test_a_real_posting_date_still_wins(tmp_path):
+    """Facebook does supply one, and it is better evidence than when we
+    happened to look."""
+    from datetime import datetime, timezone
+    from dealbot.models import UpsertResult
+    from dealbot.pipeline import freshness
+
+    # seen long ago, but posted today
+    up = {"fb:1": UpsertResult("fb:1", False, False, None, False,
+                               first_seen="2026-09-01T10:00:00+00:00")}
+    posted = datetime(2026, 9, 12, tzinfo=timezone.utc)
+    assert freshness(_cand("fb:1", posted=posted), up) == posted
+
+
+def test_a_date_we_cannot_read_sorts_last_instead_of_killing_the_run(tmp_path):
+    """Fails OPEN. One hand-edited row must not take a whole run's cap with it,
+    and a naive timestamp must not raise on comparison with an aware one."""
+    from datetime import datetime, timezone
+    from dealbot.models import UpsertResult
+    from dealbot.pipeline import freshness
+
+    bad = {"x:1": UpsertResult("x:1", False, False, None, False,
+                               first_seen="not a date")}
+    assert freshness(_cand("x:1"), bad) == datetime.min.replace(tzinfo=timezone.utc)
+
+    naive = {"x:2": UpsertResult("x:2", False, False, None, False,
+                                 first_seen="2026-09-12T10:00:00")}
+    got = freshness(_cand("x:2"), naive)
+    assert got.tzinfo is not None, "a naive date would raise when compared"
+
+    # and a listing the upsert map has never heard of
+    assert freshness(_cand("x:3"), {}) == datetime.min.replace(tzinfo=timezone.utc)

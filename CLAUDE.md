@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 361 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 364 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -294,7 +294,11 @@ query that filters on a new column means adding its index too.
 * `Sec-Fetch-*` headers are mandatory on Facebook or you get a bodyless 400.
 * Craigslist's search feed omits descriptions *and* the posting date; both only
   arrive from the item endpoint, which wants the **uuid** (field 13), not the
-  numeric posting id.
+  numeric posting id. **Anything sorting on `posted_at` before enrichment is
+  therefore sorting on nothing** for that source: the batch cap did exactly
+  that, every candidate tied on the `datetime.min` fallback, and a stable sort
+  quietly handed the slots to feed order. Use `pipeline.freshness`, which falls
+  back to `first_seen` off the `UpsertResult`.
 * `claude -p` needs `--verbose` with `stream-json` or there is no stream at all,
   and `< /dev/null` or it stalls ~3s per launch.
 * Plan quota is readable *only* from `rate_limit_event` records in the stream.

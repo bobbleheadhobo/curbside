@@ -201,6 +201,11 @@ class UpsertResult:
     price_changed: bool
     previous_price_cents: int | None
     is_relist: bool
+    # When we FIRST saw it, ISO-8601. The store knows this and the parsed
+    # `Listing` cannot: it comes off a search feed, not out of the database.
+    # The batch cap needs it -- Craigslist's feed carries no posting date, so
+    # this is the only date it has to order by.
+    first_seen: str | None = None
 
 
 @dataclass(frozen=True)

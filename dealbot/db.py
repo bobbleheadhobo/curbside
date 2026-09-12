@@ -326,8 +326,8 @@ class Store:
     def upsert_listing(self, listing: Listing) -> UpsertResult:
         now = _now()
         row = self.conn.execute(
-            "SELECT price_cents FROM listings WHERE id=?", (listing.id,)
-        ).fetchone()
+            "SELECT price_cents, first_seen FROM listings WHERE id=?",
+            (listing.id,)).fetchone()
 
         if row is None:
             # A relist is a *new* id whose fingerprint we have seen before. That
@@ -352,7 +352,8 @@ class Store:
                  listing.fingerprint, listing.dup_key, now, now,
                  json.dumps(listing.raw)),
             )
-            return UpsertResult(listing.id, True, False, None, is_relist)
+            return UpsertResult(listing.id, True, False, None, is_relist,
+                                first_seen=now)
 
         previous = row["price_cents"]
         changed = previous != listing.price_cents
@@ -401,7 +402,8 @@ class Store:
              json.dumps(list(listing.images)), json.dumps(list(listing.images)),
              now, json.dumps(listing.raw), listing.id),
         )
-        return UpsertResult(listing.id, False, changed, previous, False)
+        return UpsertResult(listing.id, False, changed, previous, False,
+                            first_seen=row["first_seen"])
 
     def scored_duplicate(self, hunt_id: str, dup_key: str,
                          exclude_id: str) -> str | None:
