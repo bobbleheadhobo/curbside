@@ -661,14 +661,8 @@ def test_the_bin_queries_are_built_from_a_clause_not_from_each_other():
     assert ONE_BIN not in NEAR_MISS_SQL
 
 
-def test_the_search_term_pills_behave():
-    """The pill editor is the only real logic in app.js, and `node --check`
-    only proves it parses.
-
-    It rewrites a hidden <textarea> that is still the field that posts, so a
-    bug here silently sends the wrong search terms -- or, worse, lets Enter
-    submit a half-filled want. `tests/js/chips_harness.mjs` drives it against a
-    minimal fake DOM and asserts each behaviour; this runs it."""
+def _run_js_harness(name):
+    """Run one of the browser-code harnesses under node."""
     import shutil
     import subprocess
     from pathlib import Path
@@ -677,9 +671,79 @@ def test_the_search_term_pills_behave():
     if node is None:
         pytest.skip("no node to run the browser code with")
     r = subprocess.run(
-        [node, str(root / "tests/js/chips_harness.mjs"),
+        [node, str(root / "tests/js" / name),
          str(root / "dealbot/web/static/app.js")],
         capture_output=True, text=True, cwd=root)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "FAIL" not in r.stdout, r.stdout
-    assert r.stdout.count("ok ") >= 10, r.stdout
+    return r.stdout
+
+
+def test_the_swipe_gestures_behave():
+    """Swipe right to save, left to dismiss.
+
+    The parts worth testing are the ones that go wrong quietly: it must not
+    steal a vertical scroll (the list becomes unusable), must not fire on a
+    short drag (you dismiss things by accident and only notice later), must
+    not act in a direction whose button is absent -- `/saved` has no Save --
+    and must swallow the click a touch ends in, or letting go over the title
+    opens the marketplace instead."""
+    assert _run_js_harness("swipe_harness.mjs").count("ok ") >= 14
+
+
+def test_the_search_term_pills_behave():
+    """The pill editor is the only real logic in app.js, and `node --check`
+    only proves it parses.
+
+    It rewrites a hidden <textarea> that is still the field that posts, so a
+    bug here silently sends the wrong search terms -- or, worse, lets Enter
+    submit a half-filled want. `tests/js/chips_harness.mjs` drives it against a
+    minimal fake DOM and asserts each behaviour; this runs it."""
+    assert _run_js_harness("chips_harness.mjs").count("ok ") >= 10
+
+
+def test_a_card_offers_two_destinations_and_does_not_nest_links(tmp_path):
+    """The card opens the DETAIL page; the title opens the marketplace.
+
+    Two destinations on one card cannot be one wrapping anchor, because links
+    do not nest -- a browser silently unnests them and you get neither target
+    reliably. So the whole-card target is an overlay stretched under the card
+    and the title sits above it on z-index. If that ever collapses back into a
+    single <a class="card-main" href=...>, this fails."""
+    import re
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    l = Listing(id="x:1", source="x", source_id="1", title="A Wide TV Stand",
+                description=None, price_cents=0, currency="USD",
+                url="https://example.com/item/1")
+    s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+    s.set_status(hunt.id, "x:1", "wanted")
+    s.save_score(Score(listing_id="x:1", hunt_id=hunt.id, model="m",
+                       scored_at=datetime.now(timezone.utc), match="yes",
+                       deal_score=9.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=True, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r"),
+                 priced_at_cents=0)
+
+    card = re.search(r'<article class="card".*?</article>', client.get("/").text, re.S)
+    assert card, "no card rendered"
+    c = card.group(0)
+
+    assert re.search(r'<a class="card-open" href="/listing/x:1"', c), \
+        "the whole-card tap no longer opens the detail page"
+    title = re.search(r'<h2><a class="out" href="([^"]+)" target="_blank"', c)
+    assert title and title.group(1) == "https://example.com/item/1", \
+        "the title no longer opens the marketplace"
+
+    depth = 0
+    for tag in re.findall(r"<a\b|</a>", c):
+        depth += 1 if tag == "<a" else -1
+        assert depth <= 1, "anchors are nested; a browser will unnest them"
+
+    # Gestures are an ADDITION: both buttons must survive, because a swipe is
+    # invisible, undiscoverable and unavailable without a touchscreen.
+    assert re.findall(r'name="status" value="(\w+)"', c) == ["saved", "dismissed"]

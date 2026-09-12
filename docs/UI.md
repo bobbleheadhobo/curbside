@@ -409,9 +409,43 @@ kind of thing.
 what this shows is gone within the hour.
 
 **The card's action row holds two labelled buttons and nothing else.** Save
-and Dismiss, each `flex:1`. Blocking is an icon-only button after them, and
-the link out to the marketplace was removed entirely — it lives on the listing
-page, which is one tap away and where you look before driving anywhere.
+and Dismiss, each `flex:1`. Blocking is an icon-only button after them.
+
+**The card has two destinations: the card opens the detail page, the title
+opens the marketplace.** The link out used to live only on the listing page, on
+the reasoning that you look there before driving anywhere — but the title is
+the thing you reach for when you want to see the actual advert, and making that
+a second tap was wrong. Links do not nest, so this cannot be one wrapping
+anchor: `.card-open` is an overlay stretched across `.card-main`, and the title
+sits above it on `z-index` with the `#i-open` icon after it, which is the only
+thing saying that one tap leaves the app. It opens in a new tab — on a phone
+that is usually the Marketplace or Craigslist app, and navigating away would
+lose your place in the bin. `tests/test_web.py` fails if the anchors ever nest.
+
+**Swipe right to save, left to dismiss.** Same directions the buttons sit in,
+same colours the verdict badge uses, so the gesture is the buttons rather than
+a second vocabulary. It is an **addition**: a gesture is invisible,
+undiscoverable and unavailable without a touchscreen, so nothing may ever be
+reachable only that way — both buttons stay exactly where they were, and the
+same undo toast covers both.
+
+The parts that matter are the ones that fail quietly, and they are tested in
+`tests/js/swipe_harness.mjs`:
+
+* `touch-action: pan-y` on the card gives the browser the vertical axis and
+  keeps the horizontal, so a swipe never fights the list.
+* A drag whose vertical travel dominates is a **scroll** and is abandoned, and
+  it cannot become a swipe later in the same drag. Test this with a *diagonal*
+  drag — a straight vertical one proves nothing, because its horizontal travel
+  never reaches the slop threshold and it would be ignored even with the axis
+  check deleted. That mistake was in the first version of the test.
+* 72px of travel before it commits, so a short drag springs back. Dismissing is
+  not cosmetic — the gate never spends on that listing again — so an accidental
+  one is expensive.
+* A swipe towards an action the card does not offer barely moves and does
+  nothing: `/saved` has only Dismiss, and the hunt views have neither.
+* The click that a touch ends in is swallowed once, or letting go over the
+  title opens the marketplace.
 
 Three labelled buttons do not fit a phone: `body{overflow-wrap:anywhere}` is
 there for stranger-written titles and it will happily break *Dismiss* one

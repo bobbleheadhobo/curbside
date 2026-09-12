@@ -299,12 +299,30 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
 /* --- the grouped list ----------------------------------------------------- */
 .stack{display:flex;flex-direction:column;gap:10px}
 .card{
+  /* Positioned so the swipe hint can sit behind the card's own surface. */
+  position:relative;
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   box-shadow:var(--shadow);overflow:hidden
 }
 .card-main{
+  position:relative;
   display:flex;gap:13px;padding:12px;align-items:flex-start;
   transition:background .15s;-webkit-tap-highlight-color:transparent
+}
+/* The whole-card tap target, stretched under everything. The title then sits
+   ABOVE it and goes somewhere else -- two destinations, one card, and no
+   nested anchors. */
+.card-open{position:absolute;inset:0;z-index:1}
+.info h2 a.out{
+  position:relative;z-index:2;display:inline;
+  text-decoration-color:transparent;text-underline-offset:2px
+}
+.info h2 a.out svg.i{
+  font-size:12px;margin-left:5px;color:var(--faint);vertical-align:baseline
+}
+@media (hover:hover){
+  .info h2 a.out:hover{text-decoration:underline;text-decoration-color:currentColor}
+  .info h2 a.out:hover svg.i{color:var(--accent)}
 }
 .card-main:active{background:var(--line-soft)}
 @media (hover:hover){.card-main:hover{background:var(--line-soft)}}
@@ -616,6 +634,29 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 /* --- acting on a card without reloading the page -------------------------- */
 /* The buttons stay real forms; a script intercepts them and the server answers
    204. With JavaScript off every one of these still works, it just reloads. */
+/* --- swipe to save or dismiss --------------------------------------------
+   Right saves, left dismisses, in the colours the verdict badge already uses.
+   `pan-y` is what makes it work: the browser keeps vertical scrolling and
+   hands us the horizontal axis, so a swipe never fights the list.
+   The buttons stay -- a gesture is invisible and touch-only, so nothing may
+   be reachable only this way. */
+.card{touch-action:pan-y}
+.card.swiping > .card-main,
+.card.swiping > .why,
+.card.swiping > .actions{
+  position:relative;z-index:1;background:var(--card);
+  transform:translateX(var(--sx,0px))
+}
+.card.releasing > .card-main,
+.card.releasing > .why,
+.card.releasing > .actions{transition:transform .2s ease}
+.swipehint{
+  position:absolute;inset:0;z-index:0;display:flex;align-items:center;gap:8px;
+  padding:0 22px;font-size:14px;font-weight:620;letter-spacing:-.01em
+}
+.swipehint.saved{justify-content:flex-start;color:var(--good);background:var(--good-soft)}
+.swipehint.dismissed{justify-content:flex-end;color:var(--dim);background:var(--line-soft)}
+
 .card.going{position:relative;pointer-events:none}
 .card.going .card-main,.card.going .why,.card.going .actions{
   transition:opacity .18s ease;opacity:.35}

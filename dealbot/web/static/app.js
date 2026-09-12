@@ -299,6 +299,134 @@
     ev.preventDefault();
     block(card, t.textContent);
   });
+
+  /* --- swipe a card to save or dismiss ---------------------------------- */
+  /*
+   * Right saves, left dismisses -- the same directions as the buttons sit in,
+   * and the same colours the verdict badge uses, so the gesture is the buttons
+   * rather than a second vocabulary to learn.
+   *
+   * It is an ADDITION. Both buttons stay exactly where they were: a gesture is
+   * invisible, undiscoverable and unavailable to anyone not using a touchscreen,
+   * so nothing may be reachable only this way.
+   *
+   * `/saved` offers only Dismiss, and the hunt views offer neither, so the
+   * available directions are read from the buttons actually on the card. A
+   * swipe towards an action that is not there springs back.
+   */
+  var THRESHOLD = 72;              // px of travel before it commits
+  var SLOP = 12;                   // px before we decide the axis at all
+
+  function triageForms(card) {
+    var out = {};
+    var inputs = card.querySelectorAll('.actions form [name=status]');
+    Array.prototype.forEach.call(inputs, function (el) {
+      if (el.value === "saved" || el.value === "dismissed") {
+        out[el.value] = el.parentNode;
+      }
+    });
+    return out;
+  }
+
+  var sw = null;
+
+  function hint(card, kind) {
+    var el = card.querySelector(".swipehint");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "swipehint";
+      card.insertBefore(el, card.firstChild);
+    }
+    el.className = "swipehint " + kind;
+    el.innerHTML = '<svg class="i" aria-hidden="true"><use href="#' +
+      ICON[kind] + '"/></svg>' + LABEL[kind];
+    return el;
+  }
+
+  function slide(card, x) {
+    card.style.setProperty("--sx", x + "px");
+  }
+
+  function endSwipe(commit) {
+    if (!sw) return;
+    var card = sw.card, kind = sw.kind, form = kind ? sw.forms[kind] : null;
+    var moved = sw.moved;
+    sw = null;
+
+    if (moved) {
+      // A touch ends in a click. Without this, letting go over the title opens
+      // the marketplace, which is not what the swipe meant.
+      card.addEventListener("click", function swallow(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        card.removeEventListener("click", swallow, true);
+      }, true);
+    }
+
+    // Slide home under a transition, THEN drop the classes -- the transform
+    // only applies while `swiping` is on, so clearing it first would snap.
+    card.classList.add("releasing");
+    slide(card, 0);
+    setTimeout(function () {
+      card.classList.remove("swiping", "releasing");
+      card.style.removeProperty("--sx");
+      var el = card.querySelector(".swipehint");
+      if (el) el.remove();
+    }, reduced ? 0 : 200);
+
+    if (commit && form) act(form, card, kind);
+  }
+
+  document.addEventListener("touchstart", function (ev) {
+    if (sw || ev.touches.length !== 1) return;
+    var t = ev.target;
+    var card = t.closest && t.closest("article.card");
+    if (!card || card.classList.contains("going")) return;
+    var forms = triageForms(card);
+    if (!forms.saved && !forms.dismissed) return;      // nothing to swipe to
+    sw = {card: card, forms: forms, x: ev.touches[0].clientX,
+          y: ev.touches[0].clientY, axis: null, moved: false, kind: null};
+  }, {passive: true});
+
+  document.addEventListener("touchmove", function (ev) {
+    if (!sw) return;
+    var dx = ev.touches[0].clientX - sw.x;
+    var dy = ev.touches[0].clientY - sw.y;
+
+    if (!sw.axis) {
+      if (Math.abs(dy) > SLOP && Math.abs(dy) > Math.abs(dx)) {
+        sw = null;                       // a scroll, not a swipe: let it go
+        return;
+      }
+      if (Math.abs(dx) < SLOP) return;
+      sw.axis = "x";
+      sw.card.classList.add("swiping");
+    }
+
+    var kind = dx > 0 ? "saved" : "dismissed";
+    if (!sw.forms[kind]) {
+      // Nothing in that direction. Let it move a little so it feels alive,
+      // but never far enough to look like it will commit.
+      slide(sw.card, Math.max(-24, Math.min(24, dx / 3)));
+      sw.kind = null;
+      if (ev.cancelable) ev.preventDefault();
+      return;
+    }
+    sw.kind = kind;
+    sw.moved = true;
+    hint(sw.card, kind).style.opacity =
+      Math.min(1, Math.abs(dx) / THRESHOLD).toFixed(2);
+    slide(sw.card, dx);
+    if (ev.cancelable) ev.preventDefault();
+  }, {passive: false});
+
+  document.addEventListener("touchend", function () {
+    if (!sw) return;
+    var dx = parseFloat(sw.card.style.getPropertyValue("--sx")) || 0;
+    endSwipe(!!sw.kind && Math.abs(dx) >= THRESHOLD);
+  });
+
+  document.addEventListener("touchcancel", function () { endSwipe(false); });
 })();
 // Registered after load so it never delays a first paint, and swallowed
 // entirely on failure: over plain http (a tailscale address, say) this throws,
