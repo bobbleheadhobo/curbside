@@ -311,6 +311,33 @@ It fails open, and three things make that true rather than aspirational:
   (hunt, listing). Seeing a sold listing again does not resurrect it, in either the
 upsert or the miss counter: Facebook keeps showing sold items in search.
 
+### The one scam the rubric names outright
+
+Most bad listings cost a wasted trip. The **advance-fee** scam costs money: a
+valuable thing is offered free or far under its worth, delivery is offered for a
+fee, you pay the fee and nothing comes. It was found in the live data doing
+exactly what it is designed to do — a free washer and dryer, "like new",
+"delivery all depends on you", scored **9.0 with no red flags** and sat in the
+free-finds bin. The image pass then *raised* its confidence, because the
+photographs were real, as they usually are.
+
+The rubric now names the pattern, and keys on the **combination** rather than on
+delivery: valuable, free or far too cheap, delivery offered, usually "brand new"
+or "like new" plus an invitation to message. Delivery for a fee on a **priced**
+item is completely ordinary — six listings in the collected data do it, a $250
+console with $250 delivery among them — and flagging that would bury legitimate
+listings. It also says plainly that photographs cannot establish legitimacy,
+only what the thing would be worth if real.
+
+Re-scored against the same listings: the washer and dryer went 9.0 → **1.0**,
+`worth_grabbing` false, with the pattern named in `red_flags`; the $250 console
+stayed at 7.0 with no flags; and free flagstone whose seller wants their petrol
+money covered came back "ordinary for a free heavy item, not a scam pattern".
+
+Because `load_rubric` falls back to `base.RUBRIC` when the file is missing — and
+only logs it, at info — the guidance lives in both and `tests/test_docs.py`
+fails if either loses it.
+
 ## 6. Guards
 
 | guard | behaviour |

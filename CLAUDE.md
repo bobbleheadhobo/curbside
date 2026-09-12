@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 355 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 356 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -345,6 +345,17 @@ and gives up when our own budget is spent — and Craigslist could not express i
 ## Before you change scoring behaviour
 
 Most tuning is `prompts/rubric.md`, which is prose and needs no code change.
-Check there first. If you do change the prompt shape, keep the stable-first
+Check there first. **It has a twin**: `base.RUBRIC` is the fallback when the
+file is missing, and `load_rubric` only *logs* that substitution, at info — so
+anything safety-relevant belongs in both, and `tests/test_docs.py` checks the
+one that is (the advance-fee scam section).
+
+**Judge a listing by the combination, not by a keyword.** The scam guidance is
+the worked example: "offers delivery for a fee" reads like a clean signal and is
+not one — six legitimate priced listings in the collected data say it, including
+a $250 console with $250 delivery. What is diagnostic is valuable + free or far
+too cheap + delivery offered + usually "like new". A keyword rule here would
+have buried real listings and still missed the case that started it, whose
+description never says "fee" at all. If you do change the prompt shape, keep the stable-first
 ordering, and remember the skipped view (`/skipped`, renamed from `/near`)
 exists so the threshold can be judged rather than guessed at.

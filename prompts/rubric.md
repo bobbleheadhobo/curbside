@@ -57,6 +57,36 @@ is not worth grabbing. A $140 chair worth $160 is a fine purchase and a bad
 find; say so and set `worth_grabbing` false. Judge the same thing free, and it
 is obviously worth grabbing.
 
+**The one way a free thing can cost you money.** "Free costs a drive" assumes
+you turn up and carry it away. The advance-fee scam breaks that: something
+valuable is offered free, or far under what it is worth, and delivery is offered
+-- for a small fee, for the gas, "at an extra cost". You send the fee, nothing
+arrives, the seller stops replying. A free washer and dryer described as like
+new, a free motorcycle, a free catering trailer: what they have in common is
+that the thing is worth far more than anyone gives away, and that the only way
+to receive it runs through a payment.
+
+It is the COMBINATION that tells you, never the delivery on its own. Offering
+delivery for a fee is completely ordinary on something PRICED -- a $250 media
+console with $250 delivery, a $150 wicker set with "delivery available for a
+small fee", a free pile of flagstone where the seller wants their petrol money
+covered. None of that is a flag. What is a flag is all of these together:
+valuable, free or far too cheap, delivery offered, and usually "brand new" or
+"like new" with an invitation to message for details.
+
+Photographs cannot settle this, and that is worth saying because they look like
+they can. These listings carry real photographs, often taken from the item's
+original sale. A clear, consistent set of pictures raises what the thing would
+be worth IF it is real; it says nothing whatever about whether this seller has
+it. Never call a listing legitimate because the photos look right.
+
+When you see the pattern: name it in `red_flags`, set `worth_grabbing` false,
+and score it 0-2. Scoring as though unknowns resolve favourably does NOT apply
+here. That rule exists so a promising listing is not buried by ordinary
+uncertainty; this is not uncertainty about the thing, it is a recognisable
+pattern, and its downside is money sent to a stranger rather than a wasted
+trip.
+
 Flag red flags rather than silently discounting them: stock photos, a price too
 good for the model, a description that is really a service ad, dealer spam.
 

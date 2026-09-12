@@ -186,3 +186,32 @@ def test_every_tuned_number_lands_somewhere_real():
         assert target is not None, f"{key} lands on Config.{dest}, which is absent"
         fields = {f.name for f in dc.fields(target)}
         assert key in fields, f"Config.{dest} has no field {key!r}"
+
+
+def test_the_scam_guidance_is_in_both_rubrics():
+    """`prompts/rubric.md` is the rubric; `base.RUBRIC` is the fallback used
+    when that file is missing or empty -- and `load_rubric` only LOGS the
+    fallback, at info. So guidance that exists in one and not the other is
+    invisible until it costs something.
+
+    This one is checked because of what it guards. A free washer and dryer,
+    "like new", "delivery all depends on you", scored 9.0 with no red flags and
+    landed in the free-finds bin; the image pass then raised confidence,
+    because the photographs were real. The downside there is not a wasted trip,
+    it is money sent to a stranger.
+
+    Both must also keep the exception, or the rule eats the ordinary case:
+    delivery for a fee on a PRICED item is completely normal, and six listings
+    in the collected data do exactly that."""
+    from dealbot.scoring.base import RUBRIC, load_rubric
+
+    for name, text in (("prompts/rubric.md", load_rubric(ROOT / "prompts/rubric.md")),
+                       ("base.RUBRIC", RUBRIC)):
+        low = text.lower()
+        assert "advance-fee" in low, f"{name} lost the scam pattern"
+        assert "worth_grabbing` false" in text, f"{name} lost what to DO about it"
+        assert "priced" in low and "ordinary" in low, (
+            f"{name} lost the exception: delivery for a fee on a priced item "
+            "is normal, and flagging it would bury legitimate listings")
+        assert "photograph" in low, (
+            f"{name} lost the note that photos cannot establish legitimacy")
