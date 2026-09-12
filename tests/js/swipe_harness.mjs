@@ -101,7 +101,10 @@ global.document = {
   createTextNode: t => ({ textContent: t }),
   body: new El("body"),
 };
-global.window = { matchMedia: () => ({ matches: true }) };  // reduced motion
+// NOT reduced motion: the animated path is the one with timing to get wrong.
+// Under prefers-reduced-motion every cleanup collapses to 0ms, which is right
+// but also skips straight past the states worth asserting on.
+global.window = { matchMedia: () => ({ matches: false }) };
 global.addEventListener = () => {};
 global.fetch = (url, opts) => {
   posted.push({ url, body: opts && opts.body });
@@ -115,7 +118,19 @@ global.DOMParser = class { parseFromString() { return { querySelector: () => nul
 // Short timers (the fold-away animation, the toast's own removal) run at
 // once; long ones -- the 7s auto-dismiss -- stay pending, or the toast would
 // close itself before a test could swipe it.
-global.setTimeout = (fn, ms) => { if ((ms || 0) < 1000) fn(); return 0; };
+// Short timers (the fold-away, the toast's own removal) run at once. Longer
+// ones queue: the 7s auto-dismiss must not close a toast before a test can
+// swipe it, and the 700ms click-swallow expiry has to be triggerable on
+// purpose -- that expiry IS the fix for a listener that used to eat the next
+// real tap, so a harness that fired it eagerly would hide both the bug and
+// the fix.
+const pending = [];
+global.setTimeout = (fn, ms) => {
+  if ((ms || 0) < 500) { fn(); return 0; }
+  pending.push(fn);
+  return pending.length;
+};
+const flushTimers = () => pending.splice(0).forEach(f => f());
 global.clearTimeout = () => {};
 global.requestAnimationFrame = (fn) => { fn(); return 0; };
 
@@ -280,6 +295,52 @@ let undone = false;
 toastEl.fire("click", { preventDefault() { undone = true; },
                         stopPropagation() {} });
 eq("the click after a toast swipe is swallowed", undone, true);
+
+// --- regressions found auditing the gestures --------------------------------
+
+// A drag towards an action the card does not have is still a DRAG. It used not
+// to be recorded as movement, so the click was not swallowed and letting go
+// over the title opened the marketplace.
+({ card } = makeCard(["dismissed"]));                 // /saved: no Save
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(320, 205));                   // right, into the void
+fire("touchend", {});
+let opened = false;
+card.fire("click", { preventDefault() { opened = true; }, stopPropagation() {} });
+eq("a dead-direction drag still swallows its click", opened, true);
+
+// The swallow must EXPIRE. A drag usually suppresses the click by itself, so
+// the listener sat waiting and ate the next real tap on that card instead.
+({ card } = makeCard(["saved", "dismissed"]));
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(230, 202));                   // short: springs back
+fire("touchend", {});
+flushTimers();                                        // 700ms passes
+opened = false;
+card.fire("click", { preventDefault() { opened = true; }, stopPropagation() {} });
+eq("the swallow expires, so a later tap still works", opened, false);
+
+// Committing flings the card out rather than yanking it home and folding from
+// the middle -- and leaves NO inline offset, which is what would strand a card
+// off-screen when undo puts it back.
+let stack;
+({ card, stack } = makeCard(["saved", "dismissed"]));
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(300, 205));
+fire("touchend", {});
+eq("a committed swipe flings", card.classList.contains("flinging"), true);
+eq("... with no inline offset left behind", sx(card), "0px");
+
+// ... so undo brings it back on-screen. The fling offset hangs off the status
+// class, which `restore()` removes; an inline one would survive and the card
+// would return invisible, somewhere off to the right.
+await tick();
+lastToast().children[1].fire("click");                // Undo
+await tick();
+eq("undo puts the card back", stack.children.indexOf(card) >= 0, true);
+eq("... and the fling offset goes with the status class",
+   card.classList.contains("saved"), false);
+eq("... leaving it where it belongs", sx(card), "0px");
 
 console.log(out.join("\n"));
 if (out.some(l => l.startsWith("FAIL"))) process.exit(1);

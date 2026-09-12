@@ -362,6 +362,33 @@ def test_the_suggest_button_drafts_terms_into_the_form(tmp_path):
                              ("at least 70 inches wide",))]
 
 
+def test_suggesting_adds_to_typed_terms_rather_than_replacing_them(tmp_path):
+    """A term typed into the box and not yet committed to a pill would have
+    been thrown away. This form's rule is that a round trip loses nothing."""
+    client, _, _ = _app_with(tmp_path, _FakeScorer(("media console", "tv stand")))
+    r = client.post("/wants/save",
+                    data={"name": "bookcase", "description": "a wide bookcase",
+                          "max_price": "250", "queries": "tv stand\ncredenza",
+                          "action": "suggest"})
+    import re
+    box = re.search(r'<textarea id="f-queries"[^>]*>(.*?)</textarea>', r.text, re.S)
+    # what was there, kept and first; what was drafted, appended; no duplicate
+    assert box.group(1).split("\n") == ["tv stand", "credenza", "media console"]
+
+
+def test_suggesting_keeps_the_cadence_you_just_chose(tmp_path):
+    """REGRESSION: the dropdown was re-read from the stored hunt, so pressing
+    Suggest silently reset a cadence chosen seconds earlier."""
+    import re
+    client, _, _ = _app_with(tmp_path, _FakeScorer())
+    r = client.post("/wants/save",
+                    data={"name": "bookcase", "description": "a wide bookcase",
+                          "max_price": "250", "queries": "", "interval": "15",
+                          "action": "suggest"})
+    picked = re.search(r'<option value="(\d+)" selected', r.text)
+    assert picked and picked.group(1) == "15"
+
+
 def test_suggesting_keeps_everything_else_that_was_typed(tmp_path):
     """It is a round trip through the form, so anything already filled in has
     to survive it -- losing a paragraph of prose to a button would be worse
@@ -430,3 +457,50 @@ def test_with_no_scorer_wired_the_button_is_harmless(tmp_path):
                           "action": "suggest"})
     assert r.status_code == 200
     assert "Could not draft" in error_in(r.text)
+
+
+def test_drafting_uses_the_model_the_config_names(tmp_path):
+    """REGRESSION: `suggest_model` was added to the config, documented with a
+    cost measurement, and then never read -- `suggest_queries` went on calling
+    `triage_model`. The knob looked real and did nothing, and the default
+    happened to match, so every check passed.
+
+    Also asserts the spend is counted ONCE. `_invoke` already adds to
+    `_spent_this_process`; adding it again made every draft count double
+    against the daily ceiling, which is the overlapping-counters bug
+    `begin_run` exists to prevent."""
+    from dataclasses import replace as dc_replace
+    from dealbot.config import load
+    from dealbot.db import Store
+    from dealbot.scoring.claude_code import ClaudeCodeScorer
+
+    cfg = load(CONFIG)
+    store = Store(tmp_path / "t.db")
+    scorer = ClaudeCodeScorer(
+        dc_replace(cfg.scorer, suggest_model="a-distinct-model",
+                   triage_model="not-this-one", daily_cost_limit_usd=10.0),
+        store)
+
+    seen = {}
+
+    class Facts:
+        cost_usd = 0.25
+        text = '{"queries": ["tv stand", "media console"]}'
+
+    def fake_invoke(system, user, model, read_dir=None, timeout=None):
+        seen["model"] = model
+        seen["timeout"] = timeout
+        # what the real one does, and the reason the caller must not repeat it
+        scorer._spent_this_process += Facts.cost_usd
+        return Facts()
+
+    scorer._invoke = fake_invoke
+    got = scorer.suggest_queries("tv-stand", "a wide tv stand")
+
+    assert seen["model"] == "a-distinct-model", "suggest_model is not wired up"
+    assert seen["timeout"] == scorer.SUGGEST_TIMEOUT_SECONDS, (
+        "a person is waiting on a form; it must not use the 180s scoring timeout")
+    assert got == ("tv stand", "media console")
+    assert scorer._spent_this_process == 0.25, "the draft was counted twice"
+    assert scorer.drain_unbilled() == 0.0, (
+        "nothing drains unbilled spend in the web process; it would pile up unread")

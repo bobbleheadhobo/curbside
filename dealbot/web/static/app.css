@@ -647,9 +647,27 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   position:relative;z-index:1;background:var(--card);
   transform:translateX(var(--sx,0px))
 }
+/* Springing home from a swipe that did not commit. A long easeOut settles
+   rather than stopping dead, which `ease` does. */
 .card.releasing > .card-main,
 .card.releasing > .why,
-.card.releasing > .actions{transition:transform .2s ease}
+.card.releasing > .actions{transition:transform .34s cubic-bezier(.22,1,.36,1)}
+.card.releasing .swipehint{opacity:0;transition:opacity .22s ease}
+
+/* Committed: it carries on out the way it was going while the verdict badge
+   lands over it. The offset is a CLASS, not the inline variable, because undo
+   restores a card by removing `going` and the status class -- so this
+   transform goes with them, where an inline one would leave the restored card
+   sitting off-screen. */
+.card.flinging > .card-main,
+.card.flinging > .why,
+.card.flinging > .actions{transition:transform .3s cubic-bezier(.36,0,.66,-.05)}
+.card.flinging.saved > .card-main,
+.card.flinging.saved > .why,
+.card.flinging.saved > .actions{transform:translateX(112%)}
+.card.flinging.dismissed > .card-main,
+.card.flinging.dismissed > .why,
+.card.flinging.dismissed > .actions{transform:translateX(-112%)}
 .swipehint{
   position:absolute;inset:0;z-index:0;display:flex;align-items:center;gap:8px;
   padding:0 22px;font-size:14px;font-weight:620;letter-spacing:-.01em
@@ -659,7 +677,11 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 
 .card.going{position:relative;pointer-events:none}
 .card.going .card-main,.card.going .why,.card.going .actions{
-  transition:opacity .18s ease;opacity:.35}
+  /* transform MUST be listed here. This rule sits after the swipe rules at
+     equal specificity, so a bare `transition:opacity` wins and silently drops
+     the fling's animation -- the card jumped instead of leaving. */
+  transition:opacity .18s ease,transform .3s cubic-bezier(.36,0,.66,-.05);
+  opacity:.35}
 .verdict{
   position:absolute;inset:0;z-index:2;display:flex;gap:8px;
   align-items:center;justify-content:center;

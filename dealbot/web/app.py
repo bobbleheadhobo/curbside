@@ -769,7 +769,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             return ()
 
     def _want_form(request: Request, *, stored=None, values=None,
-                   error: str | None = None, status: int = 200):
+                   error: str | None = None, status: int = 200,
+                   interval: int | None = None):
         """One template for new and edit. On a validation error it comes back
         with what was typed still in it -- a description is a paragraph of
         prose, and losing it to a bad price would be unforgivable on a phone."""
@@ -779,7 +780,11 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         return TEMPLATES.TemplateResponse(request, "want_form.html", ctx(
             request, cfg=cfg, stored=stored, error=error,
             intervals=INTERVAL_CHOICES,
-            interval=hunt.interval_minutes if hunt else 60,
+            # What was just posted wins over the stored hunt: pressing
+            # "Suggest terms" is a round trip through this form, and it used to
+            # quietly reset a cadence you had just chosen.
+            interval=(interval if interval is not None
+                      else (hunt.interval_minutes if hunt else 60)),
             v=values or {}), status_code=status)
 
     @app.get("/wants/new")
@@ -834,11 +839,21 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             drafted = _draft_queries(slug, description, _lines(requires))
             if not drafted:
                 return _want_form(
-                    request, stored=stored, values=values,
+                    request, stored=stored, values=values, interval=interval,
                     error="Could not draft search terms just now. "
                           "Type a few, or try again in a moment.")
-            values["queries"] = "\n".join(drafted)
-            return _want_form(request, stored=stored, values=values)
+            # ADDED to what is already there, never swapped for it. Replacing
+            # would throw away a term typed and not yet committed to a pill --
+            # and this form's whole rule is that a round trip loses nothing.
+            merged = list(_lines(queries))
+            seen = {t.lower() for t in merged}
+            for t in drafted:
+                if t.lower() not in seen:
+                    seen.add(t.lower())
+                    merged.append(t)
+            values["queries"] = "\n".join(merged)
+            return _want_form(request, stored=stored, values=values,
+                              interval=interval)
 
         try:
             dollars = float((max_price or "").replace("$", "").replace(",", ""))

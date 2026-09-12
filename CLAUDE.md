@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 358 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 361 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -184,6 +184,13 @@ the one rejecting on distance recorded unguarded and logged nothing at all.
 share one SQLite file by design (WAL, `busy_timeout=10000`), and readers never
 block — but a write on a read path can, and did. POSTs write freely; that is
 what they are for.
+
+**Spend is counted in `_invoke`, once.** `_invoke` already adds every call to
+`_spent_this_process`; a caller that adds it again counts that call twice
+against the daily ceiling, which is the same overlapping-counters bug
+`begin_run` exists to prevent. `_unbilled_usd` is for spend a *run* will drain —
+never use it in the web process, where no run will ever ask and it would simply
+accumulate unread.
 
 **Cheap models are not automatically cheap here — measure.** `claude -p`
 prepends its own ~12k-token harness prompt, so what a call costs is mostly

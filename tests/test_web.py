@@ -692,7 +692,7 @@ def test_the_swipe_gestures_behave():
     The same harness covers the toast, which can also be swiped away: it must
     dismiss WITHOUT undoing -- the save stays applied, exactly as when the
     timer runs out -- and the click a swipe ends in must not press Undo."""
-    assert _run_js_harness("swipe_harness.mjs").count("ok ") >= 25
+    assert _run_js_harness("swipe_harness.mjs").count("ok ") >= 30
 
 
 def test_the_search_term_pills_behave():

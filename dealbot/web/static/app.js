@@ -124,14 +124,11 @@
       var moved = t.moved;
       t = null;
       el.classList.remove("dragging");
-      if (moved) {
-        el.addEventListener("click", function swallow(ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          el.removeEventListener("click", swallow, true);
-        }, true);
-      }
+      if (moved) swallowNextClick(el);
       if (gone) {
+        // The drag set an inline opacity, which outranks the class, so the
+        // toast would slide out still half-visible and then vanish.
+        el.style.opacity = "0";
         // Keep the offset: `close` drops the `up` class and the toast carries
         // on out from where the finger left it rather than jumping back first.
         close();
@@ -426,18 +423,30 @@
     var moved = sw.moved;
     sw = null;
 
-    if (moved) {
-      // A touch ends in a click. Without this, letting go over the title opens
-      // the marketplace, which is not what the swipe meant.
-      card.addEventListener("click", function swallow(ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        card.removeEventListener("click", swallow, true);
-      }, true);
+    if (moved) swallowNextClick(card);
+
+    if (commit && form) {
+      // Carry on out the way it was already going. Yanking the card home and
+      // THEN folding it from the middle was the whole of the jank.
+      //
+      // The offset moves from the inline variable to a CLASS here, and that is
+      // load-bearing: undo restores a card by removing `going` and the status
+      // class, so a class-based transform disappears with them. An inline one
+      // would not, and an undone card would come back off-screen.
+      slide(card, 0);
+      card.classList.remove("releasing");
+      card.classList.add("flinging");
+      act(form, card, kind);
+      setTimeout(function () {
+        card.classList.remove("swiping", "flinging");
+        var el = card.querySelector(".swipehint");
+        if (el) el.remove();
+      }, reduced ? 0 : 620);
+      return;
     }
 
-    // Slide home under a transition, THEN drop the classes -- the transform
-    // only applies while `swiping` is on, so clearing it first would snap.
+    // Not committed: spring home, THEN drop the classes -- the transform only
+    // applies while `swiping` is on, so clearing it first would snap.
     card.classList.add("releasing");
     slide(card, 0);
     setTimeout(function () {
@@ -445,9 +454,28 @@
       card.style.removeProperty("--sx");
       var el = card.querySelector(".swipehint");
       if (el) el.remove();
-    }, reduced ? 0 : 200);
+    }, reduced ? 0 : 340);
+  }
 
-    if (commit && form) act(form, card, kind);
+  /* Eat the click a touch ends in, once.
+   *
+   * A drag usually suppresses the click by itself, so a listener that waits
+   * for one would sit there and eat the NEXT real tap on that element instead
+   * -- a swipe that went nowhere, then a tap on the title that does nothing.
+   * It expires.
+   */
+  function swallowNextClick(el) {
+    function done() {
+      el.removeEventListener("click", swallow, true);
+      clearTimeout(timer);
+    }
+    function swallow(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      done();
+    }
+    el.addEventListener("click", swallow, true);
+    var timer = setTimeout(done, 700);
   }
 
   document.addEventListener("touchstart", function (ev) {
@@ -482,6 +510,10 @@
       // but never far enough to look like it will commit.
       slide(sw.card, Math.max(-24, Math.min(24, dx / 3)));
       sw.kind = null;
+      // Still movement, even though nothing will come of it: without this the
+      // click is not swallowed, and a dead-direction drag released over the
+      // title opens the marketplace.
+      sw.moved = true;
       if (ev.cancelable) ev.preventDefault();
       return;
     }

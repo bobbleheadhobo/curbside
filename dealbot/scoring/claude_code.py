@@ -411,12 +411,19 @@ class ClaudeCodeScorer:
             SUGGEST_SYSTEM,
             SUGGEST_INSTRUCTION + "\n\n"
             + render_want_for_suggestion(name, description, requires),
-            self.cfg.triage_model,
+            self.cfg.suggest_model,
             timeout=self.SUGGEST_TIMEOUT_SECONDS)
-        self._spent_this_process += facts.cost_usd
-        # No Score row will carry this cost, so hand it to the next run that
-        # asks -- exactly like an unparseable appraisal.
-        self._unbilled_usd += facts.cost_usd
+        # `_invoke` has ALREADY added this to `_spent_this_process`. Adding it
+        # again here counted every draft twice against the daily ceiling --
+        # the same overlapping-counters bug `begin_run` exists to prevent.
+        #
+        # It is deliberately not put in `_unbilled_usd` either: that is drained
+        # by a run, and this scorer lives in the web process where no run will
+        # ever ask. It would accumulate forever and be read by nobody. The
+        # guard that matters here is `check_available` above, which sees
+        # `_spent_this_process` and so does bound repeated presses.
+        log.info("drafted search terms for %r on %s: $%.4f",
+                 name, self.cfg.suggest_model, facts.cost_usd)
 
         data = self._json_object(facts.text)
         if data is None:

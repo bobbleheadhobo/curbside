@@ -444,8 +444,28 @@ The parts that matter are the ones that fail quietly, and they are tested in
   one is expensive.
 * A swipe towards an action the card does not offer barely moves and does
   nothing: `/saved` has only Dismiss, and the hunt views have neither.
-* The click that a touch ends in is swallowed once, or letting go over the
+* The click that a touch ends in is swallowed once **and then expires**. A
+  drag usually suppresses the click by itself, so a listener that simply waits
+  for one sits there and eats the *next* real tap on that card instead.
+* A drag towards an action the card does not have is still a drag, and must
+  still swallow its click — otherwise a dead-direction swipe released over the
   title opens the marketplace.
+
+**Letting go.** A swipe that does not commit springs home on a long easeOut
+(`cubic-bezier(.22,1,.36,1)`), which settles rather than stopping dead, and the
+hint fades as it goes. A swipe that *does* commit carries on out the way it was
+already going while the verdict badge lands over it — yanking the card back to
+centre and then folding it from the middle was the whole of the jank.
+
+Two things make that work, and both are easy to get wrong:
+
+* The fling offset is a **class**, not the inline `--sx` variable. Undo restores
+  a card by removing `going` and the status class, so a class-based transform
+  disappears with them; an inline one would survive and an undone card would
+  come back sitting off-screen. There is a test for exactly that.
+* `.card.going` has to list `transform` in its `transition`. It sits after the
+  swipe rules at equal specificity, so a bare `transition: opacity` wins and
+  silently drops the fling's animation — the card jumped instead of leaving.
 
 **The toast can be swiped away too.** It holds an Undo for seven seconds, and
 after a run of triage it is the thing in your way -- sideways or downwards, the
