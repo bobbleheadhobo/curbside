@@ -597,3 +597,65 @@ def test_a_listing_with_no_words_wears_an_amber_badge(tmp_path):
     assert body.count("no description") == 1        # only the wordless one
     card = body[body.index('data-listing="x:9"'):]
     assert 'class="chip unk"' in card[:card.index("</article>")]
+
+
+def test_a_page_view_never_writes_to_the_database(tmp_path):
+    """REGRESSION: every GET used to take a WRITE lock.
+
+    `_live()` runs per request, and `seed_wants`/`seed_excludes` each ended
+    with an unconditional `set_setting(...'seeded', '1')` -- a constant that
+    nothing ever read. The poller writes the same file, so a read-only page
+    could block on its lock, and did: a held write transaction turned GET / from
+    0.2ms into a 1.5s wait, and an unreleased one into `database is locked` from
+    the home page.
+
+    The per-name and per-hunt checks are the real one-shot; no marker is needed.
+    If a write reappears on a read path, this is the test that should stop it.
+    """
+    import sqlite3
+    client, cfg = _client(tmp_path)
+
+    # One request first. Against a BRAND-NEW database the first `_live()` does
+    # legitimately write: it seeds config.yaml's wants and exclude terms into
+    # their tables, once ever. That is the seeding, not the marker -- and it is
+    # exactly what the per-name/per-hunt checks make idempotent.
+    assert client.get("/").status_code == 200
+
+    seen: list[str] = []
+    real_connect = sqlite3.connect
+
+    def watched(*a, **kw):
+        conn = real_connect(*a, **kw)
+        conn.set_trace_callback(
+            lambda sql: seen.append(sql.strip().split()[0].upper()))
+        return conn
+
+    sqlite3.connect = watched
+    try:
+        for path in ("/", "/free", "/saved", "/skipped", "/settings", "/runs"):
+            assert client.get(path).status_code == 200, path
+    finally:
+        sqlite3.connect = real_connect
+
+    assert seen, "no statements traced -- the test is not watching anything"
+    writes = [s for s in seen if s in ("INSERT", "UPDATE", "DELETE", "REPLACE")]
+    assert not writes, (
+        f"a GET wrote to an already-seeded database: {sorted(set(writes))}")
+
+
+def test_the_bin_queries_are_built_from_a_clause_not_from_each_other():
+    """REGRESSION: SAVED_SQL and NEAR_MISS_SQL were `str.replace` on QUEUE_SQL,
+    which had itself been rebound to a longer string. A needle that stops
+    matching is a SILENT no-op -- a valid query against the wrong rows.
+
+    So: each bin query must actually carry its own WHERE, and only the two that
+    are bins may carry the one-row-per-listing clause."""
+    from dealbot.web.app import NEAR_MISS_SQL, ONE_BIN, QUEUE_SQL, SAVED_SQL
+
+    assert "WHERE m.status = ?" in QUEUE_SQL
+    assert "WHERE m.status IN ('saved', 'contacted')" in SAVED_SQL
+    assert "WHERE m.status = 'scored'" in NEAR_MISS_SQL
+
+    assert ONE_BIN in QUEUE_SQL and ONE_BIN in SAVED_SQL
+    # /skipped is a band under the bar, not a bin: it keeps its own rows.
+    assert ONE_BIN not in NEAR_MISS_SQL

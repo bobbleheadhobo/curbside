@@ -15,6 +15,23 @@
 
 {% macro _money(cents) %}{% if cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}{% endmacro %}
 
+{# The price, with its drop chip. Shared with listing.html, which used to
+   carry its own copy with `_money` inlined twice and the drop percentage
+   recomputed -- so a change to how a free or priced listing reads needed both
+   files, and got one. `was` is the caller's, because the card and the detail
+   page derive the old price differently. #}
+{% macro price(price_cents, was) %}
+{%- set dropped = was is not none and price_cents is not none and price_cents < was -%}
+{% if dropped %}
+          <span class="now num {{ 'free' if price_cents == 0 }}">{{ _money(price_cents) }}</span>
+          <span class="strike num">{{ _money(was) }}</span>
+          <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
+            {{ ((was - price_cents) / was * 100) | round | int }}%</span>
+        {% elif price_cents == 0 %}<span class="now free">free</span>
+        {% elif price_cents is none %}<span class="none">no price</span>
+        {% else %}<span class="now num">{{ _money(price_cents) }}</span>{% endif %}
+{%- endmacro %}
+
 {% macro card(i, back, actions=['saved','dismissed'], show_status=false, block=false) %}
 {% set was = i.previous_price_cents if i.previous_price_cents is not none
              else (i.priced_at_cents if i.priced_at_cents is not none
@@ -40,16 +57,7 @@
     <div class="info">
       <h2>{{i.title}}</h2>
 
-      <p class="price">
-        {% if dropped %}
-          <span class="now num {{ 'free' if i.price_cents == 0 }}">{{ _money(i.price_cents) }}</span>
-          <span class="strike num">{{ _money(was) }}</span>
-          <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
-            {{ ((was - i.price_cents) / was * 100) | round | int }}%</span>
-        {% elif i.price_cents == 0 %}<span class="now free">free</span>
-        {% elif i.price_cents is none %}<span class="none">no price</span>
-        {% else %}<span class="now num">{{ _money(i.price_cents) }}</span>{% endif %}
-      </p>
+      <p class="price">{{ price(i.price_cents, was) }}</p>
 
       <p class="where">
         {% if i.distance_mi is not none %}

@@ -69,7 +69,6 @@ def gate(
     statuses: Mapping[str, str],
     last_scores: Mapping[str, sqlite3.Row],
     upserts: Mapping[str, UpsertResult],
-    blocked_sellers: Sequence[str] = (),
 ) -> GateResult:
     """Decide who is worth spending money on. Pure: state comes in as dicts.
 
@@ -90,10 +89,6 @@ def gate(
         # Cheapest checks first; each one is a listing we never pay to think about.
         if status in TRIAGED:
             rejected.append((listing.id, "triaged"))
-            continue
-
-        if listing.seller_id and listing.seller_id in blocked_sellers:
-            rejected.append((listing.id, "blocked_seller"))
             continue
 
         if (hunt.max_price_cents is not None
@@ -129,11 +124,11 @@ def gate(
         now = listing.price_cents
         if (was is not None and now is not None and was > 0
                 and (was - now) / was >= PRICE_DROP_THRESHOLD):
-            candidates.append(Candidate(listing, "price_drop", None))
+            candidates.append(Candidate(listing, "price_drop"))
             continue
 
         if upserts.get(listing.id) and upserts[listing.id].is_relist:
-            candidates.append(Candidate(listing, "relist", None))
+            candidates.append(Candidate(listing, "relist"))
             continue
 
         rejected.append((listing.id, "unchanged"))

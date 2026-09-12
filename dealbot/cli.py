@@ -29,10 +29,22 @@ from .thumbs import ThumbnailStore
 log = logging.getLogger("dealbot.cli")
 
 
-def _build_image_provider(cfg: config_mod.Config, source_name: str):
+def _build_image_provider(source_name: str):
     if source_name == "fixture":
         return FixtureImageProvider()
     return HttpImageProvider()
+
+
+def _reset_budgets(sources) -> None:
+    """ONE budget for the whole pass, not per hunt.
+
+    Reset inside the hunt loop, `max_requests_per_run: 25` quietly meant 25 PER
+    HUNT -- 75 requests in a single `once` against a source that starts
+    throttling, silently, after about five rapid ones.
+    """
+    for _, source in sources:
+        if hasattr(source, "reset_budget"):
+            source.reset_budget()
 
 
 def _build_one_source(cfg: config_mod.Config, name: str):
@@ -143,12 +155,7 @@ def cmd_once(args) -> int:
     sources, scorer = _build_sources(cfg), _build_scorer(cfg, store)
     notifiers = _build_notifiers(cfg, store)
 
-    # ONE budget for the whole pass. Reset per hunt, `max_requests_per_run: 25`
-    # quietly meant 25 PER HUNT -- 75 requests in a single `once` against a
-    # source that starts throttling, silently, after about five rapid ones.
-    for _, source in sources:
-        if hasattr(source, "reset_budget"):
-            source.reset_budget()
+    _reset_budgets(sources)
 
     for hunt in _hunts(cfg, args.hunt, store):
         for name, source in sources:
@@ -161,7 +168,7 @@ def cmd_once(args) -> int:
             r = run_hunt(store, hunt, source, scorer, notifiers, cfg.location,
                          no_score=args.no_score,
                          image_provider=None if args.no_images
-                         else _build_image_provider(cfg, name),
+                         else _build_image_provider(name),
                          max_image_checks=cfg.scorer.max_image_checks,
                          thumbnails=ThumbnailStore(cfg.db_path.parent / "thumbs"))
             status = f"ERROR {r.error}" if r.error else (
@@ -197,9 +204,7 @@ def cmd_recheck(args) -> int:
     a listing that actually sold."""
     cfg, store = _open(args)
     sources = _build_sources(cfg)
-    for _, source in sources:
-        if hasattr(source, "reset_budget"):
-            source.reset_budget()
+    _reset_budgets(sources)
     rc = recheck(store, sources,
                  every_hours=0.0 if args.all else cfg.recheck.every_hours,
                  max_per_run=args.limit or cfg.recheck.max_per_run)
@@ -219,8 +224,9 @@ def cmd_notify(args) -> int:
     requests, no model calls -- and is the way to drain a backlog on demand."""
     cfg, store = _open(args)
     notifiers = _build_notifiers(cfg, store)
+    hunts = _hunts(cfg, args.hunt, store)   # `cfg.hunts` is computed: bind once
     total = 0
-    for hunt in _hunts(cfg, args.hunt, store):
+    for hunt in hunts:
         pending = store.pending_notifications(hunt.id)
         if not pending:
             continue
@@ -232,8 +238,7 @@ def cmd_notify(args) -> int:
                 log.exception("notifier %s failed", n.name)
         total += len(pending)
     total += announce_price_drops(store, notifiers)
-    still = sum(len(store.pending_notifications(h.id))
-                for h in _hunts(cfg, args.hunt, store))
+    still = sum(len(store.pending_notifications(h.id)) for h in hunts)
     print(f"queued {total}, {still} still pending (per-run caps defer the rest)")
     store.close()
     return 0
@@ -354,14 +359,12 @@ def cmd_run(args) -> int:
                 if now < next_due.get(hunt.id, 0):
                     continue
                 if not budget_is_fresh:
-                    for _, s in sources:
-                        if hasattr(s, "reset_budget"):
-                            s.reset_budget()
+                    _reset_budgets(sources)
                     budget_is_fresh = True
                 for name, source in sources:
                     r = run_hunt(store, hunt, source, scorer, notifiers,
                                  cfg.location,
-                                 image_provider=_build_image_provider(cfg, name),
+                                 image_provider=_build_image_provider(name),
                                  max_image_checks=cfg.scorer.max_image_checks,
                                  thumbnails=ThumbnailStore(
                                      cfg.db_path.parent / "thumbs"))
@@ -423,17 +426,15 @@ def main(argv: list[str] | None = None) -> int:
     h.set_defaults(func=cmd_hunts)
 
     s = sub.add_parser("serve", help="dashboard")
-    # 0.0.0.0, not localhost: this is read on a phone, which is a different
-    # machine. The deployed unit already passes --host 0.0.0.0; this makes a
-    # manual `dealbot serve` behave the same way rather than being reachable
-    # only from the box it runs on. There is no auth in the app -- keep it on a
-    # trusted network, or behind the reverse proxy that provides one.
     # Localhost by default. There is no authentication in the app and
     # there are now half a dozen mutating endpoints; the systemd unit
     # passes --host 0.0.0.0 explicitly, so a wide default buys nothing
     # and hands anyone on the wifi a button to delete your wants.
-    s.add_argument("--host", default="127.0.0.1")
-    s.add_argument("--port", type=int, default=8080)
+    s.add_argument("--host", default="127.0.0.1",
+                   help="bind address (default: 127.0.0.1). The deployed unit "
+                        "passes 0.0.0.0 explicitly, behind a trusted network.")
+    s.add_argument("--port", type=int, default=8080,
+                   help="(default: 8080; the deployed unit uses 8477)")
     s.set_defaults(func=cmd_serve)
 
     args = p.parse_args(argv)

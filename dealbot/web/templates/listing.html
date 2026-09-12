@@ -5,17 +5,9 @@
   <h1>{{listing.title}}</h1>
 </div>
 
+{% from "_card.html" import price %}
 <p class="price" style="margin:0 0 12px">
-  {% set was = listing.previous_price_cents %}
-  {% if was is not none and listing.price_cents is not none and listing.price_cents < was %}
-    <span class="now num {{ 'free' if listing.price_cents == 0 }}">
-      {% if listing.price_cents == 0 %}free{% else %}${{ '{:,.0f}'.format(listing.price_cents/100) }}{% endif %}</span>
-    <span class="strike num">${{ '{:,.0f}'.format(was/100) }}</span>
-    <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
-      {{ ((was - listing.price_cents) / was * 100) | round | int }}%</span>
-  {% elif listing.price_cents == 0 %}<span class="now free">free</span>
-  {% elif listing.price_cents is none %}<span class="none">no price</span>
-  {% else %}<span class="now num">${{ '{:,.0f}'.format(listing.price_cents/100) }}</span>{% endif %}
+  {{ price(listing.price_cents, listing.previous_price_cents) }}
 </p>
 
 <p class="detail-meta">

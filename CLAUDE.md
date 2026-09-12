@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 330 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 344 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -126,6 +126,14 @@ start would revert every edit made on the phone at the next tick, and seeding
 per missing name would resurrect a want deleted from the web. After the first
 open the table is the truth and the file is history.
 
+**There is deliberately no `seeded` marker row.** The per-name and per-hunt
+checks *are* the one-shot, so a marker would be redundant — and two of them
+used to be written on every call to `seed_wants`/`seed_excludes`. Since
+`with_store` runs **per web request**, that put a WRITE on the read path of
+every page: a GET taking a write lock on the file the poller writes, to store a
+constant nothing ever read. Do not add one back. Every dashboard read path is
+now verifiably write-free.
+
 `Config.hunts` is therefore a **computed property**, not a field. The web
 process stays up for weeks; adding a want has to produce its hunt without a
 restart. Every CLI command goes through `cli._open()`, and the dashboard
@@ -165,6 +173,17 @@ through. An unrecognised city, an undated listing, a listing whose detail fetch
 failed — all pass, or get deferred. Failing closed silently drops the thing the
 user wanted; failing open costs one request.
 
+**A rejection must be recorded, never just dropped.** `store.record_rejections`
+is what makes a drop explainable on `/hunt` instead of a listing silently
+vanishing, and it is why an empty result is distinguishable from a broken
+scraper. The post-enrichment checks all go through `pipeline._drop`, which does
+the recording for you — when they were five hand-written copies of that loop,
+the one rejecting on distance recorded unguarded and logged nothing at all.
+
+**The dashboard reads; the poller writes.** A GET must not write. Both processes
+share one SQLite file by design (WAL, `busy_timeout=10000`), and readers never
+block — but a write on a read path can, and did.
+
 **The scorer runs with `--tools ""`.** The prompt is *entirely* stranger-written
 text: titles and descriptions from marketplace sellers. The model gets no
 capability at all. The image pass is the one exception and is narrow — `Read`,
@@ -174,7 +193,11 @@ relax this.
 **Never trust model output.** It is coerced, not believed: `"$1,350"` parses,
 scores clamp to 0-10, non-scalars never reach a TEXT column, and one bad
 response cannot end a batch. A model writing `est_value_usd: "$350"` used to
-kill an entire run, fetch included.
+kill an entire run, fetch included. All of that lives in **one** place —
+`ClaudeCodeScorer._score_from` — because the text pass and the image pass both
+build a `Score` from the same schema, and when they each spelled it out a field
+wired into only the first would vanish from image-checked listings. Those are by
+design the *high-scoring* ones headed for a bin, so nothing would look broken.
 
 **Prompt prefix stability is money.** Caching is prefix-matched, so the prompt
 is assembled most-stable-first: rubric, then wants, then a *daily* snapshot of
@@ -184,9 +207,10 @@ the same reason.
 
 ## The bug that keeps happening
 
-**Adding a column means four edits, and the fourth gets forgotten.** SCHEMA, the
-`_migrate` list, the INSERT, *and* the UPDATE in `upsert_listing` — the last one
-with `COALESCE` so a thin index-only refresh cannot wipe enriched data.
+**Adding a `listings` column means four edits, and the fourth gets forgotten.**
+SCHEMA, the `_migrate` list, the INSERT, *and* the UPDATE in `upsert_listing` —
+the last one with `COALESCE` so a thin index-only refresh cannot wipe enriched
+data.
 
 This has been missed three times:
 
@@ -196,9 +220,36 @@ This has been missed three times:
   "listed 12d ago", no motivated-seller flag, and nothing for the age filter
 * nearly `dup_key`
 
+**`runs` no longer has this problem, and how it was fixed is the pattern to
+copy.** That table had *five* copies — SCHEMA, `_migrate`, a hand-typed column
+whitelist in `finish_run`, `RunResult`, and the kwargs at each call site. Now
+`finish_run` asks the table (`PRAGMA table_info`, cached per connection) and the
+pipeline hands it `**asdict(result)`, so adding a counter is SCHEMA + `_migrate`
++ the `RunResult` field and nothing else. The whitelist had already gone stale:
+`n_worth_a_look` was carried through four of the five places and never assigned
+anywhere, and `n_deferred` was omitted from two of the three `finish_run` calls,
+so a `--no-score` pass or a quota pause recorded a backlog of zero — which is
+precisely the number that counter exists to make visible.
+
+**When a value has to be stated in more than one place, make one place derive
+from the other.** Where that is not practical, make the drift a test failure;
+`tests/test_docs.py` is that idea applied to the docs.
+
 Related: **an index on a migrated column must be created in `_migrate`, not in
 SCHEMA.** `executescript` runs before the `ALTER TABLE`, so an index naming a
-new column fails on every existing database.
+new column fails on every existing database. `ix_listings_dup_key` is there for
+exactly that reason. `ix_matches_listing` and `ix_matches_bin` name original
+columns and so would have been legal in SCHEMA, but they sit in `_migrate` with
+it: every index in one place is a rule you cannot get wrong, and an existing
+database picks them up on its next open either way.
+
+**Indexes are not optional here, because nothing is ever deleted.** The bin
+views filter on `status` ALONE, with no `hunt_id`, so the composite
+`ix_matches_status(hunt_id, status)` never applied to them; and the
+one-row-per-listing subquery in `ONE_BIN` matches on `listing_id`, the *second*
+column of the primary key. Every bin page therefore scanned `hunt_matches` and
+sorted, once per candidate row — quadratic in a table that only grows. Adding a
+query that filters on a new column means adding its index too.
 
 ## Other things learned the expensive way
 
@@ -221,7 +272,15 @@ new column fails on every existing database.
 * A `claude -p` launched with no network does not fail fast; it burns ~10
   minutes of retry backoff. Hence the connectivity preflight.
 * Facebook image URLs expire in ~4 days. Thumbnails are cached locally for
-  anything in a bin.
+  anything in a bin. That download and the vision pass's are the SAME
+  function — `images.fetch_downscaled` — so the hardening (size cap enforced
+  while reading, content-type check, timeout, re-encode through Pillow) has one
+  implementation rather than two kept in step by hand.
+* **`str.replace` on a SQL string is a silent no-op when the needle misses.**
+  The bin queries were built by replacing text in each other; editing the
+  literal `"WHERE m.status = ?"` would have produced a perfectly valid query
+  against the wrong rows, with nothing raised. They come from `_queue_sql(where)`
+  now. Never build SQL by substring surgery on another query.
 
 ## Secrets
 
@@ -243,6 +302,21 @@ into one). Inert beats confidently wrong.
 Comparables from the bot's own price history need about a month of observations.
 That is why the timer matters more than the polish — the data accrues with
 wall-clock time, not with effort.
+
+## Adding a source adapter
+
+Implement `search`, `parse`, and optionally `detail` (see `sources/base.py`),
+and **inherit `Throttled`**. It gives you `_init_budget`, `reset_budget`,
+`_await_slot` and `_spend_slot` — the jittered interval and the per-pass request
+cap. Rate limiting still lives *inside* the adapter, which is the invariant that
+matters; it is simply no longer retyped per source.
+
+Both existing adapters used to carry their own copy, and the copies had drifted
+in the way that mattered: Facebook raised `BudgetExhausted` when it ran out of
+*our* budget, Craigslist raised a plain `SourceBlocked`. That distinction is
+load-bearing — `facebook.search` tries another surface when the *site* gates it
+and gives up when our own budget is spent — and Craigslist could not express it.
+`BudgetExhausted` subclasses `SourceBlocked`, so catching the base still works.
 
 ## Before you change scoring behaviour
 

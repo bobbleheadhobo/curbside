@@ -98,7 +98,6 @@ class Score:
 class Candidate:                   # survived the gate, headed for the model
     listing: Listing
     reason: str                    # "new" | "price_drop" | "relist" | "backlog"
-    previous_score: Score | None
 
 @dataclass(frozen=True)
 class StoredWant:                  # a want as the DATABASE holds it
@@ -108,9 +107,6 @@ class StoredWant:                  # a want as the DATABASE holds it
     created_at: str | None; updated_at: str | None
 ```
 
-`Score.is_relevant` is a property, not a field: `match in (yes, unknown)` or
-`worth_grabbing`.
-
 ## Part 3 — Interfaces
 
 ```python
@@ -119,7 +115,11 @@ class Source(Protocol):
     def search(self, hunt: Hunt) -> Iterator[RawListing]: ...
     def parse(self, raw: RawListing) -> Listing | None: ...   # None = unusable
     # optional: detail(listing) -> Listing | None, the enrichment fetch
-    # optional: reset_budget(), the per-pass request cap
+
+class Throttled:                 # mixin: inherit it, do not retype it
+    def reset_budget(self) -> None: ...        # one budget per PASS, not per hunt
+    def _await_slot(self) -> None: ...         # jittered wait; raises BudgetExhausted
+    def _spend_slot(self) -> None: ...         # count a request that went out
 
 class Scorer(Protocol):
     def triage(self, hunt, candidates) -> TriageResult: ...   # batched, coarse
@@ -144,6 +144,12 @@ the store.
 
 `DashboardNotifier` is a near-no-op that flips status and stamps `notified_at`;
 the dashboard reads the database directly. `DiscordNotifier` is the real one.
+
+Rate limiting lives INSIDE the adapter so a caller cannot bypass it, but the
+mechanism is shared: `Throttled` in `sources/base.py`. `SourceBlocked` means the
+site withheld data; `BudgetExhausted` (a subclass) means we stopped asking.
+`facebook.search` acts on the difference — another surface is worth trying when
+the site gates one, and worth nothing when our own budget is spent.
 
 ## Part 4 — The main flow
 
@@ -173,10 +179,22 @@ run_hunt(store, hunt, source, scorer, notifiers, location):
   6c. cross-source duplicates
   7. TRIAGE                    one batched call, coarse keep/drop
   8. APPRAISE                  one call each, survivors only
-  9. IMAGES                    where needs_images AND it would reach a bin
- 10. ROUTE                     wants / free finds / filed
+  9. IMAGES                    where needs_images AND route() would bin it
+ 10. ROUTE                     route() -> wants / free finds / filed
  11. notifiers, thumbnails, finish_run
 ```
+
+Stages 6a-6c are each a predicate handed to `pipeline._drop`, which partitions,
+**records the rejection**, logs a count and returns the new `GateResult`. Adding
+a post-enrichment check is a predicate plus one call; the recording — the part
+that makes a drop explainable rather than a silent disappearance — cannot be
+forgotten because it is not yours to write.
+
+Stages 9 and 10 both ask `pipeline.route(score, hunt, listing) -> "wanted" |
+"free_find" | None`. It is one function because it was once two — a boolean for
+the image pass and a pair of comprehensions in stage 10 — kept in agreement by a
+comment. Disagreement was silent and cost money: image passes spent on listings
+nobody would be shown.
 
 `docs/ARCHITECTURE.md` has the reasoning for each stage and the order.
 
@@ -193,7 +211,6 @@ if **any** admit rule fires and **no** reject rule does.
 ```
 REJECT (checked first, cheapest first):
   - status is dismissed/saved/contacted for this hunt   → "triaged"
-  - seller_id in hunt.blocked_sellers                    → "blocked_seller"
   - price_cents > hunt.max_price                         → "over_price"
   - distance_mi > location.radius_miles                  → "too_far"
   - title/description matches hunt.exclude               → "excluded_kw"
@@ -229,9 +246,23 @@ Block B is the subtle one. Dismissals arrive continuously, and rebuilding that b
 every run would invalidate the cache on every run and defeat the whole arrangement. So the
 negative-example set is snapshotted daily and held fixed in between.
 
-Candidates are scored concurrently under a semaphore (default 5). One failed scoring call
-is logged against that listing and skipped — it must not abort the run and lose the other
-49 results.
+Candidates are appraised **sequentially**, one `claude -p` at a time. There is no
+concurrency anywhere in this codebase and that is deliberate: the constraint is plan
+quota shared with `otter` and the user's own interactive use, so the plan window is
+re-read *between* listings and the run stands aside the moment it tightens. Parallelism
+would spend past a ceiling it could no longer see.
+
+Failure is handled at three different depths, and the distinctions are load-bearing:
+
+- **Unparseable output** — one retry with a blunter instruction, then give up on that
+  listing and write **no** `Score` row, so it stays `new` and is retried next run rather
+  than being recorded as judged on output nobody could read. Its cost is still charged,
+  via `drain_unbilled`.
+- **A pause mid-batch** (`ScoringUnavailable`) — stop, but re-raise carrying
+  `partial=scores`. Every appraisal already bought is kept. Discarding them threw away
+  real money and re-charged for the same listings on the next run.
+- **Anything else** — logged against that listing and skipped. One bad response must
+  never end a batch.
 
 ### Status state machine (per hunt, per listing)
 

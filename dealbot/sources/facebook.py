@@ -36,9 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
-import random
 import re
-import time
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
@@ -48,7 +46,8 @@ from ..geo import haversine_miles
 from ..models import Hunt, Listing, Location, RawListing
 # Defined in sources/base so the pipeline can tell "Facebook is gating us" from
 # "this one payload would not parse" without importing every adapter.
-from .base import BudgetExhausted, SourceBlocked      # noqa: F401  re-exported
+from .base import (BudgetExhausted, SourceBlocked,    # noqa: F401  re-exported
+                   Throttled)
 
 log = logging.getLogger("dealbot.sources.facebook")
 
@@ -92,34 +91,24 @@ def _json_blocks(html: str) -> Iterator[dict[str, Any]]:
             continue
 
 
-def _find_listings(obj: Any) -> Iterator[dict[str, Any]]:
-    """Depth-first walk for listing-shaped dicts. Deliberately structural rather
-    than path-based -- Facebook reshapes the wrapper constantly, but a listing
-    always has a `marketplace_listing_title`."""
+def _nodes_with(obj: Any, *keys: str) -> Iterator[dict[str, Any]]:
+    """Depth-first walk for dicts carrying any of `keys`.
+
+    Deliberately STRUCTURAL rather than path-based, which is the whole point:
+    Facebook reshapes the wrapper constantly -- the photo node lives under
+    `viewer.marketplace_product_details_page.target` today and somewhere else
+    next month -- but a listing always has a `marketplace_listing_title` and a
+    photo set always has `listing_photos`. The walk was written out twice, once
+    per key set; the keys are an argument now.
+    """
     if isinstance(obj, dict):
-        if "marketplace_listing_title" in obj or "redacted_description" in obj:
+        if any(k in obj for k in keys):
             yield obj
         for v in obj.values():
-            yield from _find_listings(v)
+            yield from _nodes_with(v, *keys)
     elif isinstance(obj, list):
         for v in obj:
-            yield from _find_listings(v)
-
-
-def _photo_sets(obj: Any) -> Iterator[dict[str, Any]]:
-    """Depth-first walk for the node carrying `listing_photos`.
-
-    Structural rather than path-based, like `_find_listings`: the wrapper is
-    `viewer.marketplace_product_details_page.target` today and will be
-    something else next month, but the key is stable."""
-    if isinstance(obj, dict):
-        if "listing_photos" in obj:
-            yield obj
-        for v in obj.values():
-            yield from _photo_sets(v)
-    elif isinstance(obj, list):
-        for v in obj:
-            yield from _photo_sets(v)
+            yield from _nodes_with(v, *keys)
 
 
 def _photo_uris(node: dict[str, Any]) -> tuple[str, ...]:
@@ -146,7 +135,7 @@ def _cents(price: dict[str, Any] | None) -> int | None:
         return None
 
 
-class FacebookSource:
+class FacebookSource(Throttled):
     name = "facebook"
 
     def __init__(self, location: Location, city: str = "albuquerque", *,
@@ -154,12 +143,8 @@ class FacebookSource:
                  max_requests_per_run: int = 25, timeout: float = 30.0):
         self.location = location
         self.city = city
-        self.min_interval = min_interval_seconds
-        self.jitter = jitter
-        self.max_requests = max_requests_per_run
-        self.timeout = timeout
-        self._last_request = 0.0
-        self._requests_made = 0
+        self._init_budget(min_interval=min_interval_seconds, jitter=jitter,
+                          max_requests=max_requests_per_run, timeout=timeout)
         self._session = requests.Session()
         self._session.headers.update(HEADERS)
 
@@ -167,26 +152,13 @@ class FacebookSource:
 
     def _get(self, url: str) -> str:
         """Rate limiting lives HERE, not in the caller, so it cannot be bypassed
-        by accident. Silent throttling is the failure mode, so the interval is
-        deliberately generous."""
-        if self._requests_made >= self.max_requests:
-            raise BudgetExhausted(
-                f"request budget exhausted ({self.max_requests} this run)")
-
-        wait = self.min_interval * (1 + random.uniform(-self.jitter, self.jitter))
-        elapsed = time.monotonic() - self._last_request
-        if self._last_request and elapsed < wait:
-            time.sleep(wait - elapsed)
-
+        by accident. The waiting and counting are `Throttled`'s."""
+        self._await_slot()
         resp = self._session.get(url, timeout=self.timeout, allow_redirects=True)
-        self._last_request = time.monotonic()
-        self._requests_made += 1
+        self._spend_slot()
         if resp.status_code != 200:
             raise SourceBlocked(f"HTTP {resp.status_code} for {url}")
         return resp.text
-
-    def reset_budget(self) -> None:
-        self._requests_made = 0
 
     # --- search (cheap index) -----------------------------------------------
 
@@ -204,7 +176,8 @@ class FacebookSource:
         now = now or datetime.now(timezone.utc)
         out: list[RawListing] = []
         for block in _json_blocks(html):
-            for node in _find_listings(block):
+            for node in _nodes_with(block, "marketplace_listing_title",
+                                    "redacted_description"):
                 lid = str(node.get("id") or "")
                 if not lid or lid in seen or node.get("is_sold"):
                     continue
@@ -319,14 +292,15 @@ class FacebookSource:
         best: dict[str, Any] | None = None
         photos: tuple[str, ...] = ()
         for block in _json_blocks(html):
-            for node in _find_listings(block):
+            for node in _nodes_with(block, "marketplace_listing_title",
+                                    "redacted_description"):
                 if str(node.get("id") or "") != listing.source_id:
                     continue
                 if best is None or len(node) > len(best):
                     best = node
             # The id check is what makes these safe to trust as THIS listing's
             # photos. Without it we are back to picking up the carousel.
-            for node in _photo_sets(block):
+            for node in _nodes_with(block, "listing_photos"):
                 if not photos and str(node.get("id") or "") == listing.source_id:
                     photos = _photo_uris(node)
         if best is None:

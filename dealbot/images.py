@@ -15,9 +15,52 @@ import shutil
 from pathlib import Path
 from typing import Protocol
 
+import requests
+
 from .models import Listing
 
 MAX_IMAGES_PER_LISTING = 3
+
+# Shared by the vision pass and the dashboard's thumbnail cache. Both download
+# a stranger's URL and downscale it to 512px, and both used to carry their own
+# copy of the caps below plus their own copy of the fetch. The hardening is the
+# security-relevant part, so it gets one implementation rather than two kept in
+# step by hand.
+MAX_BYTES = 8 * 1024 * 1024
+MAX_EDGE = 512
+TIMEOUT = 20
+
+
+def fetch_downscaled(url: str, *, max_edge: int = MAX_EDGE,
+                     timeout: float = TIMEOUT, max_bytes: int = MAX_BYTES):
+    """Download one image and return it downscaled, or None if unusable.
+
+    Defensive throughout, because the URL came from a listing written by a
+    stranger: a timeout, a content-type check, a byte cap enforced while
+    reading rather than after, and re-encoding through Pillow so whatever a
+    caller writes to disk is an image WE produced rather than bytes we were
+    handed.
+
+    Returns None for the ordinary "nothing usable here" cases -- non-200, wrong
+    content-type, over the cap. Anything genuinely exceptional propagates, so
+    each caller keeps its own policy: the vision pass skips the photo, the
+    thumbnail cache logs and moves on.
+    """
+    import io
+
+    from PIL import Image
+
+    with requests.get(url, timeout=timeout, stream=True) as r:
+        if r.status_code != 200:
+            return None
+        if not r.headers.get("content-type", "").startswith("image/"):
+            return None
+        blob = r.raw.read(max_bytes + 1, decode_content=True)
+    if len(blob) > max_bytes:
+        return None
+    img = Image.open(io.BytesIO(blob))
+    img.thumbnail((max_edge, max_edge))
+    return img
 
 
 class ImageProvider(Protocol):
@@ -57,41 +100,23 @@ class HttpImageProvider:
     damage all survive 512px, and those are the only questions a photograph can
     settle anyway.
 
-    Everything here is defensive because the URLs come from listings written by
-    strangers: a size cap, a content-type check, a timeout, and re-encoding
-    through Pillow so whatever lands on disk is an image we produced rather than
-    bytes we were handed.
+    The fetching and the hardening are `fetch_downscaled`'s; this adds only
+    where the result is written.
     """
     name = "http"
-
-    MAX_BYTES = 8 * 1024 * 1024
-    MAX_EDGE = 512
-    TIMEOUT = 20
 
     def __init__(self, max_edge: int = MAX_EDGE):
         self.max_edge = max_edge
 
     def fetch(self, listing: Listing, dest: Path,
               limit: int = MAX_IMAGES_PER_LISTING) -> list[Path]:
-        import io
-
-        import requests
-        from PIL import Image
-
         dest.mkdir(parents=True, exist_ok=True)
         out: list[Path] = []
         for i, url in enumerate(listing.images[:limit]):
             try:
-                with requests.get(url, timeout=self.TIMEOUT, stream=True) as r:
-                    if r.status_code != 200:
-                        continue
-                    if not r.headers.get("content-type", "").startswith("image/"):
-                        continue
-                    blob = r.raw.read(self.MAX_BYTES + 1, decode_content=True)
-                if len(blob) > self.MAX_BYTES:
+                img = fetch_downscaled(url, max_edge=self.max_edge)
+                if img is None:
                     continue
-                img = Image.open(io.BytesIO(blob))
-                img.thumbnail((self.max_edge, self.max_edge))
                 target = dest / f"photo{i}.png"
                 img.convert("RGB").save(target, "PNG")
                 out.append(target)

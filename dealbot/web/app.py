@@ -44,7 +44,14 @@ def asset_version() -> int:
                default=0)
 log = logging.getLogger("dealbot.web")
 
-QUEUE_SQL = """
+# The bin views are one query with the WHERE clause swapped. They used to be
+# built by `str.replace` on each other -- QUEUE_SQL rebound to a longer string,
+# then SAVED_SQL and NEAR_MISS_SQL doing textual surgery on the rebound value.
+# A non-matching needle in str.replace is a SILENT no-op, so editing the text
+# "WHERE m.status = ?" produced a perfectly valid query against the wrong rows,
+# with nothing raised anywhere. The clause is a parameter now.
+def _queue_sql(where: str) -> str:
+    return f"""
 SELECT m.hunt_id, m.status, l.*,
        l.previous_price_cents,
        CAST(julianday('now') - julianday(l.posted_at) AS INTEGER) AS age_days,
@@ -57,7 +64,7 @@ FROM hunt_matches m
 JOIN listings l ON l.id = m.listing_id
 JOIN scores  s ON s.id = (SELECT MAX(id) FROM scores
                           WHERE hunt_id = m.hunt_id AND listing_id = m.listing_id)
-WHERE m.status = ?
+{where}
 ORDER BY s.deal_score DESC, l.last_seen DESC
 LIMIT ?
 """
@@ -123,21 +130,18 @@ ONE_BIN = """
                  LIMIT 1)
 """
 
+QUEUE_SQL = _queue_sql("WHERE m.status = ?" + ONE_BIN)
+
 # Things you decided to act on. Clicking "saved" used to make a listing vanish:
 # it left the bin and was only findable by digging through a hunt view.
-QUEUE_SQL = QUEUE_SQL.replace("WHERE m.status = ?", "WHERE m.status = ?" + ONE_BIN)
-
-SAVED_SQL = QUEUE_SQL.replace("WHERE m.status = ?",
-                              "WHERE m.status IN ('saved', 'contacted')")
+SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'contacted')" + ONE_BIN)
 
 # The band just under the bar. `deal_score` is judged as if unknowns resolve
 # favourably, so a 6 means "even if it is what it looks like, it is mediocre" --
 # but you cannot calibrate a threshold you can never see over.
 # /skipped is not a bin -- it is the band under the bar -- so it keeps its own
-# rows and only drops the ONE_BIN clause.
-NEAR_MISS_SQL = QUEUE_SQL.replace(
-    "WHERE m.status = ?" + ONE_BIN,
-    "WHERE m.status = 'scored' AND s.deal_score >= ?")
+# rows and takes no ONE_BIN clause.
+NEAR_MISS_SQL = _queue_sql("WHERE m.status = 'scored' AND s.deal_score >= ?")
 
 
 def _rows(store: Store, sql: str, args=()) -> list[dict]:
@@ -281,7 +285,12 @@ def create_app(base_cfg: Config) -> FastAPI:
 
         Recomputed per request rather than captured at startup: this process
         stays up for weeks, and a want added on the phone has to become a hunt
-        without an ssh session and a restart. It is two SELECTs.
+        without an ssh session and a restart.
+
+        It is a handful of SELECTs and, as of the seed-marker removal, no
+        writes -- the claim here used to be "two SELECTs" while it was in fact
+        nine reads and two writes, and the writes meant a GET could block on
+        the poller's lock.
         """
         return config_mod.with_store(base_cfg, store)
 
@@ -300,18 +309,21 @@ def create_app(base_cfg: Config) -> FastAPI:
         cfg = kw.pop("cfg", None) or _live()
         sched = kw.pop("sched", None) or _schedule()
         off = store.disabled_hunts()
-        paused = [h for h in cfg.hunts if h.id in off]
-        all_paused = bool(cfg.hunts) and len(paused) == len(cfg.hunts)
-        return {"request": request, "hunts": cfg.hunts,
+        # `cfg.hunts` is a computed property -- bound once here because this
+        # block used to read it seven times and rebuild the whole tuple each.
+        hunts = cfg.hunts
+        paused = [h for h in hunts if h.id in off]
+        all_paused = bool(hunts) and len(paused) == len(hunts)
+        sweeps = [h for h in hunts if h.kind == "sweep"]
+        return {"request": request, "hunts": hunts,
                 "assets": asset_version(),
                 "paused_hunts": paused,
                 "all_paused": all_paused,
                 "bin_counts": _counts(),
-                "health": _health(paused, cfg.hunts, sched),
+                "health": _health(paused, hunts, sched),
                 "schedule": sched,
-                "sweeps_paused": all(h.id in off for h in cfg.hunts
-                                     if h.kind == "sweep")
-                                 and any(h.kind == "sweep" for h in cfg.hunts),
+                "sweeps_paused": bool(sweeps)
+                                 and all(h.id in off for h in sweeps),
                 **kw}
 
     def _counts():
@@ -332,7 +344,7 @@ def create_app(base_cfg: Config) -> FastAPI:
             (status,)).fetchone()["c"]
         return TEMPLATES.TemplateResponse(
             request, template,
-            ctx(request, items=items, counts=_counts(), total=total,
+            ctx(request, items=items, total=total,
                 truncated=total > len(items), **extra))
 
     @app.get("/")
@@ -347,7 +359,7 @@ def create_app(base_cfg: Config) -> FastAPI:
         items = _rows(store, SAVED_SQL, (PAGE_LIMIT,))
         return TEMPLATES.TemplateResponse(
             request, "saved.html",
-            ctx(request, items=items, counts=_counts(), total=len(items),
+            ctx(request, items=items, total=len(items),
                 truncated=False))
 
     @app.get("/near")
@@ -368,7 +380,7 @@ def create_app(base_cfg: Config) -> FastAPI:
             (floor,)).fetchone()["c"]
         return TEMPLATES.TemplateResponse(
             request, "skipped.html",
-            ctx(request, items=items, counts=_counts(), total=total,
+            ctx(request, items=items, total=total,
                 floor=floor, truncated=total > len(items)))
 
     # --- installable ------------------------------------------------------
@@ -441,19 +453,17 @@ def create_app(base_cfg: Config) -> FastAPI:
 
     @app.get("/listing/{listing_id:path}")
     def listing_view(request: Request, listing_id: str):
-        row = store.conn.execute(
-            "SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
-        if row is None:
+        # `_rows` is the one JSON-column decoder. This page used to hand-decode
+        # its own, which is how it ended up showing only red_flags while the
+        # card beside it showed unknowns and requirements too -- the deepest
+        # view of a listing carrying less of the model's output than the list.
+        listings = _rows(store, "SELECT * FROM listings WHERE id=?", (listing_id,))
+        if not listings:
             return RedirectResponse("/", status_code=303)
-        listing = dict(row)
-        listing["images"] = json.loads(listing["images"] or "[]")
-        scores = [dict(r) for r in store.conn.execute(
-            "SELECT * FROM scores WHERE listing_id=? ORDER BY id DESC", (listing_id,))]
-        for s in scores:
-            # The detail page used to decode only red_flags, so the deepest view
-            # of a listing carried less of the model's output than the card did.
-            for col in ("red_flags", "unknowns", "requirements"):
-                s[col] = json.loads(s[col] or "[]")
+        listing = listings[0]
+        scores = _rows(
+            store, "SELECT * FROM scores WHERE listing_id=? ORDER BY id DESC",
+            (listing_id,))
         matches = [dict(r) for r in store.conn.execute(
             "SELECT * FROM hunt_matches WHERE listing_id=?", (listing_id,))]
         history = store.price_history(listing_id)
@@ -566,9 +576,13 @@ def create_app(base_cfg: Config) -> FastAPI:
     def settings_view(request: Request, err: str = ""):
         cfg, sched = _live(), _schedule()
         off = store.disabled_hunts()
+        # Indexed once. `cfg.hunts` is a computed property, so the linear scan
+        # that was here rebuilt every hunt for every want -- quadratic in the
+        # one number on this page a person is expected to grow.
+        by_id = {h.id: h for h in cfg.hunts}
         rows = []
         for sw in store.wants(include_archived=True):
-            hunt = next((h for h in cfg.hunts if h.id == sw.hunt_id), None)
+            hunt = by_id.get(sw.hunt_id)
             rows.append({
                 "w": sw.want, "stored": sw, "hunt": hunt,
                 "hunt_id": sw.hunt_id,
@@ -643,10 +657,15 @@ def create_app(base_cfg: Config) -> FastAPI:
         in config.yaml -- the source rate limits especially, which exist to keep
         Facebook from blocking you and live inside the adapter precisely so a
         caller cannot bypass them."""
-        for key, raw in (("min_deal_score", min_deal_score),
-                         ("free_find_min_score", free_find_min_score),
-                         ("max_results", max_results),
-                         ("radius_miles", radius_miles)):
+        # The form fields have to be declared for FastAPI, but the LOOP is
+        # driven by Store.TUNING, so the set of numbers this endpoint accepts
+        # cannot drift from the set it knows how to clamp.
+        submitted = {"min_deal_score": min_deal_score,
+                     "free_find_min_score": free_find_min_score,
+                     "max_results": max_results,
+                     "radius_miles": radius_miles}
+        for key in store.TUNING:
+            raw = submitted.get(key, "")
             if str(raw).strip():
                 try:
                     store.set_tuning(key, raw)

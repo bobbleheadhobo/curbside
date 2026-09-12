@@ -39,7 +39,7 @@ pipeline is provably fine and a Facebook change is a one-file repair.
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m dealbot.cli once      # one pass over every hunt
-.venv/bin/python -m dealbot.cli serve     # dashboard on :8080, all interfaces
+.venv/bin/python -m dealbot.cli serve     # dashboard on 127.0.0.1:8080
 .venv/bin/python -m pytest tests/ -q
 ```
 
@@ -152,8 +152,11 @@ search is the fallback; only when *every* surface is gated does the run fail.
 
 Rate limiting lives inside the adapter so a caller cannot bypass it, and the
 defaults (15s between requests, 25 per run) are set for never being throttled
-rather than for speed. Running out of budget mid-enrichment is not fatal: what
-was enriched gets judged, the rest stay `new` for the next run. Judging a listing
+rather than for speed. Both adapters get it from one `Throttled` mixin, so
+"the site is gating us" (`SourceBlocked`) stays distinguishable from "we stopped
+asking" (`BudgetExhausted`) — trying another surface helps in the first case and
+is pointless in the second. Running out of budget mid-enrichment is not fatal:
+what was enriched gets judged, the rest stay `new` for the next run. Judging a listing
 titled "Free" with no description would waste the one chance to score it.
 
 `fixtures/html/` holds real captured pages — a good search, a throttled search,

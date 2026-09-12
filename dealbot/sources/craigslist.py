@@ -26,8 +26,6 @@ The `?format=rss` endpoint is blocked outright (403), so this is the path.
 from __future__ import annotations
 
 import logging
-import random
-import time
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
@@ -37,7 +35,8 @@ from ..geo import haversine_miles
 from ..models import Hunt, Listing, Location, RawListing
 # Defined in sources/base so the pipeline can tell "Craigslist is gating us"
 # from "this one payload would not parse" without importing every adapter.
-from .base import BudgetExhausted, SourceBlocked      # noqa: F401  re-exported
+from .base import (BudgetExhausted, SourceBlocked,    # noqa: F401  re-exported
+                   Throttled)
 
 log = logging.getLogger("dealbot.sources.craigslist")
 
@@ -70,7 +69,7 @@ def _latlon(encoded: Any) -> tuple[float | None, float | None]:
         return None, None
 
 
-class CraigslistSource:
+class CraigslistSource(Throttled):
     name = "craigslist"
 
     def __init__(self, location: Location, area_id: int = 50, *,
@@ -78,31 +77,20 @@ class CraigslistSource:
                  max_requests_per_run: int = 40, timeout: float = 30.0):
         self.location = location
         self.area_id = area_id
-        self.min_interval = min_interval_seconds
-        self.jitter = jitter
-        self.max_requests = max_requests_per_run
-        self.timeout = timeout
-        self._last_request = 0.0
-        self._requests_made = 0
+        self._init_budget(min_interval=min_interval_seconds, jitter=jitter,
+                          max_requests=max_requests_per_run, timeout=timeout)
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": UA,
                                       "Accept": "application/json"})
 
-    def reset_budget(self) -> None:
-        self._requests_made = 0
-
     def _get(self, url: str, params: dict[str, Any] | None = None) -> dict:
-        if self._requests_made >= self.max_requests:
-            raise SourceBlocked(
-                f"request budget exhausted ({self.max_requests} this run)")
-        wait = self.min_interval * (1 + random.uniform(-self.jitter, self.jitter))
-        elapsed = time.monotonic() - self._last_request
-        if self._last_request and elapsed < wait:
-            time.sleep(wait - elapsed)
-
+        """Rate limiting lives HERE, not in the caller. Exhausting OUR budget
+        now raises `BudgetExhausted` like Facebook's does, rather than the
+        plain `SourceBlocked` this copy used to raise -- the caller can finally
+        tell "we stopped asking" from "the site stopped answering"."""
+        self._await_slot()
         resp = self._session.get(url, params=params, timeout=self.timeout)
-        self._last_request = time.monotonic()
-        self._requests_made += 1
+        self._spend_slot()
         if resp.status_code != 200:
             raise SourceBlocked(f"HTTP {resp.status_code} for {url}")
         try:

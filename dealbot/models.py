@@ -237,17 +237,12 @@ class Score:
     cache_read_tokens: int = 0
     cost_usd: float = 0.0
 
-    @property
-    def is_relevant(self) -> bool:
-        return self.match in ("yes", "unknown") or self.worth_grabbing
-
 
 @dataclass(frozen=True)
 class Candidate:
     """Survived the gate and is headed for the model."""
     listing: Listing
     reason: str                      # "new" | "price_drop" | "relist"
-    previous_score: Score | None = None
 
 
 @dataclass(frozen=True)
@@ -265,7 +260,6 @@ class RunResult:
     n_candidates: int = 0
     n_scored: int = 0
     n_surfaced: int = 0
-    n_worth_a_look: int = 0
     n_wanted: int = 0
     n_free_find: int = 0
     n_image_checks: int = 0

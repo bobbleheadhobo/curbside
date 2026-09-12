@@ -206,14 +206,11 @@ def render_negative_examples(dismissed_titles: Sequence[str]) -> str:
             f"again):\n{lines}")
 
 
-def render_listing(listing: Listing, *, include_id: bool = True) -> str:
+def render_listing(listing: Listing) -> str:
     price = ("free" if listing.price_cents == 0
              else "no price shown" if listing.price_cents is None
              else f"${listing.price_cents / 100:.0f}")
-    parts = []
-    if include_id:
-        parts.append(f"id: {listing.id}")
-    parts.append(f"title: {listing.title}")
+    parts = [f"id: {listing.id}", f"title: {listing.title}"]
     parts.append(f"price: {price}")
     # A thing that was $500 and is now free is a completely different
     # proposition from a thing that was always free, and the model cannot infer

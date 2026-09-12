@@ -143,8 +143,8 @@ because it teaches the hunt and that is not guessable from the word.
 
 **The UI offers Save and Dismiss only.** `contacted` is no longer surfaced
 anywhere: the user does not want to track whether they messaged a seller. The
-status still exists and is still accepted, because `filters.TRIAGED`,
-`recheck.KEEP_STATUS` and `db.TERMINAL_TRIAGE` all treat it as "already
+status still exists and is still accepted, because `filters.TRIAGED` and
+`recheck.KEEP_STATUS` both treat it as "already
 triaged, do not spend money judging this again", and `SAVED_SQL` still matches
 it so any row already carrying it stays visible. Do not add the button back.
 
@@ -227,6 +227,22 @@ statuses offered inline (`['saved','dismissed']`, except `/saved` which offers
 `['dismissed']` on `/saved`), and `show_status` is off everywhere but the hunt
 views — the bins are named after their status, so repeating it on every row is
 noise.
+
+`_card.html` also exports two smaller macros. `_money(cents)` renders `free` or
+`$1,234`, and **`price(price_cents, was)`** renders the whole price block —
+current price, the old price struck through, and the drop chip. `listing.html`
+imports `price` rather than keeping its own version: it used to carry a copy
+with `_money` inlined twice and the drop percentage recomputed, so changing how
+a free or priced listing reads needed both files and only ever got one. `was` is
+the caller's argument because the card and the detail page derive the old price
+differently.
+
+**Template context.** Every view gets `bin_counts` — the per-bin totals behind
+the nav pips, deduplicated the same way the bins themselves are. There is no
+separate `counts` on the bin pages; three of them used to pass one *in addition*
+to `bin_counts`, computing the identical three queries twice per page load. The
+hunt view has its own `counts`, which is a different thing: per-status totals for
+that one hunt.
 
 ## What a card receives
 

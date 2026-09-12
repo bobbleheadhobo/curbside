@@ -83,7 +83,6 @@ rejection is stored with its reason** so an empty result is explainable.
 
 ```
 REJECT   already saved/dismissed/contacted   → "triaged"
-         seller on the blocklist              → "blocked_seller"
          over the hunt's max_price            → "over_price"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
@@ -133,7 +132,21 @@ them again, exactly like wants. Merging the file in forever would mean four of
 the entries on that page could never be deleted, which is not a list you can
 edit.
 
-Then two more filters:
+### The second half of the gate, after enrichment
+
+Some rules cannot run in `filters.gate` at all, because the search feed does not
+carry what they need: Facebook supplies no description and no coordinates until
+the item page is fetched, and Craigslist supplies neither a description nor a
+posting date. So `too_far`, `too_old` and `excluded_kw` are **re-checked** once
+enrichment has filled those in, alongside the checks that only make sense there.
+
+Each is a predicate handed to `pipeline._drop`, which partitions the candidates,
+**records the rejections**, logs a count, and returns the new `GateResult`. They
+were five hand-written copies of that loop until recently, and had drifted: the
+distance one recorded unguarded and logged nothing, so the single stage
+rejecting on a post-enrichment distance was the single stage whose rejections
+never appeared in the journal. Recording is what separates "explainably empty"
+from "silently broken", so it is no longer the caller's to remember.
 
 - **Age**, after enrichment. Free things evaporate: a couch posted a fortnight
   ago is gone, and appraising it can only ever produce a wasted trip, so free
@@ -235,6 +248,14 @@ match = no, worth_grabbing,   score ≥ 5.0, a bargain,
                               AND the hunt is a SWEEP      → free finds
 everything else                                            → filed, still searchable
 ```
+
+All of that is `pipeline.route(score, hunt, listing)`, returning `"wanted"`,
+`"free_find"` or `None`. **One function, because it used to be two.** The image
+pass needs the same question answered before spending on photos — it only pays
+for listings that would already reach a bin — and it asked with its own boolean
+copy of these conditions, kept in step with the routing by a comment. Nothing
+breaks visibly when two copies disagree; you simply buy image passes for
+listings nobody will be shown, or skip them on listings people will see.
 
 **Only a sweep fills the free bin.** A want hunt that met an unrelated bargain
 used to route it there too: seven of the ten entries in the live bin were
@@ -394,6 +415,28 @@ four days -- 225 of 619 listings with photos are Facebook -- so a browsing UI
 built on the source URLs would rot a third of its images every week. `/thumb/<id>`
 serves the local copy and falls back to the source while one exists.
 `dealbot prune-thumbs` drops copies for listings no longer in a bin or triaged.
+That download is the same `images.fetch_downscaled` the vision pass uses, so the
+hardening around a stranger's URL — byte cap enforced while reading,
+content-type check, timeout, re-encode through Pillow — exists once.
+
+**The dashboard is a reader.** It shares the SQLite file with the poller (WAL,
+`busy_timeout=10000`), and WAL readers never block, so a page load is unaffected
+by a run in flight — *as long as it does not write*. It no longer does.
+
+The three bin queries are one query with the WHERE clause swapped, built by
+`_queue_sql(where)`. They were previously derived from each other with
+`str.replace`, which is a **silent** no-op when the needle stops matching:
+editing the literal `"WHERE m.status = ?"` would have produced a valid query
+against the wrong rows, with nothing raised anywhere.
+
+Two indexes carry those views. The bin queries filter on `status` *alone*, with
+no `hunt_id`, so the composite `ix_matches_status(hunt_id, status)` never
+applied to them; and the one-row-per-listing subquery matches on `listing_id`,
+the second column of the primary key. Every bin page therefore scanned
+`hunt_matches` and sorted once per candidate row — quadratic in a table nothing
+is ever deleted from. `ix_matches_bin(status)` and `ix_matches_listing(listing_id)`
+fixed that: on the live database the tab counts went 6.6x faster and the card
+query 2.2x, and the gap widens as history accrues.
 
 ## 11. Where configuration lives
 
@@ -421,7 +464,25 @@ new term from one you deleted, so that edit belongs on `/settings`.
 
 Because of this, `Config.hunts` is a **computed property** rather than a field:
 the web process stays up for weeks and adding a want has to produce its hunt
-without a restart.
+without a restart. It is genuinely recomputed, so read it *once* per request and
+bind it — `ctx()` used to read `cfg.hunts` seven times per render and rebuild the
+whole tuple each time, and `/settings` scanned it once per want, which is
+quadratic in the one number on that page a person is expected to grow.
+
+Each tuned number carries its **destination** in `Store.TUNING` —
+`"min_deal_score": (float, 0.0, 10.0, "defaults")`, i.e. cast, floor, ceiling,
+and the `Config` attribute it lands on — so `config.with_store` applies them
+generically. `radius_miles` is the odd one out, landing on
+`location` rather than `defaults`; before the destination was written down, that
+meant a second hand-written `replace`, and a fifth number would have meant a
+third. Adding one is now a line in `TUNING` plus its form field.
+
+**Seeding writes nothing on a read.** Both seed calls run inside `with_store`,
+which the dashboard calls *per request*, so they must be no-ops once a database
+is seeded. The per-name and per-hunt checks already guarantee that; two
+`set_setting(...'seeded', '1')` rows that nothing ever read did not, and put a
+write lock on the read path of every page. `tests/test_web.py` now fails if a
+GET writes to an already-seeded database.
 
 ## 12. Installable
 

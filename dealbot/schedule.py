@@ -122,14 +122,6 @@ class Schedule:
         when = today + timedelta(minutes=self.start_minute)
         return when if when <= now else when - timedelta(days=1)
 
-    def closes_at(self, now: datetime | None = None) -> datetime | None:
-        if self.always_on:
-            return None
-        now = now or self.now()
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        when = today + timedelta(minutes=self.end_minute)
-        return when if when > now else when + timedelta(days=1)
-
     @property
     def window_label(self) -> str:
         if self.always_on:

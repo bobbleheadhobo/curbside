@@ -30,6 +30,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
@@ -174,8 +175,6 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable("api.anthropic.com unreachable")
 
     def _check_utilization(self) -> None:
-        if self.overridden():
-            return
         """Stand aside while the plan is busy.
 
         Waiting for an outright rejection means otter has already been refused
@@ -186,6 +185,8 @@ class ClaudeCodeScorer:
         pausing is self-sealing: no calls means no fresh number means no way to
         discover the window has reopened.
         """
+        if self.overridden():
+            return
         stamp = self.store.get_setting(UTIL_AT)
         if not stamp:
             return
@@ -343,6 +344,57 @@ class ClaudeCodeScorer:
             return ()
         return tuple(v for v in value if isinstance(v, dict))
 
+    def _score_from(self, data: dict[str, Any], *, listing_id: str,
+                    hunt_id: str, model: str, scored_at: datetime, facts,
+                    cost_usd: float, match_default: str = "unknown") -> Score:
+        """One appraisal response, coerced into a Score.
+
+        The text pass and the image pass both build this, twenty keywords each,
+        and used to do it in two places. The schema lives in ONE place
+        (`APPRAISE_INSTRUCTION`) and was consumed in two, so a field added to
+        it and wired into `appraise` alone would vanish from image-checked
+        listings -- which are by design the high-scoring ones headed for a bin.
+        Nothing would have looked broken.
+
+        Nothing here trusts the model: "$1,350" parses, the score clamps to
+        0-10, an unrecognised `match` becomes "unknown", and no non-scalar
+        reaches a TEXT column.
+        """
+        est = self._as_float(data.get("est_value_usd"))
+        score_val = self._as_float(data.get("deal_score")) or 0.0
+        match = str(data.get("match", match_default)).lower()
+        if match not in ("yes", "no", "unknown"):
+            match = "unknown"
+        return Score(
+            listing_id=listing_id, hunt_id=hunt_id, model=model,
+            scored_at=scored_at, match=match,
+            deal_score=max(0.0, min(10.0, score_val)),
+            est_value_cents=None if est is None else int(round(est * 100)),
+            condition=self._as_text(data.get("condition")),
+            matched_want=self._as_text(data.get("matched_want")),
+            worth_grabbing=bool(data.get("worth_grabbing")),
+            needs_images=bool(data.get("needs_images")),
+            image_question=self._as_text(data.get("image_question")),
+            unknowns=self._as_str_tuple(data.get("unknowns")),
+            requirements=self._as_dict_tuple(data.get("requirements")),
+            red_flags=self._as_str_tuple(data.get("red_flags")),
+            reasoning=str(data.get("reasoning") or "")[:2000],
+            input_tokens=facts.input_tokens, output_tokens=facts.output_tokens,
+            # BOTH attempts, so a retry that worked still reports what the
+            # first one cost.
+            cache_read_tokens=facts.cache_read_tokens, cost_usd=cost_usd,
+        )
+
+    def _system(self, hunt: Hunt) -> str:
+        """The system prompt, assembled in one place.
+
+        Prompt PREFIX stability is money -- caching is prefix-matched -- so the
+        three call sites that spelled this out are one call site now. They
+        cannot drift into three slightly different prefixes.
+        """
+        return build_system_prompt(hunt, self._negative_examples(hunt),
+                                   rubric=self._rubric)
+
     # --- parsing ------------------------------------------------------------
 
     @staticmethod
@@ -438,10 +490,9 @@ class ClaudeCodeScorer:
             return TriageResult(kept, notes, cost_usd=cost,
                                 input_tokens=int(tin), output_tokens=int(tout))
 
+        system = self._system(hunt)
         for i in range(0, len(candidates), batch):
             chunk = candidates[i:i + batch]
-            system = build_system_prompt(hunt, self._negative_examples(hunt),
-                                rubric=self._rubric)
             user = (TRIAGE_INSTRUCTION + "\n\n" +
                     "\n\n---\n\n".join(render_listing(c.listing) for c in chunk))
             try:
@@ -485,8 +536,7 @@ class ClaudeCodeScorer:
             return []
         self.check_available()
 
-        system = build_system_prompt(hunt, self._negative_examples(hunt),
-                                rubric=self._rubric)
+        system = self._system(hunt)
         now = datetime.now(timezone.utc)
         scores: list[Score] = []
 
@@ -536,33 +586,11 @@ class ClaudeCodeScorer:
                      c.listing.id, facts.output_tokens, len(facts.text),
                      len(kept), 100 * len(kept) / max(len(facts.text), 1))
 
-            est = self._as_float(data.get("est_value_usd"))
-            score_val = self._as_float(data.get("deal_score")) or 0.0
-            match = str(data.get("match", "unknown")).lower()
-            if match not in ("yes", "no", "unknown"):
-                match = "unknown"
-
             try:
-              scores.append(Score(
-                listing_id=c.listing.id, hunt_id=hunt.id,
-                model=f"{self.cfg.appraise_model}", scored_at=now,
-                match=match,
-                deal_score=max(0.0, min(10.0, score_val)),
-                est_value_cents=None if est is None else int(round(est * 100)),
-                condition=self._as_text(data.get("condition")),
-                matched_want=self._as_text(data.get("matched_want")),
-                worth_grabbing=bool(data.get("worth_grabbing")),
-                needs_images=bool(data.get("needs_images")),
-                image_question=self._as_text(data.get("image_question")),
-                unknowns=self._as_str_tuple(data.get("unknowns")),
-                requirements=self._as_dict_tuple(data.get("requirements")),
-                red_flags=self._as_str_tuple(data.get("red_flags")),
-                reasoning=str(data.get("reasoning") or "")[:2000],
-                input_tokens=facts.input_tokens, output_tokens=facts.output_tokens,
-                # BOTH attempts, so a retry that worked still reports what the
-                # first one cost.
-                cache_read_tokens=facts.cache_read_tokens, cost_usd=spent,
-              ))
+                scores.append(self._score_from(
+                    data, listing_id=c.listing.id, hunt_id=hunt.id,
+                    model=self.cfg.appraise_model, scored_at=now,
+                    facts=facts, cost_usd=spent))
             except Exception:                                  # noqa: BLE001
                 log.exception("could not build a score for %s; skipping",
                               c.listing.id)
@@ -605,35 +633,22 @@ class ClaudeCodeScorer:
                   " the requirements updated from what you actually see. Set"
                   " needs_images to false.\n\n"
                 + render_listing(listing))
-            facts = self._invoke(user=user, system=build_system_prompt(hunt, self._negative_examples(hunt),
-                                rubric=self._rubric),
+            facts = self._invoke(user=user, system=self._system(hunt),
                                  model=self.cfg.appraise_model, read_dir=tmp)
             data = self._json_object(facts.text)
             if data is None:
                 log.warning("unparseable image appraisal for %s", listing.id)
                 return None
 
-            est = self._as_float(data.get("est_value_usd"))
-            score_val = self._as_float(data.get("deal_score")) or 0.0
-            match = str(data.get("match", score.match)).lower()
-            if match not in ("yes", "no", "unknown"):
-                match = "unknown"
-            return Score(
-                listing_id=listing.id, hunt_id=hunt.id,
-                model=f"{self.cfg.appraise_model}+images", scored_at=score.scored_at,
-                match=match, deal_score=max(0.0, min(10.0, score_val)),
-                est_value_cents=None if est is None else int(round(est * 100)),
-                condition=self._as_text(data.get("condition")),
-                matched_want=self._as_text(data.get("matched_want")),
-                worth_grabbing=bool(data.get("worth_grabbing")),
+            # The photos have now been looked at, so those three are facts
+            # about THIS pass rather than anything the model reported.
+            return replace(
+                self._score_from(
+                    data, listing_id=listing.id, hunt_id=hunt.id,
+                    model=f"{self.cfg.appraise_model}+images",
+                    scored_at=score.scored_at, facts=facts,
+                    cost_usd=facts.cost_usd, match_default=score.match),
                 needs_images=False, image_question=score.image_question,
-                images_checked=True,
-                unknowns=self._as_str_tuple(data.get("unknowns")),
-                requirements=self._as_dict_tuple(data.get("requirements")),
-                red_flags=self._as_str_tuple(data.get("red_flags")),
-                reasoning=str(data.get("reasoning") or "")[:2000],
-                input_tokens=facts.input_tokens, output_tokens=facts.output_tokens,
-                cache_read_tokens=facts.cache_read_tokens, cost_usd=facts.cost_usd,
-            )
+                images_checked=True)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

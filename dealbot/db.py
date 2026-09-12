@@ -131,7 +131,6 @@ CREATE TABLE IF NOT EXISTS runs (
   n_candidates  INTEGER NOT NULL DEFAULT 0,
   n_scored      INTEGER NOT NULL DEFAULT 0,
   n_surfaced    INTEGER NOT NULL DEFAULT 0,
-  n_worth_a_look INTEGER NOT NULL DEFAULT 0,
   n_wanted      INTEGER NOT NULL DEFAULT 0,
   n_free_find   INTEGER NOT NULL DEFAULT 0,
   n_image_checks INTEGER NOT NULL DEFAULT 0,
@@ -173,8 +172,6 @@ CREATE TABLE IF NOT EXISTS wants (
   updated_at      TEXT NOT NULL
 );
 """
-
-TERMINAL_TRIAGE = ("saved", "dismissed", "contacted")
 
 
 def _now() -> str:
@@ -218,7 +215,6 @@ class Store:
                               ("rechecked_at", "TEXT"),
                               ("alerted_price_cents", "INTEGER"))),
             ("runs", (("warning", "TEXT"),
-                      ("n_worth_a_look", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_free_find", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_image_checks", "INTEGER NOT NULL DEFAULT 0"),
@@ -236,6 +232,16 @@ class Store:
         # new column fails on every pre-existing database.
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_dup_key "
                           "ON listings(dup_key)")
+        # The bin views filter on status ALONE, without a hunt_id, so
+        # ix_matches_status(hunt_id, status) never applied to them -- every bin
+        # page scanned hunt_matches. Worse, the one-row-per-listing subquery
+        # matches on listing_id, the SECOND column of the primary key, so it
+        # could only be served by a full index scan plus a sort, once per
+        # candidate row. That is quadratic in a table nothing ever deletes from.
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_matches_listing "
+                          "ON hunt_matches(listing_id)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_matches_bin "
+                          "ON hunt_matches(status)")
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -268,12 +274,24 @@ class Store:
         )
         return int(cur.lastrowid)
 
+    # Asked of the table rather than retyped: this list used to be a fourth
+    # copy of the `runs` columns, after SCHEMA, _migrate and RunResult, and a
+    # counter missing from it was written nowhere with nothing raised.
+    _RUN_SET_NEVER = frozenset(("id", "hunt_id", "source",
+                                "started_at", "finished_at"))
+
+    def _run_cols(self) -> frozenset[str]:
+        cached = getattr(self._local, "run_cols", None)
+        if cached is None:
+            cached = frozenset(
+                r["name"] for r in self.conn.execute("PRAGMA table_info(runs)")
+            ) - self._RUN_SET_NEVER
+            self._local.run_cols = cached
+        return cached
+
     def finish_run(self, run_id: int, **fields: Any) -> None:
-        cols = [k for k in fields if k in
-                ("n_fetched", "n_new", "n_candidates", "n_scored", "n_surfaced",
-                 "n_worth_a_look", "n_wanted", "n_free_find",
-                 "n_image_checks", "n_deferred", "full_pass", "cost_usd",
-                 "error", "warning")]
+        settable = self._run_cols()
+        cols = [k for k in fields if k in settable]
         sets = ", ".join(f"{c}=?" for c in cols)
         args = [fields[c] for c in cols]
         self.conn.execute(
@@ -702,7 +720,7 @@ class Store:
         the strongest signal in the whole dataset.
         """
         rows = self.conn.execute(
-            f"""SELECT m.hunt_id, m.listing_id, l.*,
+            f"""SELECT m.hunt_id, m.listing_id, l.*, s.id AS score_id,
                        COALESCE(m.alerted_price_cents, s.priced_at_cents) AS was
                 FROM hunt_matches m
                 JOIN listings l ON l.id = m.listing_id
@@ -717,14 +735,17 @@ class Store:
                                                     s.priced_at_cents)
                 ORDER BY l.last_seen DESC LIMIT ?""",
             (*statuses, 1.0 - threshold, limit)).fetchall()
-        out = []
-        for r in rows:
-            score = self._row_to_score(self.conn.execute(
-                "SELECT * FROM scores WHERE hunt_id=? AND listing_id=? "
-                "ORDER BY id DESC LIMIT 1",
-                (r["hunt_id"], r["listing_id"])).fetchone())
-            out.append((r["hunt_id"], self._row_to_listing(r), score, r["was"]))
-        return out
+        if not rows:
+            return []
+        # The join above already picked the latest score per match, so its id
+        # is in hand -- this used to re-query for it once PER ROW, on a path
+        # the timer runs every 15 minutes.
+        ids = [r["score_id"] for r in rows]
+        scores = {sr["id"]: self._row_to_score(sr) for sr in self.conn.execute(
+            f"SELECT * FROM scores WHERE id IN ({','.join('?' * len(ids))})",
+            ids)}
+        return [(r["hunt_id"], self._row_to_listing(r),
+                 scores[r["score_id"]], r["was"]) for r in rows]
 
     def mark_price_alerted(self, hunt_id: str, listing_id: str,
                            price_cents: int) -> None:
@@ -777,11 +798,15 @@ class Store:
         # config.yaml after the first run never appeared and never said why.
         # Per-name is safe because deleting a want ARCHIVES it -- the row stays,
         # so the name stays taken and the file cannot resurrect it.
+        #
+        # There is no "seeded" marker row, and there must not be: the per-name
+        # check below IS the one-shot. A marker was written here on every call,
+        # and since `with_store` runs per web request, that put a WRITE on the
+        # read path of every page -- taking a lock on a file the poller writes,
+        # to store a constant nothing ever read.
         known = {r["name"] for r in self.conn.execute("SELECT name FROM wants")}
-        n = sum(self.save_want(w, origin="config")
-                for w in wants if w.name not in known)
-        self.set_setting("wants.seeded", "1")
-        return n
+        return sum(self.save_want(w, origin="config")
+                   for w in wants if w.name not in known)
 
     def save_want(self, want: Want, *, origin: str = "web") -> int:
         """Create or update one want. `created_at` and `origin` survive an edit."""
@@ -845,11 +870,18 @@ class Store:
     # Deliberately NOT everything in that file: the source rate limits protect
     # you from being blocked by Facebook and live inside the adapter so a caller
     # cannot bypass them, which a tap on a phone would be.
+    #
+    # The fourth element is WHERE the number lands on `Config`. It is here
+    # because `radius_miles` is the odd one out -- it sits on `location` while
+    # the rest sit on `defaults` -- and without it `config.with_store` needed a
+    # hand-written `replace` per destination, so a fifth number meant editing
+    # the validation here AND the application there, in two files, with nothing
+    # connecting them.
     TUNING = {
-        "min_deal_score": (float, 0.0, 10.0),
-        "free_find_min_score": (float, 0.0, 10.0),
-        "max_results": (int, 1, 50),
-        "radius_miles": (float, 1.0, 200.0),
+        "min_deal_score":      (float, 0.0, 10.0, "defaults"),
+        "free_find_min_score": (float, 0.0, 10.0, "defaults"),
+        "max_results":         (int, 1, 50, "defaults"),
+        "radius_miles":        (float, 1.0, 200.0, "location"),
     }
 
     def tuning(self) -> dict[str, float | int]:
@@ -858,7 +890,7 @@ class Store:
         A value that will not parse is ignored rather than raised on: these are
         settings rows, and a bad one must not be able to stop the timer."""
         out: dict[str, float | int] = {}
-        for key, (cast, lo, hi) in self.TUNING.items():
+        for key, (cast, lo, hi, _) in self.TUNING.items():
             raw = self.get_setting(f"tune:{key}")
             if raw is None:
                 continue
@@ -869,7 +901,7 @@ class Store:
         return out
 
     def set_tuning(self, key: str, value) -> None:
-        cast, lo, hi = self.TUNING[key]
+        cast, lo, hi, _ = self.TUNING[key]
         self.set_setting(f"tune:{key}", str(max(lo, min(cast(value), hi))))
 
     def hunt_intervals(self) -> dict[str, int]:
@@ -924,13 +956,15 @@ class Store:
         # The limit, and it is deliberate: a term APPENDED to a hunt that
         # already has a row does nothing. Applying it would mean re-adding
         # every term you had deleted, since the file cannot know which is which.
+        #
+        # Like `seed_wants`, the per-hunt check IS the one-shot -- no marker row
+        # is written, so a GET that only reads stays a reader.
         n = 0
         existing = set(self.hunt_excludes())
         for hunt_id, terms in from_file.items():
             if terms and hunt_id not in existing:
                 self.set_hunt_excludes(hunt_id, list(terms))
                 n += len(terms)
-        self.set_setting("excludes.seeded", "1")
         return n
 
     def set_hunt_excludes(self, hunt_id: str, terms: Sequence[str]) -> None:

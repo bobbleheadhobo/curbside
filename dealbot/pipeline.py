@@ -20,7 +20,7 @@ from typing import Sequence
 from .db import Store
 from .filters import gate, matches_any
 from .models import GateResult
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 from .models import Candidate, Hunt, Listing, Location, RunResult, Score
 from .notify.base import Notifier
@@ -56,18 +56,63 @@ def _is_a_bargain(score: Score, listing: Listing) -> bool:
     return score.est_value_cents >= FREE_FIND_VALUE_MULTIPLE * price
 
 
-def _would_bin(score: Score, hunt: Hunt, listing: Listing) -> bool:
-    """Whether this score alone puts a listing in front of you.
+def route(score: Score, hunt: Hunt, listing: Listing) -> str | None:
+    """Which bin this score puts a listing in, or None for neither.
 
-    Must agree with the routing in stage 6, or the image pass is spent looking
-    at things that will not be shown either way.
+    THE routing rule, in one place. It used to be written twice -- once here as
+    a boolean for the image pass, once in stage 6 as a pair of list
+    comprehensions -- with a comment asking the two to agree. They agreed only
+    as long as someone remembered, and disagreement is silent: the image pass
+    is spent on listings nobody will be shown, or skipped on ones they will.
+
+    Sorted by WHY a listing is here, not by how sure we are. "Did you find my
+    TV stand" and "what free stuff is worth grabbing" are different questions
+    and want different pages; certainty is shown inside a card, not as its own
+    bin. `deal_score` is scored as if unknowns resolve favourably, so one
+    threshold serves both bins and only the match field carries uncertainty.
+
+    Only the SWEEP fills the free bin. A want hunt that stumbles on an
+    unrelated bargain used to put it there too, which is how a $40
+    entertainment centre ended up in a tab called "Free finds" -- seven of the
+    ten things in that bin were priced, and every one came from a want hunt.
+    The sweep is free-only by construction, so this makes the bin's name true.
+    A want hunt's non-matches stay `scored` and remain findable in /skipped.
     """
     if score.match in ("yes", "unknown"):
-        return score.deal_score >= hunt.min_deal_score
-    return (hunt.kind == "sweep"
+        return "wanted" if score.deal_score >= hunt.min_deal_score else None
+    if (hunt.kind == "sweep"
             and bool(score.worth_grabbing)
             and score.deal_score >= hunt.free_find_min_score
-            and _is_a_bargain(score, listing))
+            and _is_a_bargain(score, listing)):
+        return "free_find"
+    return None
+
+
+def _drop(store: Store, hunt: Hunt, gr: GateResult,
+          reason_for, note: str) -> GateResult:
+    """Reject the candidates `reason_for` names a reason for, and keep the rest.
+
+    The five post-enrichment checks were five copies of this loop, and they had
+    already drifted: the radius one recorded its rejections unguarded and
+    logged nothing, so the only stage rejecting on a post-enrichment distance
+    was the only stage whose rejections were invisible in the journal.
+
+    Recording the rejection is the part that must not be forgotten -- it is
+    what makes a drop auditable on the hunt page instead of a listing quietly
+    vanishing. Keeping it here means a sixth check cannot omit it.
+    """
+    keep: list[Candidate] = []
+    dropped: list[tuple[str, str]] = []
+    for cand in gr.candidates:
+        reason = reason_for(cand)
+        if reason:
+            dropped.append((cand.listing.id, reason))
+        else:
+            keep.append(cand)
+    if dropped:
+        store.record_rejections(hunt.id, dropped)
+        log.info(note, len(dropped))
+    return GateResult(candidates=keep, rejected=gr.rejected + dropped)
 
 
 def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
@@ -277,15 +322,12 @@ def run_hunt(
 
         # Distance is only knowable after enrichment, so the radius check has to
         # run again here rather than in the gate.
-        in_range, out_of_range = [], []
-        for cand in enriched:
+        def _too_far(cand: Candidate) -> str | None:
             d = cand.listing.distance_mi
-            if d is not None and d > location.radius_miles:
-                out_of_range.append((cand.listing.id, "too_far"))
-            else:
-                in_range.append(cand)
-        store.record_rejections(hunt.id, out_of_range)
-        gr = GateResult(candidates=in_range, rejected=gr.rejected + out_of_range)
+            return "too_far" if d is not None and d > location.radius_miles else None
+
+        gr = _drop(store, hunt, GateResult(enriched, gr.rejected), _too_far,
+                   "%d candidates dropped outside the radius")
 
     # --- 4b2. too old to bother judging --------------------------------------
     # Placed AFTER enrichment on purpose: Craigslist only reveals postedDate on
@@ -293,18 +335,14 @@ def run_hunt(
     # Enrichment is cheap (an HTTP request); appraisal is not.
     if hunt.max_age_days > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=hunt.max_age_days)
-        fresh, stale = [], []
-        for cand in gr.candidates:
+
+        def _too_old(cand: Candidate) -> str | None:
             posted = cand.listing.posted_at
-            if posted is not None and posted < cutoff:
-                stale.append((cand.listing.id, "too_old"))
-            else:
-                fresh.append(cand)          # undated listings pass: fail open
-        if stale:
-            store.record_rejections(hunt.id, stale)
-            log.info("%d listings older than %dd skipped", len(stale),
-                     hunt.max_age_days)
-        gr = GateResult(candidates=fresh, rejected=gr.rejected + stale)
+            # undated listings pass: fail open
+            return "too_old" if posted is not None and posted < cutoff else None
+
+        gr = _drop(store, hunt, gr, _too_old,
+                   f"%d listings older than {hunt.max_age_days}d skipped")
 
     # --- 4b3. exclude keywords, now that there is a description --------------
     # The gate only ever sees the search feed, where Facebook supplies no
@@ -313,16 +351,12 @@ def run_hunt(
     # paid for at triage AND at appraisal. Same reason `too_far` and `too_old`
     # are re-checked here.
     if hunt.exclude and gr.candidates:
-        keep, excluded = [], []
-        for cand in gr.candidates:
-            if (hit := matches_any(cand.listing, hunt.exclude)):
-                excluded.append((cand.listing.id, f"excluded_kw:{hit}"))
-            else:
-                keep.append(cand)
-        if excluded:
-            store.record_rejections(hunt.id, excluded)
-            log.info("%d listings excluded on their description", len(excluded))
-        gr = GateResult(candidates=keep, rejected=gr.rejected + excluded)
+        def _excluded(cand: Candidate) -> str | None:
+            hit = matches_any(cand.listing, hunt.exclude)
+            return f"excluded_kw:{hit}" if hit else None
+
+        gr = _drop(store, hunt, gr, _excluded,
+                   "%d listings excluded on their description")
 
     # --- 4b4. nothing to go on -----------------------------------------------
     # A photograph is the minimum. Without one there is nothing for the image
@@ -340,18 +374,14 @@ def run_hunt(
     # After enrichment, because that is where both arrive: Craigslist's search
     # feed carries no description at all, and Facebook's carries one photo.
     if gr.candidates:
-        judgeable, nothing = [], []
-        for cand in gr.candidates:
+        def _unjudgeable(cand: Candidate) -> str | None:
             if cand.listing.images:
-                judgeable.append(cand)
-                continue
+                return None
             has_words = bool((cand.listing.description or "").strip())
-            nothing.append((cand.listing.id,
-                            "no_photo" if has_words else "nothing_to_judge"))
-        if nothing:
-            store.record_rejections(hunt.id, nothing)
-            log.info("%d listings had no photograph", len(nothing))
-        gr = GateResult(candidates=judgeable, rejected=gr.rejected + nothing)
+            return "no_photo" if has_words else "nothing_to_judge"
+
+        gr = _drop(store, hunt, gr, _unjudgeable,
+                   "%d listings had no photograph")
 
     # --- 4c. cross-source duplicates -----------------------------------------
     # People post the same thing to both marketplaces. This runs for EVERY
@@ -359,23 +389,22 @@ def run_hunt(
     # enrichment branch at first, which silently disabled it for any source
     # without a `detail` method. It is placed after enrichment because the key
     # needs coordinates, which Facebook only supplies at detail time.
-    deduped, dupes, seen_keys = [], [], {}
-    for cand in gr.candidates:
+    seen_keys: dict[str, str] = {}
+
+    def _duplicate(cand: Candidate) -> str | None:
         key = cand.listing.dup_key
-        if key:
-            prior = store.scored_duplicate(hunt.id, key, cand.listing.id)
-            if prior:
-                dupes.append((cand.listing.id, f"duplicate_of:{prior}"))
-                continue
-            if key in seen_keys:
-                dupes.append((cand.listing.id, f"duplicate_of:{seen_keys[key]}"))
-                continue
-            seen_keys[key] = cand.listing.id
-        deduped.append(cand)
-    if dupes:
-        store.record_rejections(hunt.id, dupes)
-        log.info("%d cross-source duplicates skipped", len(dupes))
-    gr = GateResult(candidates=deduped, rejected=gr.rejected + dupes)
+        if not key:
+            return None
+        prior = store.scored_duplicate(hunt.id, key, cand.listing.id)
+        if prior:
+            return f"duplicate_of:{prior}"
+        if key in seen_keys:
+            return f"duplicate_of:{seen_keys[key]}"
+        seen_keys[key] = cand.listing.id
+        return None
+
+    gr = _drop(store, hunt, gr, _duplicate,
+               "%d cross-source duplicates skipped")
 
     result.n_candidates = len(gr.candidates)
 
@@ -383,9 +412,7 @@ def run_hunt(
         # result.warning may already be set by a partial enrichment. The runs
         # table is the only place a degraded run is visible, so it has to go in
         # -- in `warning`, because `error` is what last_success_at reads.
-        store.finish_run(run_id, n_fetched=result.n_fetched, n_new=result.n_new,
-                         n_candidates=result.n_candidates, error=result.error,
-                         warning=result.warning,
+        store.finish_run(**asdict(result),
                          full_pass=0 if no_score else 1)
         return result
 
@@ -417,10 +444,7 @@ def run_hunt(
         if hasattr(scorer, "drain_unbilled"):
             result.cost_usd += scorer.drain_unbilled()
         result.error = f"scoring skipped: {exc}"
-        store.finish_run(run_id, n_fetched=result.n_fetched, n_new=result.n_new,
-                         n_candidates=result.n_candidates,
-                         n_scored=result.n_scored, cost_usd=result.cost_usd,
-                         error=result.error, warning=result.warning)
+        store.finish_run(**asdict(result))
         return result
 
     survivors, triage_notes = triaged.kept, triaged.notes
@@ -478,7 +502,7 @@ def run_hunt(
             # that photos reveal to be junk saves a wasted trip -- and that case
             # is preserved, because such a listing is in a bin already.
             listing = by_id[score.listing_id]
-            if not _would_bin(score, hunt, listing):
+            if route(score, hunt, listing) is None:
                 log.debug("skipping image pass for %s (scored %.0f)",
                           score.listing_id, score.deal_score)
                 continue
@@ -496,27 +520,14 @@ def run_hunt(
             result.cost_usd += better.cost_usd
 
     # --- 6. route into the two bins -----------------------------------------
-    # Sorted by WHY it is here, not by how sure we are. "Did you find my TV
-    # stand" and "what free stuff is worth grabbing" are different questions and
-    # want different pages; certainty is shown inside a card, not as its own bin.
-    #
-    # `deal_score` is scored as if unknowns resolve favourably, so one threshold
-    # serves both bins and only the match field carries the uncertainty.
-    wanted = [s for s in scores
-              if s.match in ("yes", "unknown")
-              and s.deal_score >= hunt.min_deal_score]
-    # Only the SWEEP fills the free bin. A want hunt that stumbles on an
-    # unrelated bargain used to put it there too, which is how a $40
-    # entertainment centre ended up in a tab called "Free finds" -- seven of
-    # the ten things in that bin were priced, and every one came from a want
-    # hunt. The sweep is free-only by construction, so this makes the bin's
-    # name true: everything in it is actually free. A want hunt's non-matches
-    # stay `scored` and remain findable in /skipped.
-    free_finds = [] if hunt.kind != "sweep" else [
-        s for s in scores
-        if s.match == "no" and s.worth_grabbing
-        and s.deal_score >= hunt.free_find_min_score
-        and _is_a_bargain(s, by_id[s.listing_id])]
+    # `route` is the rule; this is only the bookkeeping around it.
+    wanted, free_finds = [], []
+    for s in scores:
+        bin_name = route(s, hunt, by_id[s.listing_id])
+        if bin_name == "wanted":
+            wanted.append(s)
+        elif bin_name == "free_find":
+            free_finds.append(s)
 
     for s in wanted:
         store.set_status(hunt.id, s.listing_id, "wanted")
@@ -537,13 +548,7 @@ def run_hunt(
             log.exception("notifier %s failed", notifier.name)
     result.n_surfaced = len(surfaced)
 
-    store.finish_run(run_id, error=result.error, warning=result.warning,
-                     n_fetched=result.n_fetched, n_new=result.n_new,
-                     n_candidates=result.n_candidates, n_scored=result.n_scored,
-                     n_surfaced=result.n_surfaced, n_wanted=result.n_wanted,
-                     n_free_find=result.n_free_find,
-                     n_image_checks=result.n_image_checks,
-                     n_deferred=result.n_deferred, cost_usd=result.cost_usd)
+    store.finish_run(**asdict(result))
     return result
 
 

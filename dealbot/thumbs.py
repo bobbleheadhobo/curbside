@@ -16,19 +16,13 @@ and condition all survive it, and it keeps a thumbnail around 30-60KB.
 from __future__ import annotations
 
 import hashlib
-import io
 import logging
 from pathlib import Path
 
-import requests
-
+from .images import fetch_downscaled
 from .models import Listing
 
 log = logging.getLogger("dealbot.thumbs")
-
-MAX_EDGE = 512
-MAX_BYTES = 8 * 1024 * 1024
-TIMEOUT = 20
 
 
 def _key(listing_id: str) -> str:
@@ -54,17 +48,10 @@ class ThumbnailStore:
         if target.exists():
             return target
         try:
-            from PIL import Image
-            with requests.get(listing.images[0], timeout=TIMEOUT, stream=True) as r:
-                if r.status_code != 200:
-                    return None
-                if not r.headers.get("content-type", "").startswith("image/"):
-                    return None
-                blob = r.raw.read(MAX_BYTES + 1, decode_content=True)
-            if len(blob) > MAX_BYTES:
+            # Same fetch and the same 512px cap the vision pass uses.
+            img = fetch_downscaled(listing.images[0])
+            if img is None:
                 return None
-            img = Image.open(io.BytesIO(blob))
-            img.thumbnail((MAX_EDGE, MAX_EDGE))
             target.parent.mkdir(parents=True, exist_ok=True)
             img.convert("RGB").save(target, "JPEG", quality=82, optimize=True)
             return target

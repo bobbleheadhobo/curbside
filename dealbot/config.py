@@ -170,11 +170,6 @@ class Config:
     exclude_owned: bool = False
     schedule: ScheduleDefaults = ScheduleDefaults()
 
-    @property
-    def source(self) -> str:
-        """Back-compat for single-source callers and tests."""
-        return self.sources[0]
-
     def _exclude(self, hunt_id: str, from_file: tuple[str, ...]) -> tuple[str, ...]:
         if self.exclude_owned:
             return tuple(self.exclude_extra.get(hunt_id, ()))
@@ -192,50 +187,57 @@ class Config:
         and removes the whole class of bug where the file and the database
         disagree about what is running.
         """
-        d = self.defaults
         hunts: list[Hunt] = []
 
         # Sweeps carry EVERY want, so a free listing can match any of them --
         # that is what lets the sweep find a tv stand without ever searching for
         # one. Which also means adding a want changes the sweep's prompt.
         for s in self.sweeps:
-            hid = f"sweep:{s.name}"
-            hunts.append(Hunt(
-                id=hid, name=s.name, kind="sweep",
+            hunts.append(self._hunt(
+                f"sweep:{s.name}", s.name, "sweep", s,
                 queries=s.queries, max_price_cents=s.max_price_cents,
-                exclude=self._exclude(hid, s.exclude), wants=self.wants,
-                min_deal_score=(d.min_deal_score if s.min_deal_score is None
-                                else s.min_deal_score),
-                free_find_min_score=(d.free_find_min_score
-                                     if s.free_find_min_score is None
-                                     else s.free_find_min_score),
-                interval_minutes=self.interval_overrides.get(
-                    hid, s.interval_minutes),
-                max_results=d.max_results if s.max_results is None else s.max_results,
-                max_age_days=s.max_age_days, enabled=s.enabled))
+                wants=self.wants))
 
         # A want with queries also gets its own targeted hunt -- the sweep only
         # ever sees free items, so a want with a budget is invisible to it.
         for w in self.wants:
             if not w.queries:
                 continue
-            hid = f"want:{w.name}"
-            spec = self.want_hunts.get(w.name) or WantHuntSpec()
-            hunts.append(Hunt(
-                id=hid, name=w.name, kind="want",
+            hunts.append(self._hunt(
+                f"want:{w.name}", w.name, "want",
+                self.want_hunts.get(w.name) or WantHuntSpec(),
                 queries=w.queries, max_price_cents=w.max_price_cents,
-                exclude=self._exclude(hid, spec.exclude), wants=(w,),
-                min_deal_score=(d.min_deal_score if spec.min_deal_score is None
-                                else spec.min_deal_score),
-                free_find_min_score=(d.free_find_min_score
-                                     if spec.free_find_min_score is None
-                                     else spec.free_find_min_score),
-                interval_minutes=self.interval_overrides.get(
-                    hid, spec.interval_minutes),
-                max_results=(d.max_results if spec.max_results is None
-                             else spec.max_results),
-                max_age_days=spec.max_age_days, enabled=spec.enabled))
+                wants=(w,)))
         return tuple(hunts)
+
+    def _hunt(self, hid: str, name: str, kind: str, spec, *,
+              queries, max_price_cents, wants) -> Hunt:
+        """One hunt, with every per-hunt override resolved against the defaults.
+
+        Sweeps and want-hunts differ in six values and agreed on the other
+        five, which were written out twice -- including four copies each of the
+        `d.X if spec.X is None else spec.X` fallback. A new tunable on `Hunt`
+        was a four-place edit that failed by half-working.
+        """
+        d = self.defaults
+
+        def override(field: str):
+            """A spec value of None means "no opinion, use the default"."""
+            chosen = getattr(spec, field)
+            return getattr(d, field) if chosen is None else chosen
+
+        return Hunt(
+            id=hid, name=name, kind=kind,
+            queries=queries, max_price_cents=max_price_cents,
+            exclude=self._exclude(hid, spec.exclude), wants=wants,
+            min_deal_score=override("min_deal_score"),
+            free_find_min_score=override("free_find_min_score"),
+            # The cadence is the dashboard's to set, so it is looked up rather
+            # than resolved against the file's default.
+            interval_minutes=self.interval_overrides.get(
+                hid, spec.interval_minutes),
+            max_results=override("max_results"),
+            max_age_days=spec.max_age_days, enabled=spec.enabled)
 
 
 def with_store(cfg: Config, store) -> Config:
@@ -254,19 +256,18 @@ def with_store(cfg: Config, store) -> Config:
                       for n, spec in cfg.want_hunts.items()})
     store.seed_excludes(from_file)
 
-    # The four numbers the dashboard owns. Same shape as the cadences: the file
-    # supplies the default and a settings row wins.
+    # The numbers the dashboard owns. Same shape as the cadences: the file
+    # supplies the default and a settings row wins. Each one carries its own
+    # destination in `Store.TUNING`, so adding a fifth is one line there rather
+    # than a line there and a `replace` here.
     tune = store.tuning()
-    defaults = replace(
-        cfg.defaults,
-        min_deal_score=tune.get("min_deal_score", cfg.defaults.min_deal_score),
-        free_find_min_score=tune.get("free_find_min_score",
-                                     cfg.defaults.free_find_min_score),
-        max_results=tune.get("max_results", cfg.defaults.max_results))
-    location = replace(cfg.location,
-                       radius_miles=tune.get("radius_miles",
-                                             cfg.location.radius_miles))
-    return replace(cfg, defaults=defaults, location=location,
+    landing: dict[str, dict[str, Any]] = {}
+    for key, (*_, dest) in store.TUNING.items():
+        if key in tune:
+            landing.setdefault(dest, {})[key] = tune[key]
+    tuned = {dest: replace(getattr(cfg, dest), **fields)
+             for dest, fields in landing.items()}
+    return replace(cfg, **tuned,
                    wants=tuple(s.want for s in store.wants()),
                    interval_overrides=store.hunt_intervals(),
                    exclude_extra=store.hunt_excludes(),

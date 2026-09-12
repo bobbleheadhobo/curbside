@@ -719,7 +719,7 @@ def test_want_hunts_have_no_age_limit_by_default(rig):
 def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
     """An image pass costs about twice a text appraisal, and two thirds were
     being spent confirming that things scoring 3/10 are indeed poor."""
-    from dealbot.pipeline import _would_bin
+    from dealbot.pipeline import route
     from dealbot.models import Score
     from datetime import datetime, timezone
     cfg, *_ = rig
@@ -735,15 +735,17 @@ def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
                      matched_want=None, worth_grabbing=grab, unknowns=(),
                      requirements=(), red_flags=(), reasoning="")
 
-    # the case worth paying for: a high text score photos might demolish
-    assert _would_bin(sc("unknown", 9.0), hunt, free)
-    assert _would_bin(sc("yes", 7.0), hunt, free)
+    # the case worth paying for: a high text score photos might demolish.
+    # `route` names the bin, so this asserts WHERE it lands as well as that it
+    # lands somewhere -- the image pass and stage 6 now read the same answer.
+    assert route(sc("unknown", 9.0), hunt, free) == "wanted"
+    assert route(sc("yes", 7.0), hunt, free) == "wanted"
     # a free find clearing its own, lower bar
-    assert _would_bin(sc("no", 5.0), hunt, free)
+    assert route(sc("no", 5.0), hunt, free) == "free_find"
     # and the two thirds that were pure waste
-    assert not _would_bin(sc("unknown", 3.0), hunt, free)
-    assert not _would_bin(sc("no", 4.0), hunt, free)
-    assert not _would_bin(sc("no", 9.0, grab=False), hunt, free)
+    assert route(sc("unknown", 3.0), hunt, free) is None
+    assert route(sc("no", 4.0), hunt, free) is None
+    assert route(sc("no", 9.0, grab=False), hunt, free) is None
 
 
 # --- what the model was already paid for must not be lost -------------------

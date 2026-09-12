@@ -28,8 +28,8 @@
 <div class="empty">
   <svg class="i" aria-hidden="true"><use href="#i-wants"/></svg>
   <b>Nothing matching your wants</b>
-  <p>{% if counts.get('free_find') %}
-      <a href="/free">{{counts['free_find']}} free find{{ '' if counts['free_find'] == 1 else 's' }}</a>
+  <p>{% if bin_counts.get('free_find') %}
+      <a href="/free">{{bin_counts['free_find']}} free find{{ '' if bin_counts['free_find'] == 1 else 's' }}</a>
       waiting, though.<br>{% endif %}
     <a href="/runs">Check the runs</a> to tell a quiet day from a broken fetch,
     or <a href="/wants/new">add another want</a>.</p>
