@@ -217,11 +217,18 @@ def health(row, paused, hunts, sched) -> dict:
     #    were exactly that. Reporting a routine quota pause as a red
     #    "Fetch failing" is the same lie as the last one.
     if row is not None and row["error"]:
-        if row["error"].startswith("scoring skipped"):
-            return {"state": "warn", "label": "Judging paused",
-                    "detail": f"Collecting normally. {row['error']}. {detail}"}
         return {"state": "bad", "label": "Fetch failing",
                 "detail": f"{detail} — {row['error']}"}
+
+    # 2b. Fetched fine, stood aside from the plan quota. This used to be
+    #     written to `error` and special-cased back out again here -- which
+    #     fixed the pill while leaving `last_success_at` reading it as a
+    #     failure, so the cadence collapsed to the timer period. It is a
+    #     warning now, at the source.
+    if row is not None and row["warning"] and str(
+            row["warning"]).startswith("scoring skipped"):
+        return {"state": "warn", "label": "Judging paused",
+                "detail": f"Collecting normally. {row['warning']}. {detail}"}
 
     # 3. Some hunts off. Indefinite, and only you can undo it.
     if paused:
@@ -303,7 +310,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
 
     def _health(paused, hunts, sched) -> dict:
         return health(store.conn.execute(
-            "SELECT started_at, error, (julianday('now') - julianday(started_at))"
+            "SELECT started_at, error, warning,"
+            " (julianday('now') - julianday(started_at))"
             " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone(),
             paused, hunts, sched)
 

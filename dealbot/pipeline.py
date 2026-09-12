@@ -477,7 +477,16 @@ def run_hunt(
                 done.notes, scorer.name)
         if hasattr(scorer, "drain_unbilled"):
             result.cost_usd += scorer.drain_unbilled()
-        result.error = f"scoring skipped: {exc}"
+        # `warning`, NOT `error`. The fetch succeeded -- this run collected
+        # everything it was going to collect and only the judging stood aside.
+        # `last_success_at` reads `error`, so recording it there made the hunt
+        # "due" on every single tick: the sweep ran every ~16 minutes against a
+        # configured 30, and want:tv-stand every ~15 against a configured 60.
+        # That is 2-4x the intended request volume at two sources that throttle
+        # silently, to retry something no amount of fetching can fix. The
+        # backlog top-up is what resumes judging once the window reopens.
+        note = f"scoring skipped: {exc}"
+        result.warning = f"{result.warning}; {note}" if result.warning else note
         store.finish_run(**asdict(result))
         return result
 

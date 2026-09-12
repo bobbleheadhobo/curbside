@@ -174,7 +174,10 @@ def cmd_once(args) -> int:
             status = f"ERROR {r.error}" if r.error else (
                 f"fetched={r.n_fetched} new={r.n_new} cand={r.n_candidates} "
                 f"scored={r.n_scored} wanted={r.n_wanted} free={r.n_free_find} "
-                f"imgs={r.n_image_checks} cost=${r.cost_usd:.4f}")
+                f"imgs={r.n_image_checks} cost=${r.cost_usd:.4f}"
+                # A standing-aside is a warning, not an error -- it must still
+                # be legible here, or a pass that judged nothing looks normal.
+                + (f"  WARN: {r.warning}" if r.warning else ""))
             print(f"{hunt.id:24} {name:11} {status}")
 
     # Rides along with the pass that is already running, and is paced per
@@ -298,7 +301,7 @@ def cmd_hunts(args) -> int:
     print(f"{'hunt':28} {'kind':6} {'every':>6}  {'max$':>6}  last run")
     for h in cfg.hunts:
         row = store.conn.execute(
-            "SELECT started_at, n_surfaced, error FROM runs WHERE hunt_id=? "
+            "SELECT started_at, n_surfaced, error, warning FROM runs WHERE hunt_id=? "
             "ORDER BY id DESC LIMIT 1", (h.id,)).fetchone()
         cap = "-" if h.max_price_cents is None else f"{h.max_price_cents/100:.0f}"
         last = "never"
@@ -306,6 +309,8 @@ def cmd_hunts(args) -> int:
             last = f"{row['started_at']} surfaced={row['n_surfaced']}"
             if row["error"]:
                 last += f" ERROR: {row['error']}"
+            elif row["warning"]:
+                last += f" warn: {row['warning']}"
         state = "  [PAUSED]" if h.id in off else ""
         print(f"{h.id:28} {h.kind:6} {h.interval_minutes:>5}m  {cap:>6}  {last}{state}")
     store.close()

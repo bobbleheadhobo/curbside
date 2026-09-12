@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 364 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 365 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -148,6 +148,16 @@ ever matched stays readable at `/hunt/want:<name>`.
 in the same minute makes zero model calls. That is what makes a 15-minute poll
 interval affordable. Anything that lets already-judged listings back through
 turns a cheap loop into an expensive one, and nothing will look broken.
+
+**A degraded run goes in `warning`; only a failed FETCH goes in `error`.**
+`last_success_at` counts runs with `error IS NULL`, so anything written to
+`error` makes the hunt due again on the very next tick and its cadence
+collapses to the timer period. A quota standdown was recorded there: the free
+sweep ran at a median 16 minutes against a configured 30, and `want:tv-stand`
+at 15 against a configured 60 — 2-4x the intended requests, at two sources that
+throttle silently, to retry something no amount of fetching can fix. The health
+pill had been taught to special-case the error string, which fixed how it looked
+and left the cadence broken. Fix the column, not the display.
 
 **Fetching is free; judgement is not.** Every pause — quota ceiling, rate limit,
 spend ceiling, connectivity — stops the *judging* and lets the *collecting*

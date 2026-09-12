@@ -174,7 +174,12 @@ def test_a_scoring_outage_costs_judgement_not_data(rig):
     from dealbot.pipeline import run_hunt
     r = run_hunt(store, hunt, source, Paused(), notifiers, cfg.location)
 
-    assert "scoring skipped" in r.error
+    # WARNING, not error: the fetch succeeded and only the judging stood
+    # aside. `last_success_at` reads `error`, so calling this a failure made
+    # the hunt due on every tick and collapsed its cadence to the timer
+    # period -- 2-4x the requests, at sources that throttle silently.
+    assert r.error is None
+    assert "scoring skipped" in r.warning
     assert r.n_fetched == 10 and r.n_new == 10          # data landed
     assert store.conn.execute(
         "SELECT COUNT(*) c FROM listings").fetchone()["c"] == 10
@@ -521,7 +526,8 @@ def test_the_daily_ceiling_stops_scoring_but_not_collecting(rig):
 
     from dealbot.pipeline import run_hunt
     r = run_hunt(store, hunt, source, sc, notifiers, cfg.location)
-    assert "spend ceiling" in r.error
+    assert r.error is None                        # the FETCH did not fail
+    assert "spend ceiling" in r.warning           # only the judging stood aside
     assert r.n_fetched == 10                      # collecting continues
     assert store.conn.execute(
         "SELECT COUNT(*) c FROM listings").fetchone()["c"] == 10
@@ -1202,3 +1208,38 @@ def test_a_date_we_cannot_read_sorts_last_instead_of_killing_the_run(tmp_path):
 
     # and a listing the upsert map has never heard of
     assert freshness(_cand("x:3"), {}) == datetime.min.replace(tzinfo=timezone.utc)
+
+
+def test_standing_aside_on_quota_does_not_collapse_the_cadence(tmp_path, rig):
+    """REGRESSION, and an expensive one.
+
+    A quota standdown was written to `error`. `last_success_at` counts only
+    runs with `error IS NULL`, so the hunt came up due on EVERY timer tick
+    instead of on its own cadence. Measured on the live box: the free sweep
+    ran at a median 16 minutes against a configured 30, and want:tv-stand at
+    15 against a configured 60 -- 2-4x the intended request volume, at two
+    sources that throttle silently, retrying something no amount of fetching
+    can fix.
+
+    The `warning` column exists for exactly this and its schema comment says
+    so. The health pill had already been taught to special-case the error
+    string, which fixed how it LOOKED while leaving the cadence broken.
+    """
+    from dealbot.pipeline import run_hunt
+    from dealbot.scoring.claude_code import ScoringUnavailable
+    cfg, store, source, _scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Paused:
+        name = "paused"
+        def triage(self, hunt, candidates):
+            raise ScoringUnavailable("5-hour plan window at 90%")
+        def appraise(self, hunt, candidates):
+            raise AssertionError("must not be reached")
+
+    r = run_hunt(store, hunt, source, Paused(), notifiers, cfg.location)
+    assert r.error is None and "scoring skipped" in r.warning
+
+    # the whole point: this run still satisfies the cadence
+    assert store.last_success_at(hunt.id, source.name) is not None, (
+        "a quota standdown is making the hunt due again on the next tick")

@@ -517,11 +517,15 @@ def test_the_page_links_the_assets_with_a_cache_buster(tmp_path):
 
 # --- the health ladder, without a web server in the way ----------------------
 
-def _row(mins_ago=5, error=None):
+def _row(mins_ago=5, error=None, warning=None):
+    """Shaped like the real `runs` row, `warning` included.
+
+    It was missing that key, which is the shape of fake this bug hid behind:
+    a quota standdown belongs in `warning` and was being written to `error`."""
     from datetime import datetime, timedelta, timezone
     when = datetime.now(timezone.utc) - timedelta(minutes=mins_ago)
     return {"started_at": when.isoformat(timespec="seconds"),
-            "error": error, "mins": mins_ago}
+            "error": error, "warning": warning, "mins": mins_ago}
 
 
 def _hunts(n=3):
@@ -554,7 +558,7 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched()
                   )["label"] == "Fetch failing"
     # a quota pause is not a failing fetch: the fetch worked
-    assert health(_row(error="scoring skipped: daily spend ceiling reached"),
+    assert health(_row(warning="scoring skipped: daily spend ceiling reached"),
                   [], hunts, _sched())["label"] == "Judging paused"
     # some hunts off beats the clock
     assert health(_row(), hunts[:2], hunts, _sched(open_=False)
