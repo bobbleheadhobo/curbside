@@ -454,6 +454,12 @@ either the seed or is not consulted at all:
 | timezone | `config.yaml` | the only home. It is a fact, not a preference |
 | pause switches | `settings` `hunt_disabled:<id>` | `enabled:` still wins if false |
 
+A want's **price cap of 0 means free ones only** — `over_price` drops anything
+dearer, so the cap is how you say "I want one of these, but only if someone is
+giving it away". Its **search terms** can be drafted for you by the *Suggest
+terms* button on the want editor; that is the only thing the dashboard ever
+spends quota on, and it spends none unless the button is pressed.
+
 Seeding is **per name and per hunt**, so something added to `config.yaml` after
 a database's first open still arrives. It cannot resurrect a deletion: a deleted
 want is archived rather than dropped, so its name stays taken (and its history

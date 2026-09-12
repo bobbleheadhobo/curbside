@@ -131,6 +131,54 @@ whatever the pictures show. When true, `image_question` says exactly what to loo
 for, in one sentence."""
 
 
+# --- drafting search terms for a new want ------------------------------------
+#
+# A want carries TWO things that look similar and are not: `description` is
+# prose the model judges a listing against, and `queries` are the words typed
+# into a search box. Writing the second is the part people are bad at -- you
+# describe what you want in your own words, and sellers title their posts in
+# theirs. "tv stand" and "media console" are the same object and share no word.
+#
+# Deliberately NOT the appraisal system prompt: a different task wants a
+# different prefix, and borrowing the rubric's would both mislead the model and
+# put a one-off call in the middle of the cached appraisal prefix.
+SUGGEST_SYSTEM = """\
+You turn a description of something a person wants into the search terms a
+SELLER would use in a listing title on Facebook Marketplace or Craigslist.
+
+Sellers write plainly and briefly. They name the object, not its purpose, and
+they rarely use the buyer's words for it. Good terms are short noun phrases of
+one to four words, and a good set covers the common SYNONYMS for the same
+object, because a listing that uses only one of them is invisible to the rest.
+
+Do not include a price, a condition, or the word "free" -- those are filters
+applied separately, and putting them in a query only narrows it wrongly. Do not
+invent a brand the description does not mention."""
+
+SUGGEST_INSTRUCTION = """\
+Return ONE JSON object and nothing else:
+{"queries": ["<search term>", ...]}
+
+Between three and six terms, most obvious first. Each is used as a whole search
+on its own, so each must stand alone."""
+
+
+def render_want_for_suggestion(name: str, description: str,
+                               requires: Sequence[str] = ()) -> str:
+    """The want as the suggestion prompt sees it.
+
+    The requirements are included because they often name the object more
+    precisely than the prose does ("at least 70 inches wide" implies furniture
+    sized in inches), but they are labelled as constraints so they do not end
+    up inside a search term.
+    """
+    parts = [f"name: {name}", f"wanted: {description.strip()}"]
+    if requires:
+        parts.append("constraints (do NOT put these in a search term): "
+                     + "; ".join(requires))
+    return "\n".join(parts)
+
+
 @dataclass(frozen=True)
 class TriageResult:
     """Survivors plus the model's stated reason for each drop.

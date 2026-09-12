@@ -48,6 +48,18 @@ class StubScorer:
                 notes[c.listing.id] = "no want keyword and not free"
         return TriageResult(kept, notes)
 
+    def suggest_queries(self, name: str, description: str,
+                        requires: Sequence[str] = ()) -> tuple[str, ...]:
+        """The name, and nothing cleverer.
+
+        Predictable rather than good, like the rest of this class: it makes the
+        blank-queries path exercisable offline and gives `backend: stub` a want
+        that actually searches for something. The real scorer is what knows
+        that "media console" and "credenza" are the same object as "tv stand".
+        """
+        term = " ".join(name.replace("-", " ").split())
+        return (term,) if term else ()
+
     def appraise(self, hunt: Hunt, candidates: Sequence[Candidate]) -> list[Score]:
         now = datetime.now(timezone.utc)
         out: list[Score] = []

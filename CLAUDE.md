@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 344 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 352 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -182,7 +182,19 @@ the one rejecting on distance recorded unguarded and logged nothing at all.
 
 **The dashboard reads; the poller writes.** A GET must not write. Both processes
 share one SQLite file by design (WAL, `busy_timeout=10000`), and readers never
-block — but a write on a read path can, and did.
+block — but a write on a read path can, and did. POSTs write freely; that is
+what they are for.
+
+**The dashboard can spend quota, but only when asked.** `cmd_serve` hands
+`create_app` a scorer for exactly one job: the *Suggest terms* button on the
+want editor. It is a button rather than something that happens on save because
+search terms become two requests per tick for as long as the want exists, so a
+person should read them before committing to them — and because nothing should
+quietly spend on a form submission. It goes through the same `check_available()`
+ceilings and pauses as an appraisal, takes a shorter timeout (someone is waiting
+on a form), and **fails open**: every way it can fail ends with the form handed
+back intact and no terms. `create_app(cfg)` with no scorer is still a working
+dashboard.
 
 **The scorer runs with `--tools ""`.** The prompt is *entirely* stranger-written
 text: titles and descriptions from marketplace sellers. The model gets no

@@ -36,15 +36,19 @@
       <label for="f-price">Most you would pay</label>
       <input type="text" inputmode="decimal" id="f-price" name="max_price"
              value="{{ v.max_price or '' }}" placeholder="250">
-      <p class="hint">Dollars. Anything dearer is dropped unjudged.</p>
+      <p class="hint">Dollars. Anything dearer is dropped unjudged.
+        <strong>0 means free ones only.</strong></p>
     </div>
 
     <div class="field">
       <label for="f-queries">Search terms</label>
       <textarea id="f-queries" name="queries"
         placeholder="tv stand&#10;media console&#10;credenza">{{ v.queries or '' }}</textarea>
-      <p class="hint">One per line, in the words a seller would use. Empty
-        means free stuff only.</p>
+      <button class="btn suggest" name="action" value="suggest">
+        <svg class="i" aria-hidden="true"><use href="#i-sparkle"/></svg>Suggest terms</button>
+      <p class="hint">One per line, in the words a seller would use &mdash; which
+        are often not yours. Write what you are looking for above, then let it
+        draft these. Left empty, only the free sweep watches for this.</p>
     </div>
 
     <div class="field">

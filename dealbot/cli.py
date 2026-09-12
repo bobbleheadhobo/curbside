@@ -316,7 +316,14 @@ def cmd_serve(args) -> int:
     import uvicorn
     from .web.app import create_app
     cfg = config_mod.load(args.config)
-    uvicorn.run(create_app(cfg), host=args.host, port=args.port, log_level="info")
+    # The dashboard gets a scorer for exactly ONE job: drafting search terms
+    # for a want whose author left them blank. Built here rather than in the
+    # web module because this is the composition root, and passed in so the
+    # tests can hand it a fake -- or nothing, which simply turns the drafting
+    # off. It spends through the same ceilings and pauses as the poller.
+    scorer = _build_scorer(cfg, Store(cfg.db_path))
+    uvicorn.run(create_app(cfg, scorer=scorer),
+                host=args.host, port=args.port, log_level="info")
     return 0
 
 

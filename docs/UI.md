@@ -366,6 +366,23 @@ The edit form does not offer it, and `/wants/save` ignores a `name` field when
 paragraph of prose written on a phone; losing it to a mistyped price cap would
 be unforgivable. `_want_form` re-renders with `values`, and there is a test.
 
+**"Suggest terms" is a button, and it fills the field rather than saving.**
+Describing what you want and naming it the way a *seller* would are different
+skills, and the second is the one people are bad at — "tv stand" and "media
+console" are the same object and share no word. So the model drafts them, but
+into the textarea, on a form handed straight back: those terms become two
+searches per tick for as long as the want exists, and nobody should be
+committed to words they have not read. It is a plain submit button carrying
+`action=suggest`, so it needs no JavaScript, and the browser's own `required`
+on the description enforces the one input the drafting actually needs. Every
+failure — no scorer, quota paused, unparseable output — comes back as the form,
+intact, with a note.
+
+**The price cap of 0 is a real answer.** It means free ones only, because
+`over_price` drops anything dearer than the cap. It used to be refused as a
+mistake, which left "free only" with no way to say it except leaving the search
+terms blank — one field quietly controlling two unrelated things.
+
 **The service worker must never cache HTML.** Photos and icons only. Half of
 what this shows is gone within the hour.
 

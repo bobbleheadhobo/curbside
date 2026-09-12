@@ -38,8 +38,9 @@ from ..config import ScorerConfig
 from ..connectivity import api_reachable
 from ..db import Store
 from ..models import Candidate, Hunt, Score
-from .base import (APPRAISE_INSTRUCTION, TRIAGE_INSTRUCTION, TriageResult,
-                   build_system_prompt, load_rubric, render_listing)
+from .base import (APPRAISE_INSTRUCTION, SUGGEST_INSTRUCTION, SUGGEST_SYSTEM,
+                   TRIAGE_INSTRUCTION, TriageResult, build_system_prompt,
+                   load_rubric, render_listing, render_want_for_suggestion)
 from .stream import extract, parse_events
 
 log = logging.getLogger("dealbot.scoring")
@@ -225,7 +226,7 @@ class ClaudeCodeScorer:
     # --- invocation ---------------------------------------------------------
 
     def _invoke(self, system: str, user: str, model: str,
-                read_dir: Path | None = None):
+                read_dir: Path | None = None, timeout: float | None = None):
         # Default: no tools at all. For the image pass, Read only, confined to a
         # directory holding files WE put there -- so the capability is "look at
         # these three pictures", not "reach the filesystem".
@@ -245,10 +246,11 @@ class ClaudeCodeScorer:
         try:
             proc = subprocess.run(
                 argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                timeout=self.cfg.timeout_seconds)
+                timeout=timeout or self.cfg.timeout_seconds)
         except subprocess.TimeoutExpired:
             raise ScoringUnavailable(
-                f"claude -p exceeded {self.cfg.timeout_seconds}s") from None
+                f"claude -p exceeded {timeout or self.cfg.timeout_seconds}s"
+            ) from None
         except OSError as exc:
             # A wrong claude_bin path, a permissions problem, no fork available.
             # This is a scoring outage like any other -- fetching still works and
@@ -384,6 +386,66 @@ class ClaudeCodeScorer:
             # first one cost.
             cache_read_tokens=facts.cache_read_tokens, cost_usd=cost_usd,
         )
+
+    # How many drafted terms are worth having. Each one is a whole search
+    # against two sources on every tick of that want's cadence, so this is a
+    # standing request-rate decision, not a prompt preference.
+    MAX_SUGGESTED_QUERIES = 6
+    MAX_QUERY_CHARS = 60
+    # A person is waiting on a form POST. The scoring timeout (180s) is sized
+    # for an appraisal nobody is watching; a form that hangs that long is
+    # broken, so this one gives up early and the caller falls back.
+    SUGGEST_TIMEOUT_SECONDS = 45.0
+
+    def suggest_queries(self, name: str, description: str,
+                        requires: Sequence[str] = ()) -> tuple[str, ...]:
+        """Draft the search terms for a want from its description.
+
+        Raises `ScoringUnavailable` like anything else that spends quota, and
+        the caller is expected to carry on without terms rather than refuse to
+        save the want -- a drafting failure must never cost someone the
+        paragraph of prose they just typed.
+        """
+        self.check_available()
+        facts = self._invoke(
+            SUGGEST_SYSTEM,
+            SUGGEST_INSTRUCTION + "\n\n"
+            + render_want_for_suggestion(name, description, requires),
+            self.cfg.triage_model,
+            timeout=self.SUGGEST_TIMEOUT_SECONDS)
+        self._spent_this_process += facts.cost_usd
+        # No Score row will carry this cost, so hand it to the next run that
+        # asks -- exactly like an unparseable appraisal.
+        self._unbilled_usd += facts.cost_usd
+
+        data = self._json_object(facts.text)
+        if data is None:
+            log.warning("unparseable query suggestion for want %r", name)
+            return ()
+        return self.clean_queries(self._as_str_tuple(data.get("queries")))
+
+    @classmethod
+    def clean_queries(cls, raw: Sequence[str]) -> tuple[str, ...]:
+        """Coerce drafted terms into something safe to put in a search box.
+
+        Never trusted, for the usual reason and one specific to this: these go
+        straight into a URL on every run of that hunt, forever. A model that
+        returns a paragraph, a duplicate or an empty string must not turn into
+        a standing request that fetches nothing.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in raw:
+            term = " ".join(str(item).split())        # collapse newlines too
+            if not term or len(term) > cls.MAX_QUERY_CHARS:
+                continue
+            if term.lower() in seen:
+                continue
+            seen.add(term.lower())
+            out.append(term)
+            if len(out) >= cls.MAX_SUGGESTED_QUERIES:
+                break
+        return tuple(out)
 
     def _system(self, hunt: Hunt) -> str:
         """The system prompt, assembled in one place.

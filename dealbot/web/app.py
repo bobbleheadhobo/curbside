@@ -263,7 +263,11 @@ def health(row, paused, hunts, sched) -> dict:
     return {"state": "ok", "label": when, "detail": detail}
 
 
-def create_app(base_cfg: Config) -> FastAPI:
+def create_app(base_cfg: Config, scorer=None) -> FastAPI:
+    """`scorer` is optional and is used for ONE thing: drafting a want's search
+    terms when its author left them blank. Without it that field simply stays
+    empty, which is what the whole path falls back to anyway -- so the dashboard
+    still runs, and every test that does not care can keep omitting it."""
     app = FastAPI(title="Curbside")
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     store = Store(base_cfg.db_path)
@@ -734,6 +738,36 @@ def create_app(base_cfg: Config) -> FastAPI:
 
     # --- wants -------------------------------------------------------------
 
+    def _draft_queries(name: str, description: str,
+                       requires: tuple[str, ...]) -> tuple[str, ...]:
+        """Draft search terms for a want from its description.
+
+        Describing what you want and naming it the way a seller would are two
+        different skills, and the second is the one people are bad at: "tv
+        stand" and "media console" are the same object and share no word.
+
+        Reached only from the "Suggest terms" button, never from a plain save,
+        so nothing is ever spent that was not asked for.
+
+        FAILS OPEN, always. A want with no terms is a perfectly good want --
+        the free sweep still matches every want, and its own hunt simply has
+        nothing to search yet -- whereas refusing the save would throw away a
+        paragraph of prose someone just typed on a phone. So every way this can
+        go wrong (no scorer wired, quota paused, the model unreachable, output
+        that will not parse) ends in the same place: no terms, and the form
+        handed back with everything still in it.
+        """
+        if scorer is None or not hasattr(scorer, "suggest_queries"):
+            return ()
+        try:
+            return tuple(scorer.suggest_queries(name, description, requires))
+        except Exception as exc:                           # noqa: BLE001
+            # Includes ScoringUnavailable, which is the EXPECTED failure here:
+            # the ceilings and pauses that protect quota shared with otter
+            # apply to this call exactly as they do to an appraisal.
+            log.info("could not draft search terms for %r: %s", name, exc)
+            return ()
+
     def _want_form(request: Request, *, stored=None, values=None,
                    error: str | None = None, status: int = 200):
         """One template for new and edit. On a validation error it comes back
@@ -768,7 +802,8 @@ def create_app(base_cfg: Config) -> FastAPI:
     def save_want(request: Request, description: str = Form(""),
                   max_price: str = Form(""), queries: str = Form(""),
                   requires: str = Form(""), name: str = Form(""),
-                  existing: str = Form(""), interval: int = Form(60)):
+                  existing: str = Form(""), interval: int = Form(60),
+                  action: str = Form("")):
         """Create or edit one want.
 
         The name is derived once and then frozen. It is the hunt id, the URL of
@@ -789,12 +824,34 @@ def create_app(base_cfg: Config) -> FastAPI:
             return fail("Give it a short name, letters and numbers.")
         if not description.strip():
             return fail("Say what you are looking for. This is what gets judged.")
+
+        # "Suggest terms" -- draft them INTO the form and hand it back unsaved.
+        # A button rather than something that happens silently on save: the
+        # terms become two searches per tick for as long as the want exists, so
+        # they should be read and edited by the person who will live with them,
+        # before they are committed to. Nothing is spent unless this is pressed.
+        if action == "suggest":
+            drafted = _draft_queries(slug, description, _lines(requires))
+            if not drafted:
+                return _want_form(
+                    request, stored=stored, values=values,
+                    error="Could not draft search terms just now. "
+                          "Type a few, or try again in a moment.")
+            values["queries"] = "\n".join(drafted)
+            return _want_form(request, stored=stored, values=values)
+
         try:
             dollars = float((max_price or "").replace("$", "").replace(",", ""))
         except ValueError:
-            return fail("Set a price cap, in dollars.")
-        if dollars < 1:
-            return fail("A price cap of zero would reject everything priced.")
+            return fail("Set a price cap in dollars, or 0 for free things only.")
+        # Zero is a real answer, not a mistake. `over_price` drops anything
+        # dearer than the cap, so a cap of 0 keeps free listings and nothing
+        # else -- which is how you say "I want one of these, but only if
+        # someone is giving it away". This used to be rejected outright, which
+        # left "free only" with no way to say it except leaving the search
+        # terms blank, and that now means something different.
+        if dollars < 0:
+            return fail("A price cap cannot be negative.")
         if stored is None and (clash := store.get_want(slug)) and not clash.archived:
             return fail(f"There is already a want called {slug}.")
 

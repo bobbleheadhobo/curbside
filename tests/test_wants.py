@@ -125,7 +125,7 @@ def test_the_name_is_frozen_once_it_exists(app):
     ({"name": "", "description": "d", "max_price": "5"}, "short name"),
     ({"name": "lamp", "description": " ", "max_price": "5"}, "looking for"),
     ({"name": "lamp", "description": "d", "max_price": "nope"}, "price cap"),
-    ({"name": "lamp", "description": "d", "max_price": "0"}, "reject everything"),
+    ({"name": "lamp", "description": "d", "max_price": "-5"}, "negative"),
 ])
 def test_a_bad_form_says_why_and_keeps_what_was_typed(app, data, fragment):
     """A description is a paragraph of prose. Losing it to a mistyped price
@@ -264,3 +264,146 @@ def test_the_batch_cap_explains_itself_from_live_numbers(app):
     live = with_store(cfg, store)
     combos = len(live.hunts) * len(live.sources)
     assert f"means up to {4 * combos} judged" in client.get("/settings").text
+
+
+def test_a_price_cap_of_zero_means_free_things_only(app):
+    """It used to be refused as a mistake -- "a cap of zero would reject
+    everything priced" -- which is exactly what someone asking for it wants.
+
+    `over_price` drops anything dearer than the cap, so a cap of 0 keeps free
+    listings and nothing else. It is how you say "I want one of these, but only
+    if someone is giving it away", and it leaves the search terms free to mean
+    what they say rather than doubling as a free-only switch."""
+    from dealbot.filters import gate
+    from dealbot.models import Listing, Location
+
+    client, cfg, store = app
+    r = client.post("/wants/save", follow_redirects=False,
+                    data={"name": "kayak", "description": "a kayak",
+                          "max_price": "0", "queries": "kayak"})
+    assert r.status_code == 303, error_in(r.text)
+    want = store.get_want("kayak").want
+    assert want.max_price_cents == 0
+    # ... and it still gets its own hunt, which the sweep is no substitute for:
+    # the sweep searches "free", not "kayak".
+    hunt = next(h for h in with_store(cfg, store).hunts if h.id == "want:kayak")
+    assert hunt.queries == ("kayak",)
+
+    def listing(lid, price):
+        return Listing(id=lid, source="x", source_id=lid, title="kayak",
+                       description=None, price_cents=price, currency="USD", url="u")
+
+    gr = gate(hunt, [listing("x:1", 0), listing("x:2", 9900)],
+              Location(lat=35.0844, lng=-106.6504, radius_miles=50.0), {}, {}, {})
+    assert [c.listing.id for c in gr.candidates] == ["x:1"]
+    assert gr.rejected == [("x:2", "over_price")]
+
+
+class _FakeScorer:
+    """Stands in for the real one. Records what it was asked."""
+    def __init__(self, result=("tv stand", "media console"), boom=None):
+        self.result, self.boom, self.calls = result, boom, []
+
+    def suggest_queries(self, name, description, requires=()):
+        self.calls.append((name, description, tuple(requires)))
+        if self.boom:
+            raise self.boom
+        return self.result
+
+
+def _app_with(tmp_path, scorer):
+    cfg_path = tmp_path / "config.yaml"
+    shutil.copy(CONFIG, cfg_path)
+    cfg = load(cfg_path)
+    return TestClient(create_app(cfg, scorer=scorer)), cfg, Store(cfg.db_path)
+
+
+def test_the_suggest_button_drafts_terms_into_the_form(tmp_path):
+    """Describing what you want and naming it the way a SELLER would are two
+    different skills. "tv stand" and "media console" are the same object and
+    share no word, so the terms are the part worth handing over.
+
+    It fills the FIELD and hands the form back unsaved: these become two
+    searches per tick for as long as the want exists, so they are read and
+    edited by the person who will live with them before being committed to."""
+    scorer = _FakeScorer()
+    client, _, store = _app_with(tmp_path, scorer)
+
+    r = client.post("/wants/save",
+                    data={"name": "bookcase", "description": "a wide bookcase",
+                          "max_price": "", "queries": "",
+                          "requires": "at least 70 inches wide",
+                          "action": "suggest"})
+    assert r.status_code == 200
+    assert "tv stand\nmedia console" in r.text        # in the textarea
+    assert store.get_want("bookcase") is None          # and NOT saved
+    # The requirements go too: they often name the object more precisely than
+    # the prose does.
+    assert scorer.calls == [("bookcase", "a wide bookcase",
+                             ("at least 70 inches wide",))]
+
+
+def test_suggesting_keeps_everything_else_that_was_typed(tmp_path):
+    """It is a round trip through the form, so anything already filled in has
+    to survive it -- losing a paragraph of prose to a button would be worse
+    than not having the button."""
+    client, _, _ = _app_with(tmp_path, _FakeScorer())
+    r = client.post("/wants/save",
+                    data={"name": "bookcase", "description": "a wide bookcase",
+                          "max_price": "250", "queries": "",
+                          "requires": "at least 70 inches wide",
+                          "action": "suggest"})
+    assert "a wide bookcase" in r.text
+    assert "250" in r.text
+    assert "at least 70 inches wide" in r.text
+
+
+def test_saving_never_spends_on_terms_by_itself(tmp_path):
+    """Only the button drafts. A plain save with the field left empty saves it
+    empty -- nothing is spent that was not asked for."""
+    scorer = _FakeScorer()
+    client, _, store = _app_with(tmp_path, scorer)
+    client.post("/wants/save", data={"name": "kayak", "description": "a kayak",
+                                     "max_price": "300", "queries": ""})
+    assert store.get_want("kayak").want.queries == ()
+    assert scorer.calls == []
+
+
+def test_terms_that_were_typed_are_never_second_guessed(tmp_path):
+    scorer = _FakeScorer()
+    client, _, store = _app_with(tmp_path, scorer)
+    client.post("/wants/save",
+                data={"name": "kayak", "description": "a kayak",
+                      "max_price": "300", "queries": "kayak\nsit-on-top"})
+    assert store.get_want("kayak").want.queries == ("kayak", "sit-on-top")
+    assert scorer.calls == []
+
+
+@pytest.mark.parametrize("boom", [
+    RuntimeError("quota paused"),
+    OSError("claude not found"),
+])
+def test_a_failed_draft_says_so_and_keeps_the_form(tmp_path, boom):
+    """FAILS OPEN. The model being busy must not cost someone the paragraph of
+    prose they just typed, so the form comes back intact with a note."""
+    client, _, store = _app_with(tmp_path, _FakeScorer(boom=boom))
+    r = client.post("/wants/save",
+                    data={"name": "kayak", "description": "a kayak",
+                          "max_price": "300", "queries": "",
+                          "action": "suggest"})
+    assert r.status_code == 200
+    assert "Could not draft" in error_in(r.text)
+    assert "a kayak" in r.text
+    assert store.get_want("kayak") is None
+
+
+def test_with_no_scorer_wired_the_button_is_harmless(tmp_path):
+    """`create_app` takes the scorer optionally, so a dashboard built without
+    one simply cannot draft -- it must not 500."""
+    client, _, store = _app_with(tmp_path, None)
+    r = client.post("/wants/save",
+                    data={"name": "kayak", "description": "a kayak",
+                          "max_price": "300", "queries": "",
+                          "action": "suggest"})
+    assert r.status_code == 200
+    assert "Could not draft" in error_in(r.text)

@@ -126,6 +126,8 @@ class Scorer(Protocol):
     def appraise(self, hunt, candidates) -> list[Score]: ...  # one call each
     # ClaudeCodeScorer adds: resolve_with_images, check_available, begin_run,
     # drain_unbilled, overridden
+    # optional: suggest_queries(name, description, requires) -> tuple[str, ...]
+    #           drafts a want's search terms. The DASHBOARD calls this one.
 
 class Notifier(Protocol):
     def notify(self, hunt: Hunt, surfaced: list[tuple[Listing, Score]]) -> None: ...

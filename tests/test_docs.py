@@ -145,7 +145,6 @@ def test_the_documented_serve_default_is_the_real_default():
     there are now half a dozen mutating endpoints, so a wide default would hand
     anyone on the wifi a button to delete your wants. The systemd unit opts in
     with an explicit --host 0.0.0.0 behind a trusted network."""
-    import argparse
     import contextlib
     import io
 
