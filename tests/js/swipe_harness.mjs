@@ -112,7 +112,10 @@ global.fetch = (url, opts) => {
 global.FormData = class { constructor() {} get() { return "x"; } };
 global.URLSearchParams = class { constructor(v) { this.v = v; } };
 global.DOMParser = class { parseFromString() { return { querySelector: () => null }; } };
-global.setTimeout = (fn) => { fn(); return 0; };
+// Short timers (the fold-away animation, the toast's own removal) run at
+// once; long ones -- the 7s auto-dismiss -- stay pending, or the toast would
+// close itself before a test could swipe it.
+global.setTimeout = (fn, ms) => { if ((ms || 0) < 1000) fn(); return 0; };
 global.clearTimeout = () => {};
 global.requestAnimationFrame = (fn) => { fn(); return 0; };
 
@@ -203,6 +206,80 @@ posted.length = 0;
 fire("touchstart", { ...touch(200, 200), target: card });
 fire("touchmove", touch(320, 205));
 eq("a card with no actions never engages", card.classList.contains("swiping"), false);
+
+// --- the toast can be swiped away ------------------------------------------
+// It sits over the list for seven seconds holding an Undo you usually do not
+// want. Swiping it must dismiss it WITHOUT undoing, and must not press Undo.
+const body = global.document.body;
+// `act()` raises the toast inside a promise callback, so it does not exist
+// until the microtask queue drains. Top-level await, this being an ES module.
+const tick = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+// Not simply the last child: `announce()` appends its own live region after
+// the toast, so pick by class.
+const lastToast = () =>
+  body.children.filter(c => c._cls.has("toast")).slice(-1)[0];
+
+function swipeToast(dx, dy) {
+  const el = lastToast();
+  el.fire("touchstart", { touches: [{ clientX: 200, clientY: 600 }],
+                          cancelable: true, preventDefault() {} });
+  el.fire("touchmove", { touches: [{ clientX: 200 + dx, clientY: 600 + dy }],
+                         cancelable: true, preventDefault() {} });
+  el.fire("touchend", {});
+  return el;
+}
+
+posted.length = 0;
+body.children.length = 0;
+({ card } = makeCard(["saved", "dismissed"]));
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(300, 205));
+fire("touchend", {});                              // saves -> raises a toast
+await tick();
+eq("triaging raises a toast", !!lastToast(), true);
+eq("... with an Undo", lastToast().children.length, 2);
+
+// a short drag springs back
+let toastEl = swipeToast(20, 0);
+eq("a short drag keeps the toast", body.children.indexOf(toastEl) >= 0, true);
+eq("... and clears the offset", toastEl.style.getPropertyValue("--tx"), "");
+
+// sideways past the threshold dismisses it
+const before = posted.length;
+toastEl = swipeToast(120, 0);
+eq("a sideways flick dismisses the toast",
+   body.children.indexOf(toastEl) >= 0, false);
+eq("... and never undoes anything", posted.length, before);
+
+// downward dismisses too
+posted.length = 0;
+body.children.length = 0;
+({ card } = makeCard(["saved", "dismissed"]));
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(300, 205));
+fire("touchend", {});
+await tick();
+toastEl = swipeToast(0, 110);
+eq("a downward flick dismisses it too",
+   body.children.indexOf(toastEl) >= 0, false);
+
+// upward resists: nothing up there to go to
+posted.length = 0;
+body.children.length = 0;
+({ card } = makeCard(["saved", "dismissed"]));
+fire("touchstart", { ...touch(200, 200), target: card });
+fire("touchmove", touch(300, 205));
+fire("touchend", {});
+await tick();
+toastEl = swipeToast(0, -200);                     // damped to -50
+eq("an upward drag never dismisses it",
+   body.children.indexOf(toastEl) >= 0, true);
+
+// and the click a swipe ends in must not press Undo
+let undone = false;
+toastEl.fire("click", { preventDefault() { undone = true; },
+                        stopPropagation() {} });
+eq("the click after a toast swipe is swallowed", undone, true);
 
 console.log(out.join("\n"));
 if (out.some(l => l.startsWith("FAIL"))) process.exit(1);

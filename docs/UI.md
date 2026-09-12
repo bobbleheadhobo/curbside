@@ -447,6 +447,20 @@ The parts that matter are the ones that fail quietly, and they are tested in
 * The click that a touch ends in is swallowed once, or letting go over the
   title opens the marketplace.
 
+**The toast can be swiped away too.** It holds an Undo for seven seconds, and
+after a run of triage it is the thing in your way -- sideways or downwards, the
+two directions that mean "off" given it lives at the bottom of the screen. An
+upward drag is damped to a quarter and never reaches the threshold, because
+there is nothing up there to go to.
+
+It only ever **dismisses**. The save or the dismissal stays applied, exactly as
+when the timer runs out; Undo is the button, and a swipe past it must not press
+it, which is the second click-swallow in this file. `--tx`/`--ty` ride along
+with the `-50%` centring in *both* the up and the hidden state, so a flicked
+toast carries on out from where the finger left it rather than snapping back to
+centre first. It takes `touch-action: none` rather than `pan-y`: it is a fixed
+bar over the list and owns both axes.
+
 Three labelled buttons do not fit a phone: `body{overflow-wrap:anywhere}` is
 there for stranger-written titles and it will happily break *Dismiss* one
 letter per line. `.actions button` carries `white-space:nowrap` so that failure

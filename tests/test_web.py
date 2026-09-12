@@ -687,8 +687,12 @@ def test_the_swipe_gestures_behave():
     short drag (you dismiss things by accident and only notice later), must
     not act in a direction whose button is absent -- `/saved` has no Save --
     and must swallow the click a touch ends in, or letting go over the title
-    opens the marketplace instead."""
-    assert _run_js_harness("swipe_harness.mjs").count("ok ") >= 14
+    opens the marketplace instead.
+
+    The same harness covers the toast, which can also be swiped away: it must
+    dismiss WITHOUT undoing -- the save stays applied, exactly as when the
+    timer runs out -- and the click a swipe ends in must not press Undo."""
+    assert _run_js_harness("swipe_harness.mjs").count("ok ") >= 25
 
 
 def test_the_search_term_pills_behave():

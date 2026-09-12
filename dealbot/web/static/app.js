@@ -69,8 +69,81 @@
       setTimeout(function () { el.remove(); }, 300);
     }
     current = el;
+    swipeAway(el, close);
     announce(text);
     return close;
+  }
+
+  /* Swipe the toast away.
+   *
+   * It sits at the bottom of the screen over the list, and after a run of
+   * triage it is the thing in your way -- seven seconds is a long time to wait
+   * for a bar you have already read.
+   *
+   * Sideways or downwards, the two directions that mean "off" given where it
+   * lives. Upward resists, because there is nothing up there. It only ever
+   * DISMISSES: the save or the dismissal stays applied, exactly as when the
+   * timer runs out. Undo is the button, and a swipe past it must not press it.
+   */
+  var TOAST_THRESHOLD = 64;
+
+  function swipeAway(el, close) {
+    var t = null;
+
+    el.addEventListener("touchstart", function (ev) {
+      if (ev.touches.length !== 1) return;
+      t = {x: ev.touches[0].clientX, y: ev.touches[0].clientY,
+           axis: null, dx: 0, dy: 0, moved: false};
+      el.classList.add("dragging");
+    }, {passive: true});
+
+    el.addEventListener("touchmove", function (ev) {
+      if (!t) return;
+      var dx = ev.touches[0].clientX - t.x;
+      var dy = ev.touches[0].clientY - t.y;
+      if (!t.axis) {
+        if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+        t.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      // Nothing lives above the toast, so an upward drag drags heavily and
+      // never reaches the threshold.
+      if (t.axis === "y" && dy < 0) dy /= 4;
+      t.moved = true;
+      t.dx = t.axis === "x" ? dx : 0;
+      t.dy = t.axis === "y" ? dy : 0;
+      el.style.setProperty("--tx", t.dx + "px");
+      el.style.setProperty("--ty", t.dy + "px");
+      el.style.opacity = Math.max(
+        0.3, 1 - Math.max(Math.abs(t.dx), Math.abs(t.dy)) / 200).toFixed(2);
+      if (ev.cancelable) ev.preventDefault();
+    }, {passive: false});
+
+    function end() {
+      if (!t) return;
+      var gone = Math.abs(t.dx) >= TOAST_THRESHOLD || t.dy >= TOAST_THRESHOLD;
+      var moved = t.moved;
+      t = null;
+      el.classList.remove("dragging");
+      if (moved) {
+        el.addEventListener("click", function swallow(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          el.removeEventListener("click", swallow, true);
+        }, true);
+      }
+      if (gone) {
+        // Keep the offset: `close` drops the `up` class and the toast carries
+        // on out from where the finger left it rather than jumping back first.
+        close();
+        return;
+      }
+      el.style.removeProperty("--tx");
+      el.style.removeProperty("--ty");
+      el.style.opacity = "";
+    }
+
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
   }
 
   /* Fold a card away, and hand back a function that puts it exactly where it

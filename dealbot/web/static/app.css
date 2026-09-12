@@ -681,7 +681,13 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .card.saved.collapsing{transform:translateX(10px) scale(.98)}
 
 .toast{
-  position:fixed;left:50%;transform:translate(-50%,140%);z-index:60;
+  /* --tx/--ty are the swipe offset. They ride along with the -50% centring in
+     BOTH states, so a flicked toast carries on out from where the finger left
+     it instead of snapping back to centre first. `none` rather than pan-y:
+     this is a fixed bar over the list and it takes both axes itself. */
+  touch-action:none;
+  position:fixed;left:50%;z-index:60;
+  transform:translate(calc(-50% + var(--tx,0px)),calc(140% + var(--ty,0px)));
   bottom:calc(72px + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:12px;max-width:min(92vw,420px);
   padding:11px 13px 11px 15px;border-radius:12px;
@@ -689,7 +695,8 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   box-shadow:var(--shadow-lift);opacity:0;
   transition:transform .26s cubic-bezier(.4,0,.2,1),opacity .2s ease
 }
-.toast.up{transform:translate(-50%,0);opacity:1}
+.toast.up{transform:translate(calc(-50% + var(--tx,0px)),var(--ty,0px));opacity:1}
+.toast.dragging{transition:none}
 .toast span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast button{
   flex:none;min-height:32px;padding:0 11px;border-radius:8px;font-size:13px;
