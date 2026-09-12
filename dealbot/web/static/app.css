@@ -561,6 +561,14 @@ input::placeholder,textarea::placeholder{color:var(--faint)}
 /* Secondary to the form's own submit, and deliberately not full width: it
    does not save anything, it fills a field in. */
 .field .suggest{align-self:flex-start;min-height:var(--tap);gap:7px}
+
+/* Search terms as pills, built by app.js over the real textarea. Same pill as
+   the blocked words on /settings, because they are the same kind of thing: a
+   short list of terms you add to and take from one at a time. */
+.termedit{display:flex;flex-direction:column;gap:9px}
+.termedit .terms{gap:6px}
+.termedit .term{font-size:14px;padding:6px 6px 6px 12px}
+.termedit .term button{font-size:16px;line-height:1}
 .field.inline-check{flex-direction:row;align-items:flex-start;gap:11px}
 .field.inline-check input[type=checkbox]{
   width:22px;height:22px;min-height:0;margin:0;flex:none;accent-color:var(--accent)}

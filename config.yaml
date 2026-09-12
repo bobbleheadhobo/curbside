@@ -46,6 +46,14 @@ scorer:
   backend: claude_code       # stub | claude_code
   triage_model: sonnet
   appraise_model: sonnet
+  # Drafting a want's search terms. Sonnet on MEASUREMENT, not on the price
+  # card: haiku costs ~6x more here. `claude -p` prepends a ~12k-token harness
+  # prompt, so what matters is whether that is a cache write or a cache read --
+  # and the cache is per model. The poller keeps sonnet's warm every 15 minutes;
+  # a second model's would be cold nearly every time, since drafting happens a
+  # few times a month. Haiku also spends 672-1,492 output tokens where sonnet
+  # spends 40. See ScorerConfig for the numbers.
+  suggest_model: sonnet
   claude_bin: /home/joey/.local/bin/claude
   timeout_seconds: 180
   batch_size: 20

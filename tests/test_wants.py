@@ -169,10 +169,29 @@ def test_one_want_can_be_paused_without_touching_the_others(app):
 def test_the_settings_page_survives_a_want_the_file_never_knew(app):
     client, _, _ = app
     client.post("/wants/save", data={"name": "lamp", "description": "d",
-                                     "max_price": "20", "queries": ""})
+                                     "max_price": "20", "queries": "lamp"})
     body = client.get("/settings").text
     assert "lamp" in body
-    assert "free stuff only" in body       # no queries means sweep-only, said so
+
+
+def test_a_want_with_no_terms_says_so_rather_than_looking_normal(app):
+    """The form will not make one any more, but config.yaml can still seed one
+    and older wants predate the rule. It has no hunt of its own, so only the
+    free sweep sees it -- and the sweep searches "free", not the thing you
+    asked for. That is much less than it looks like, so the row says it."""
+    from dealbot.models import Want
+    client, _, store = app
+    store.save_want(Want("lamp", "d", 2000, queries=()))
+    assert "no search terms" in client.get("/settings").text
+
+
+def test_a_free_only_want_does_not_say_up_to_0(app):
+    from dealbot.models import Want
+    client, _, store = app
+    store.save_want(Want("kayak", "d", 0, queries=("kayak",)))
+    body = client.get("/settings").text
+    assert "Free ones only" in body
+    assert "Up to $0" not in body
 
 
 def test_a_want_added_to_the_file_later_still_arrives(tmp_path):
@@ -359,13 +378,17 @@ def test_suggesting_keeps_everything_else_that_was_typed(tmp_path):
 
 
 def test_saving_never_spends_on_terms_by_itself(tmp_path):
-    """Only the button drafts. A plain save with the field left empty saves it
-    empty -- nothing is spent that was not asked for."""
+    """Only the button drafts. A plain save with the field empty is REFUSED
+    rather than quietly drafting -- nothing is spent that was not asked for,
+    and no half-useful want is created behind your back."""
     scorer = _FakeScorer()
     client, _, store = _app_with(tmp_path, scorer)
-    client.post("/wants/save", data={"name": "kayak", "description": "a kayak",
-                                     "max_price": "300", "queries": ""})
-    assert store.get_want("kayak").want.queries == ()
+    r = client.post("/wants/save",
+                    data={"name": "kayak", "description": "a kayak",
+                          "max_price": "300", "queries": ""})
+    assert r.status_code == 400
+    assert "at least one search term" in error_in(r.text)
+    assert store.get_want("kayak") is None
     assert scorer.calls == []
 
 

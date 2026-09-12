@@ -456,9 +456,12 @@ either the seed or is not consulted at all:
 
 A want's **price cap of 0 means free ones only** — `over_price` drops anything
 dearer, so the cap is how you say "I want one of these, but only if someone is
-giving it away". Its **search terms** can be drafted for you by the *Suggest
-terms* button on the want editor; that is the only thing the dashboard ever
-spends quota on, and it spends none unless the button is pressed.
+giving it away". Every want needs **at least one search term**: without one it
+has no hunt, and only the free sweep sees it, which searches "free" rather than
+the thing you asked for. The terms can be drafted by the *Suggest terms* button
+on the want editor; that is the only thing the dashboard ever spends quota on,
+it spends none unless the button is pressed, and it runs on `suggest_model`
+(sonnet — see `ScorerConfig` for why the cheaper-looking model costs more).
 
 Seeding is **per name and per hunt**, so something added to `config.yaml` after
 a database's first open still arrives. It cannot resurrect a deletion: a deleted

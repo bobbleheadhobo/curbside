@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 352 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 355 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -184,6 +184,18 @@ the one rejecting on distance recorded unguarded and logged nothing at all.
 share one SQLite file by design (WAL, `busy_timeout=10000`), and readers never
 block — but a write on a read path can, and did. POSTs write freely; that is
 what they are for.
+
+**Cheap models are not automatically cheap here — measure.** `claude -p`
+prepends its own ~12k-token harness prompt, so what a call costs is mostly
+whether that block is a cache *write* or a cache *read*, and the cache is **per
+model**. Drafting a want's search terms on haiku was tried and reverted: it cost
+~6x sonnet. The poller runs sonnet every 15 minutes against a 1h TTL, so
+sonnet's harness cache is permanently warm, while a second model's would be cold
+nearly every time a rare call used it — and haiku spent 672-1,492 output tokens
+where sonnet spent 40, thinking and padding around a JSON object rather than
+just returning it. Measured: haiku cold $0.0197, haiku warm $0.0050, sonnet warm
+$0.0030. **Introducing a second model for an infrequent call is usually a cost
+increase**, whatever the price card says.
 
 **The dashboard can spend quota, but only when asked.** `cmd_serve` hands
 `create_app` a scorer for exactly one job: the *Suggest terms* button on the

@@ -153,14 +153,25 @@ object, because a listing that uses only one of them is invisible to the rest.
 
 Do not include a price, a condition, or the word "free" -- those are filters
 applied separately, and putting them in a query only narrows it wrongly. Do not
-invent a brand the description does not mention."""
+invent a brand the description does not mention.
+
+Every term must be something a seller would TITLE a listing. A term stating
+what the item is NOT -- "no pods", "not a corner unit" -- matches nothing,
+because nobody advertises an absence; those are constraints, checked
+separately against the listings these terms find."""
 
 SUGGEST_INSTRUCTION = """\
 Return ONE JSON object and nothing else:
 {"queries": ["<search term>", ...]}
 
 Between three and six terms, most obvious first. Each is used as a whole search
-on its own, so each must stand alone."""
+on its own, so each must stand alone.
+
+Check each term before you return it:
+  - Would a seller put these words in a listing title? If not, drop it.
+  - Does it name a BRAND? Unless the description named that brand, drop it --
+    guessing one searches for somebody else's product and misses the rest.
+  - Does it say what the item is NOT? Drop it; nobody advertises an absence."""
 
 
 def render_want_for_suggestion(name: str, description: str,

@@ -659,3 +659,27 @@ def test_the_bin_queries_are_built_from_a_clause_not_from_each_other():
     assert ONE_BIN in QUEUE_SQL and ONE_BIN in SAVED_SQL
     # /skipped is a band under the bar, not a bin: it keeps its own rows.
     assert ONE_BIN not in NEAR_MISS_SQL
+
+
+def test_the_search_term_pills_behave():
+    """The pill editor is the only real logic in app.js, and `node --check`
+    only proves it parses.
+
+    It rewrites a hidden <textarea> that is still the field that posts, so a
+    bug here silently sends the wrong search terms -- or, worse, lets Enter
+    submit a half-filled want. `tests/js/chips_harness.mjs` drives it against a
+    minimal fake DOM and asserts each behaviour; this runs it."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the browser code with")
+    r = subprocess.run(
+        [node, str(root / "tests/js/chips_harness.mjs"),
+         str(root / "dealbot/web/static/app.js")],
+        capture_output=True, text=True, cwd=root)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "FAIL" not in r.stdout, r.stdout
+    assert r.stdout.count("ok ") >= 10, r.stdout

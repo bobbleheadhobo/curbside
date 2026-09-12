@@ -854,6 +854,14 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             return fail("A price cap cannot be negative.")
         if stored is None and (clash := store.get_want(slug)) and not clash.archived:
             return fail(f"There is already a want called {slug}.")
+        # A want with no search terms only ever rides the free sweep, which
+        # searches "free" rather than the thing you asked for -- so it quietly
+        # does much less than it looks like it does. Requiring one makes that
+        # impossible to create by accident; "Suggest terms" is right there, and
+        # pausing the hunt is how you say "do not search for this".
+        if not _lines(queries):
+            return fail("Give it at least one search term, or press "
+                        "Suggest terms.")
 
         store.save_want(Want(
             name=slug, description=description.strip(),

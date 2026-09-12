@@ -175,10 +175,14 @@
     <a class="grow" href="/wants/{{ r.w.name }}">
       <b>{{ r.w.name }}</b>
       <small>
-        Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}
+        {%- if r.w.max_price_cents == 0 %}Free ones only
+        {%- else %}Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}{% endif %}
         {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,
               r.hunt.interval_minutes ~ ' min')|lower }}
-        {%- else %} &middot; free stuff only{% endif %}
+        {#- No terms, so no hunt of its own: the free sweep is all that sees it.
+            The form will not create one of these any more, but config.yaml can
+            still seed one, and older wants predate the rule. #}
+        {%- else %} &middot; no search terms{% endif %}
         {%- if r.matched %} &middot; {{ r.matched }} matched{% endif %}
         {%- if r.paused %} &middot; paused{% endif %}
       </small>

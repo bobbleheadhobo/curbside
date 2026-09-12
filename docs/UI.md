@@ -381,7 +381,29 @@ intact, with a note.
 **The price cap of 0 is a real answer.** It means free ones only, because
 `over_price` drops anything dearer than the cap. It used to be refused as a
 mistake, which left "free only" with no way to say it except leaving the search
-terms blank — one field quietly controlling two unrelated things.
+terms blank — one field quietly controlling two unrelated things. The settings
+row says "Free ones only" rather than "Up to $0".
+
+**A want cannot be saved without at least one search term.** Without one it has
+no hunt of its own, so only the free sweep sees it — and the sweep searches
+"free", not the thing you asked for. That is far less than it looks like, and it
+used to be creatable by leaving a box empty. To stop searching for a want you
+already have, pause its hunt; that control is on the same page and says what it
+does. `config.yaml` can still seed a want with no terms and older ones predate
+the rule, so the settings row labels those "no search terms".
+
+**Search terms are pills, not lines of a textarea.** Each term is a whole
+separate search, and a textarea does not say that: "tv stand media console"
+typed on one line is one bad search that finds nothing and looks identical to
+two good ones. `app.js` builds the pill editor over the real `<textarea>`, which
+stays the field that posts and is rewritten on every change — so with the script
+absent you get a textarea, one term per line, and everything still works. Enter
+commits a term rather than submitting the form (submitting a half-filled want is
+exactly what it would otherwise do); backspace on an empty box pulls the last
+pill back in to edit rather than deleting it outright; and a term still sitting
+in the box when you submit is committed rather than lost. The pill is the same
+`.term` component as the blocked words on `/settings`, because it is the same
+kind of thing.
 
 **The service worker must never cache HTML.** Photos and icons only. Half of
 what this shows is gone within the hour.

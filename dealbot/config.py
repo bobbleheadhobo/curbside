@@ -27,6 +27,26 @@ class ScorerConfig:
     backend: str = "stub"                  # "stub" | "claude_code"
     triage_model: str = "sonnet"
     appraise_model: str = "sonnet"
+    # Drafting a want's search terms. Sonnet, and MEASURED rather than assumed:
+    # haiku looks like the cheap choice on the price card (half sonnet's input
+    # rate) and is the more expensive one here, by ~6x.
+    #
+    #   haiku, cold cache   writes 5,602 tok, 1,492 out   $0.0197
+    #   haiku, warm cache   reads  5,602 tok,   672 out   $0.0050
+    #   sonnet, warm cache  reads  7,516 tok,    40 out   $0.0030
+    #
+    # Two reasons, both specific to how this bot calls the model. `claude -p`
+    # prepends its own ~12k-token harness prompt, so cost is dominated by
+    # whether that block is a cache WRITE or a cache READ -- and the cache is
+    # per model. The poller runs sonnet every 15 minutes against a 1h TTL, so
+    # sonnet's is permanently warm; drafting happens a few times a month, so a
+    # second model's cache would be cold essentially every time. And haiku
+    # spends 672-1,492 output tokens where sonnet spends 40, because it thinks
+    # and pads around the JSON rather than just returning it.
+    #
+    # Keep the knob: the right answer here is a property of the call pattern,
+    # not a fact about the models, and it changes if either one changes.
+    suggest_model: str = "sonnet"
     claude_bin: str = "claude"
     timeout_seconds: int = 180
     batch_size: int = 20
@@ -386,6 +406,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     scorer = ScorerConfig(
         backend=sc.get("backend", "stub"),
         triage_model=sc.get("triage_model", "sonnet"),
+        suggest_model=sc.get("suggest_model", "sonnet"),
         appraise_model=sc.get("appraise_model", "sonnet"),
         claude_bin=sc.get("claude_bin", "claude"),
         timeout_seconds=int(sc.get("timeout_seconds", 180)),

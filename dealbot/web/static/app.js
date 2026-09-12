@@ -308,3 +308,109 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(function () {});
   });
 }
+
+/* Search terms as pills.
+ *
+ * Each term is a whole separate search, and a textarea of lines does not say
+ * that -- "tv stand media console" typed on one line is one bad search that
+ * finds nothing, and looks identical to two good ones.
+ *
+ * The <textarea> stays the field that posts, hidden, and is rewritten from the
+ * pills on every change. With this file missing you get the textarea, one term
+ * per line, and everything still works -- including "Suggest terms", which is a
+ * real submit button and needs no script at all.
+ */
+(function () {
+  var ta = document.getElementById("f-queries");
+  if (!ta) return;
+
+  var label = document.querySelector('label[for="f-queries"]');
+  var wrap = document.createElement("div");
+  wrap.className = "termedit";
+  var pills = document.createElement("div");
+  pills.className = "terms";
+  var input = document.createElement("input");
+  input.type = "text";
+  input.id = "f-queries-add";
+  input.autocapitalize = "none";
+  input.setAttribute("enterkeyhint", "enter");
+  input.placeholder = "tv stand";
+  wrap.appendChild(pills);
+  wrap.appendChild(input);
+  ta.parentNode.insertBefore(wrap, ta.nextSibling);
+  ta.hidden = true;
+  // The label pointed at the textarea, which is now hidden: move it to the
+  // control that actually takes the typing, or tapping the label does nothing.
+  if (label) label.setAttribute("for", input.id);
+
+  function terms() {
+    return ta.value.split("\n").map(function (t) { return t.trim(); })
+             .filter(function (t) { return t.length; });
+  }
+
+  function write(list) {
+    ta.value = list.join("\n");
+    render();
+  }
+
+  function render() {
+    pills.textContent = "";
+    terms().forEach(function (term, i) {
+      var pill = document.createElement("span");
+      pill.className = "term";
+      pill.appendChild(document.createTextNode(term));
+      var x = document.createElement("button");
+      x.type = "button";                     // never submits the form
+      x.setAttribute("aria-label", "Remove " + term);
+      x.textContent = "×";
+      x.addEventListener("click", function () {
+        var list = terms();
+        list.splice(i, 1);
+        write(list);
+        input.focus();
+      });
+      pill.appendChild(x);
+      pills.appendChild(pill);
+    });
+    pills.hidden = !pills.childElementCount;
+  }
+
+  function commit() {
+    var term = input.value.trim();
+    if (!term) return;
+    var list = terms();
+    // Case-insensitive, like the server's own cleanup: two spellings of one
+    // search are two identical requests per tick, forever.
+    var dupe = list.some(function (t) {
+      return t.toLowerCase() === term.toLowerCase();
+    });
+    if (!dupe) list.push(term);
+    input.value = "";
+    write(list);
+  }
+
+  input.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" || ev.key === ",") {
+      // Enter here means "that is one term", NOT "submit the form" -- which is
+      // what it would otherwise do, saving a half-filled want.
+      ev.preventDefault();
+      commit();
+      return;
+    }
+    if (ev.key === "Backspace" && !input.value && terms().length) {
+      ev.preventDefault();
+      var list = terms();
+      input.value = list.pop();             // back into the box to edit, not gone
+      write(list);
+    }
+  });
+
+  // A term typed and left sitting in the box is one you meant to add.
+  input.addEventListener("blur", commit);
+  // Guarded: a null form here would throw and take the whole editor with it,
+  // leaving a hidden textarea and no way to type at all.
+  var form = input.form || ta.form;
+  if (form) form.addEventListener("submit", commit);
+
+  render();
+})();
