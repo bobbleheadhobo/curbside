@@ -141,3 +141,54 @@ def test_a_hand_run_ignores_the_window(tmp_path, monkeypatch):
     args = _args(tmp_path, due=False)
     assert cmd_once(args) == 0
     assert _run_count(load(args.config)) > 0
+
+
+def test_the_hours_control_says_how_long_the_window_actually_is():
+    """"11pm to 8pm" is 21 hours awake, and reads like a night shift.
+
+    A window that runs past midnight looks SHORT written down and is the
+    near-opposite, so the one description the interface gave was the one that
+    hid it. This is the same class of problem as a pause switch nobody can
+    see: a control the user misreads is a control that lies.
+    """
+    from zoneinfo import ZoneInfo
+    from dealbot.schedule import Schedule
+    tz = ZoneInfo("America/Denver")
+
+    wrapped = Schedule(enabled=True, start_minute=23 * 60, end_minute=20 * 60, tz=tz)
+    assert wrapped.awake_minutes == 21 * 60
+    assert "21 hours" in wrapped.span_label
+    assert "past midnight" in wrapped.span_label
+
+    plain = Schedule(enabled=True, start_minute=11 * 60, end_minute=20 * 60, tz=tz)
+    assert plain.awake_minutes == 9 * 60
+    assert "9 hours" in plain.span_label
+    assert "past midnight" not in plain.span_label
+
+    # the two that are easy to get wrong at the boundary
+    night = Schedule(enabled=True, start_minute=20 * 60, end_minute=6 * 60, tz=tz)
+    assert night.awake_minutes == 10 * 60
+    same = Schedule(enabled=True, start_minute=9 * 60, end_minute=9 * 60, tz=tz)
+    assert same.awake_minutes == 24 * 60, "start == end is all day, not zero"
+
+    always = Schedule(enabled=False, start_minute=0, end_minute=0, tz=tz)
+    assert always.span_label == "Always on."
+
+
+def test_the_settings_page_shows_the_span(tmp_path):
+    """It has to reach the page, not just exist on the object."""
+    import shutil
+    from fastapi.testclient import TestClient
+    from dealbot.config import load
+    from dealbot.db import Store
+    from dealbot.web.app import create_app
+    from dealbot import schedule as sched_mod
+
+    shutil.copy("config.yaml", tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    client = TestClient(create_app(cfg))
+    sched_mod.save(Store(cfg.db_path), enabled=True,
+                   start_minute=23 * 60, end_minute=20 * 60)
+    body = client.get("/settings").text
+    assert "Awake 21 hours a day." in body
+    assert "runs past midnight" in body

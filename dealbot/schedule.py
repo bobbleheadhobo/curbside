@@ -128,6 +128,35 @@ class Schedule:
             return "always"
         return f"{fmt_clock(self.start_minute)} to {fmt_clock(self.end_minute)}"
 
+    @property
+    def awake_minutes(self) -> int:
+        """How long the window actually is. Wraps midnight, so this is modular
+        arithmetic rather than `end - start`."""
+        if self.always_on:
+            return 24 * 60
+        return (self.end_minute - self.start_minute) % (24 * 60) or 24 * 60
+
+    @property
+    def span_label(self) -> str:
+        """How long, in words, because "11pm to 8pm" does not say.
+
+        A window that runs past midnight reads at a glance like a SHORT one --
+        11pm to 8pm looks like a night shift and is in fact 21 hours awake, the
+        near-opposite. The interface let that be set and then described it in
+        the one way that hides it. So the length is stated outright, and the
+        wrap is called out, because an hours control the user misreads is the
+        same class of problem as a pause switch nobody can see.
+        """
+        if self.always_on:
+            return "Always on."
+        mins = self.awake_minutes
+        hrs, rem = divmod(mins, 60)
+        span = f"{hrs}h{rem:02d}m" if rem else f"{hrs} hours"
+        out = f"Awake {span} a day."
+        if self.end_minute <= self.start_minute:
+            out += " This window runs past midnight."
+        return out
+
     def state_label(self, now: datetime | None = None) -> str:
         """One phrase for the health pill: awake until when, or asleep until when."""
         if self.always_on:
