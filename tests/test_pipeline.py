@@ -779,7 +779,11 @@ def test_an_interrupted_appraisal_still_routes_what_it_bought(rig):
                                      partial=scorer.appraise(hunt, cands[:-1]))
 
     r = run_hunt(store, hunt, source, Interrupted(), notifiers, cfg.location)
-    assert "interrupted" in r.error
+    # A warning, not an error: this run fetched, judged part of its batch,
+    # routed it AND announced it. Recording that as a failure made the hunt
+    # due again on the next tick and collapsed its cadence to the timer.
+    assert r.error is None
+    assert "interrupted" in r.warning
     assert r.n_wanted + r.n_free_find > 0
     binned = [s for s in store.statuses(hunt.id).values()
               if s in ("wanted", "free_find")]
@@ -1243,3 +1247,21 @@ def test_standing_aside_on_quota_does_not_collapse_the_cadence(tmp_path, rig):
     # the whole point: this run still satisfies the cadence
     assert store.last_success_at(hunt.id, source.name) is not None, (
         "a quota standdown is making the hunt due again on the next tick")
+
+
+def test_neither_kind_of_scoring_standdown_counts_as_a_failed_fetch(rig, tmp_path):
+    """There are TWO of them, and only one was fixed the first time.
+
+    `scoring skipped` is the window being shut before a batch starts;
+    `scoring interrupted` is it closing part way through one. Both leave the
+    fetch complete -- the second even routes and announces what it bought --
+    and both used to land in `error`, where `last_success_at` reads them as a
+    failed run and makes the hunt due on the very next tick.
+    """
+    import inspect
+    from dealbot import pipeline
+    src = inspect.getsource(pipeline.run_hunt)
+    for phrase in ("scoring skipped", "scoring interrupted"):
+        assert f'result.error = f"{phrase}' not in src, (
+            f"{phrase!r} is back in `error`; the cadence will collapse again")
+        assert phrase in src

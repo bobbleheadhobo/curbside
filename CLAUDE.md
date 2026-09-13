@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 365 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 366 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -150,6 +150,9 @@ interval affordable. Anything that lets already-judged listings back through
 turns a cheap loop into an expensive one, and nothing will look broken.
 
 **A degraded run goes in `warning`; only a failed FETCH goes in `error`.**
+There are TWO standdowns and they are easy to fix by half: `scoring skipped`
+(the window shut before a batch) and `scoring interrupted` (it shut part way
+through one, after that run had already judged, routed and announced).
 `last_success_at` counts runs with `error IS NULL`, so anything written to
 `error` makes the hunt due again on the very next tick and its cadence
 collapses to the timer period. A quota standdown was recorded there: the free

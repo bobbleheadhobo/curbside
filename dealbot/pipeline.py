@@ -527,7 +527,14 @@ def run_hunt(
         # and never announced -- the same silent loss that left two TV stands
         # sitting un-announced. So routing and notification below still run,
         # and only the image pass is skipped.
-        result.error = f"scoring interrupted: {interrupted}"
+        # `warning` for the same reason as the standdown above, and this case
+        # has the stronger claim: the run fetched, judged part of the batch,
+        # routed it and announced it. The `warning` column's schema comment
+        # names this exact situation -- "appraisal interrupted by a rate
+        # limit" -- and putting it in `error` made the hunt due on the next
+        # tick, collapsing its cadence onto the timer period.
+        note = f"scoring interrupted: {interrupted}"
+        result.warning = f"{result.warning}; {note}" if result.warning else note
 
     # --- 5b. image pass, only where the model asked for one -----------------
     # Both scores are kept. The text judgement stays in the history next to the
