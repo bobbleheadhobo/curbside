@@ -25,6 +25,17 @@ def search_payload():
     return json.loads((FIX / "search-free-abq.json").read_text())
 
 
+@pytest.fixture
+def detail_payload():
+    return json.loads((FIX / "detail-couch.json").read_text())
+
+
+@pytest.fixture
+def stub_listing(src, search_payload):
+    """The index-level record a detail fetch is handed to fill in."""
+    return src.parse(src.parse_search(search_payload)[1])
+
+
 def test_decodes_positional_items(src, search_payload):
     raws = src.parse_search(search_payload)
     assert len(raws) == 192
@@ -62,17 +73,16 @@ def test_search_has_no_descriptions(src, search_payload):
     assert all(l.description is None for l in listings)
 
 
-def test_detail_supplies_body_condition_and_canonical_url(src, search_payload):
-    stub = src.parse(src.parse_search(search_payload)[1])
-    detail = json.loads((FIX / "detail-couch.json").read_text())
-    full = src.parse_detail(detail, stub)
+def test_detail_supplies_body_condition_and_canonical_url(src, detail_payload,
+                                                          stub_listing):
+    full = src.parse_detail(detail_payload, stub_listing)
     assert "grey couch set" in full.description
     assert "[condition: good]" in full.description   # attribute folded into text
     assert full.url.startswith("https://www.craigslist.org/view/d/")
     assert full.posted_at is not None
     assert full.price_cents == 25000
     assert len(full.images) > 1
-    assert full.id == stub.id                         # identity preserved
+    assert full.id == stub_listing.id                 # identity preserved
 
 
 def test_an_error_payload_raises_rather_than_looking_empty(src):
@@ -96,3 +106,44 @@ def test_an_html_interstitial_reads_as_blocked_not_a_decode_crash(src, monkeypat
     monkeypatch.setattr(src._session, "get", lambda *a, **k: Resp())
     with pytest.raises(SourceBlocked, match="non-JSON"):
         src._get("https://sapi.craigslist.org/x")
+
+
+def test_the_description_arrives_as_text_not_html(src, detail_payload, stub_listing):
+    """Craigslist's `body` is HTML. Every description collected carried a
+    `<br>`, and the ones with a phone number carried a `<showcontactinfo>`
+    element the site fills in client-side. Both used to reach the prompt and
+    the card verbatim."""
+    full = src.parse_detail(detail_payload, stub_listing)
+    assert "<" not in full.description
+    assert "grey couch set" in full.description
+
+
+@pytest.mark.parametrize("body,want", [
+    ("one<br>two", "one\ntwo"),
+    ("one<br/>two", "one\ntwo"),
+    ("one<BR />two", "one\ntwo"),
+    # the element the site replaces with a phone number, and nothing else
+    ('Call <showcontactinfo postingid="7" title="show contact info">'
+     "</showcontactinfo>", "Call"),
+    ("<b>FREE</b> pallets", "FREE pallets"),
+    ("caf&eacute; table &amp; chairs", "café table & chairs"),
+    # a seller who typed the characters keeps them, rather than getting a
+    # line break they never asked for
+    ("a &lt;br&gt; b", "a <br> b"),
+    ("one<br>\n\n\n\n\ntwo", "one\n\ntwo"),
+    ("", ""),
+    (None, None),
+])
+def test_markup_is_taken_out_but_the_words_are_kept(body, want):
+    from dealbot.sources.craigslist import _plain_text
+    assert _plain_text(body) == want
+
+
+def test_an_all_markup_body_reads_as_no_description(src, detail_payload,
+                                                    stub_listing):
+    """`<br><br>` is not a description. It has to come back None rather than
+    as whitespace, or the card's "no description" chip never fires."""
+    payload = json.loads(json.dumps(detail_payload))
+    payload["data"]["items"][0]["body"] = "<br><br>\n  "
+    payload["data"]["items"][0]["attributes"] = []
+    assert src.parse_detail(payload, stub_listing).description is None

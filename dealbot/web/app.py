@@ -8,6 +8,7 @@ explain is a tool you stop opening.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -182,6 +183,62 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
             f'vector-effect="non-scaling-stroke" points="{coords}"/></svg>')
 
 
+# `pipeline` writes a standdown as "<what happened>: <why>", and joins it to
+# any other warning from the same run with "; " -- so this is a clause inside
+# the column, not necessarily the whole of it.
+STANDDOWNS = ("scoring skipped", "scoring interrupted")
+
+
+def standdown_reason(warning: str | None) -> str | None:
+    """The why out of a run's standdown warning, or None if there is not one.
+
+    A warning may be two things at once ("2 detail fetches failed; scoring
+    skipped: ..."), which is why this looks at every clause rather than the
+    start of the string. Matching only the start meant a run that lost a
+    detail fetch AND stood aside reported neither pause.
+    """
+    for clause in str(warning or "").split("; "):
+        clause = clause.strip()
+        if clause.startswith(STANDDOWNS):
+            reason = clause.split(": ", 1)[-1]
+            return reason.split(" -- ")[0].strip() or None
+    return None
+
+
+def short_reason(reason: str) -> str:
+    """The same why, cut down to something a top-bar pill can hold.
+
+    The pill used to say "Judging paused" and keep the reason in a `title`
+    attribute. That is a tooltip, and the device this dashboard is read on has
+    no hover, so the reason was written down where it could never be seen.
+
+    The fallback is the point: an unmapped message still says something true
+    and merely says it at greater length. Nothing here can produce a bare
+    "Judging paused" again.
+    """
+    if "plan window" in reason:
+        pct = re.search(r"(\d+)%", reason)
+        return f"plan {pct.group(1)}%" if pct else "plan quota"
+    if "spend ceiling" in reason:
+        return "spend ceiling"
+    if "rate limit" in reason:
+        return "rate limit"
+    if "unreachable" in reason:
+        return "offline"
+    return reason.split(" (")[0].split(",")[0][:24]
+
+
+def _safe_back(back: str) -> str:
+    """Where a triage button returns to, once we have checked it is here.
+
+    `back` is a form field and now also a query parameter on the detail page,
+    so it is reader-supplied and ends up in a Location header. Anything that
+    is not a path on this dashboard becomes "/": a bare "/" is a page, "//x"
+    and "https://x" are somebody else's site.
+    """
+    return back if back.startswith("/") and not back.startswith("//") else "/"
+
+
 def health(row, paused, hunts, sched) -> dict:
     """The state of the bot itself, on every page, in one pill.
 
@@ -225,10 +282,11 @@ def health(row, paused, hunts, sched) -> dict:
     #     fixed the pill while leaving `last_success_at` reading it as a
     #     failure, so the cadence collapsed to the timer period. It is a
     #     warning now, at the source.
-    if row is not None and row["warning"] and str(
-            row["warning"]).startswith("scoring skipped"):
-        return {"state": "warn", "label": "Judging paused",
-                "detail": f"Collecting normally. {row['warning']}. {detail}"}
+    reason = standdown_reason(row["warning"]) if row is not None else None
+    if reason:
+        return {"state": "warn",
+                "label": f"Judging paused: {short_reason(reason)}",
+                "detail": f"{reason}. Collecting normally. {detail}"}
 
     # 3. Some hunts off. Indefinite, and only you can undo it.
     if paused:
@@ -289,7 +347,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         """
         if request.headers.get("x-requested-with") == "fetch":
             return payload if payload is not None else Response(status_code=204)
-        return RedirectResponse(back, status_code=303)
+        return RedirectResponse(_safe_back(back), status_code=303)
 
     def _live() -> Config:
         """The config as it stands right now, wants and cadences included.
@@ -464,7 +522,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             truncated=total > len(items)))
 
     @app.get("/listing/{listing_id:path}")
-    def listing_view(request: Request, listing_id: str):
+    def listing_view(request: Request, listing_id: str, back: str = "/"):
         # `_rows` is the one JSON-column decoder. This page used to hand-decode
         # its own, which is how it ended up showing only red_flags while the
         # card beside it showed unknowns and requirements too -- the deepest
@@ -481,7 +539,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         history = store.price_history(listing_id)
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
-            history=history, sparkline=_sparkline(history)))
+            history=history, sparkline=_sparkline(history),
+            back=_safe_back(back)))
 
     def _error_page(request: Request, status: int, heading: str,
                     detail: str, recovery: str) -> Response:
@@ -922,12 +981,20 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             except (TypeError, ValueError):
                 return 0.0
         until, override = _ts(PAUSE_UNTIL), _ts(OVERRIDE_UNTIL)
+        # The pill links here to explain itself, so this row has to know about
+        # BOTH ways the judging stops. It only knew about the rate-limit pause
+        # in `settings`, so a run that stood aside from the plan ceiling lit
+        # the pill amber and then told you, on the page it sent you to, that
+        # judging was "Running".
+        last = store.conn.execute(
+            "SELECT warning FROM runs ORDER BY id DESC LIMIT 1").fetchone()
         return {
             "paused": until > now,
             "reason": store.get_setting(PAUSE_REASON, "rate limit"),
             "mins": int((until - now) / 60) if until > now else 0,
             "override": override > now,
             "override_mins": int((override - now) / 60) if override > now else 0,
+            "standdown": standdown_reason(last["warning"]) if last else None,
         }
 
     @app.post("/quota/override")

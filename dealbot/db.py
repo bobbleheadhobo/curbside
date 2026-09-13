@@ -677,6 +677,20 @@ class Store:
         return {r["listing_id"]: r["status"] for r in self.conn.execute(
             "SELECT listing_id, status FROM hunt_matches WHERE hunt_id=?", (hunt_id,))}
 
+    def filter_reasons(self, hunt_id: str) -> dict[str, str]:
+        """Why each listing this hunt filtered was filtered.
+
+        The gate needs it to tell a listing it has never judged from one it
+        already rejected for a reason that cannot change. A filtered listing
+        has no score, so on the score alone the two look identical -- which is
+        how a photoless post got re-fetched and re-dropped on every run for
+        four days. See `filters.PERMANENT_REJECTIONS`.
+        """
+        return {r["listing_id"]: r["filter_reason"] for r in self.conn.execute(
+            "SELECT listing_id, filter_reason FROM hunt_matches "
+            "WHERE hunt_id=? AND status='filtered' AND filter_reason IS NOT NULL",
+            (hunt_id,))}
+
     # --- scores -------------------------------------------------------------
 
     def save_score(self, score: Score, priced_at_cents: int | None) -> None:

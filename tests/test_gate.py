@@ -5,9 +5,10 @@ from dealbot.filters import gate
 from dealbot.models import UpsertResult
 
 
-def _gate(hunt, listings, statuses=None, last_scores=None, upserts=None):
+def _gate(hunt, listings, statuses=None, last_scores=None, upserts=None,
+          filtered=None):
     return gate(hunt, listings, ABQ, statuses or {}, last_scores or {},
-                upserts or {})
+                upserts or {}, filtered or {})
 
 
 def test_new_listing_is_admitted(hunt):
@@ -115,3 +116,48 @@ def test_a_real_distance_always_beats_the_city_guess(hunt):
 
     far = make_listing("fb:6", distance_mi=90.0, city="Albuquerque, NM")
     assert _gate(hunt, [far]).rejected == [("fb:6", "too_far")]
+
+
+def test_a_permanent_rejection_is_not_re_decided(hunt):
+    """A photoless listing does not grow a photograph, so asking again costs a
+    detail fetch to learn what we already hold.
+
+    Without this the listing has no score, reads as never-judged, and is
+    admitted on every run forever. Three of them held three of the free
+    sweep's five candidate slots for four days, and the 73 listings queued
+    behind them were never judged at all."""
+    gr = _gate(hunt, [make_listing()], filtered={"fixture:1": "no_photo"})
+    assert gr.candidates == []
+    assert gr.rejected == [("fixture:1", "no_photo")]
+
+
+def test_every_permanent_reason_sticks(hunt):
+    from dealbot.filters import PERMANENT_REJECTIONS
+    for reason in PERMANENT_REJECTIONS:
+        gr = _gate(hunt, [make_listing()], filtered={"fixture:1": reason})
+        assert gr.candidates == [], reason
+
+
+def test_a_duplicate_is_re_decided_every_run(hunt):
+    """The fingerprint has collapsed four different "Curb alert" posts into
+    one before now. Making a wrong merge permanent is the confidently-wrong
+    failure relist detection was left inert to avoid."""
+    gr = _gate(hunt, [make_listing()],
+               filtered={"fixture:1": "duplicate_of:craigslist:abc"})
+    assert [c.reason for c in gr.candidates] == ["new"]
+
+
+def test_a_blocked_word_is_re_decided_every_run(hunt):
+    """The one rejection that must NOT stick. Blocked words are typed on a
+    phone and deleted from a phone, so a term you remove has to let its
+    listings back -- and the gate above re-checks the current list for free."""
+    gr = _gate(hunt, [make_listing()], filtered={"fixture:1": "excluded_kw:bed"})
+    assert [c.reason for c in gr.candidates] == ["new"]
+
+
+def test_a_price_rejection_is_re_decided_every_run(hunt):
+    """`over_price` and `too_far` are re-decided from the current price and the
+    current radius, so stickiness would buy nothing and could only go stale."""
+    for reason in ("over_price", "too_far", "too_far_by_city"):
+        gr = _gate(hunt, [make_listing()], filtered={"fixture:1": reason})
+        assert [c.reason for c in gr.candidates] == ["new"], reason

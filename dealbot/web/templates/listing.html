@@ -99,13 +99,18 @@
         <small>currently <b>{{m.status}}</b>{% if m.filter_reason %} ({{m.filter_reason}}){% endif %}</small></span>
       {# `surfaced` used to be offered here. /triage does not accept it, so the
          button posted, redirected, and changed nothing. #}
+      {# Both buttons LEAVE. This page is a step in triaging a list, not a
+         place to sit: deciding here and staying put left the listing on
+         screen saying "currently dismissed", so the only thing that told you
+         the tap had worked was a word you had to go looking for. `back` is
+         the list the card was opened from, and the card is gone from it. #}
       <div class="triage-actions">
         {% for s, label in [('saved','Save'), ('dismissed','Dismiss')] %}
-        <form method="post" action="/triage" data-inplace="main">
+        <form method="post" action="/triage" data-was="{{m.status}}">
           <input type="hidden" name="hunt_id" value="{{m.hunt_id}}">
           <input type="hidden" name="listing_id" value="{{listing.id}}">
           <input type="hidden" name="status" value="{{s}}">
-          <input type="hidden" name="back" value="/listing/{{listing.id}}">
+          <input type="hidden" name="back" value="{{back}}">
           <button {% if m.status == s %}disabled{% endif %}>{{label}}</button>
         </form>
         {% endfor %}
@@ -119,7 +124,7 @@
     <p class="triage-help">
       <b>Save</b> moves it to Saved. <b>Dismiss</b> takes it out of the bin and
       teaches the hunt: dismissed titles become examples of what you do not want
-      in its next prompt.
+      in its next prompt. Either one closes this page.
     </p>
     {% endif %}
   </div>

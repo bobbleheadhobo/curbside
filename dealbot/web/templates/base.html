@@ -87,8 +87,12 @@
       <svg class="i" aria-hidden="true"><use href="#{{icon}}"/></svg>{{label}}</a>
     {% endfor %}
   </nav>
+  {# The label carries the reason, and the reason is the whole point: the pill
+     used to keep it in this `title` alone, which is a tooltip, and the phone
+     this is read on has no hover. The title stays as the longer version. #}
   <a class="health is-{{ health.state }}" href="/runs" title="{{ health.detail }}">
-    <span class="dot" aria-hidden="true"></span>{{ health.label }}</a>
+    <span class="dot" aria-hidden="true"></span
+    ><span class="what">{{ health.label }}</span></a>
   {# Settings is a gear rather than a sixth tab: five is what fits across a
      phone, and hours and wants are set once a month, not skimmed daily. #}
   <a class="iconbtn" href="/settings" aria-label="Settings"

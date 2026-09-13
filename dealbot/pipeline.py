@@ -260,6 +260,7 @@ def run_hunt(
         statuses=store.statuses(hunt.id),
         last_scores=store.last_scores(hunt.id),
         upserts=upserts,
+        filtered=store.filter_reasons(hunt.id),
     )
     store.record_rejections(hunt.id, gr.rejected)
 

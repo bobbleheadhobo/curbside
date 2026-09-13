@@ -129,11 +129,20 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
    header cannot drift. It is the one solid block of accent in the interface;
    everything else spends the colour on state. */
 .brand .mark{width:24px;height:24px;display:block;flex:none}
+/* The label now carries the reason ("Judging paused: plan 72%"), because a
+   pill that only says something is wrong sends you looking. On a narrow phone
+   the brand takes what it needs first, so this shrinks and ellipsises rather
+   than pushing the settings gear off the edge. */
 .health{
   display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;
   border:1px solid var(--line);border-radius:99px;background:var(--card);
-  font-size:12.5px;color:var(--dim);font-weight:500;transition:border-color .15s
+  font-size:12.5px;color:var(--dim);font-weight:500;transition:border-color .15s;
+  min-width:0;max-width:52vw
 }
+/* The ellipsis needs the overflow on the element holding the text, which in a
+   flex container an anonymous text node is not. */
+.health .what{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+@media (min-width:900px){ .health{max-width:none} }
 .health:hover{border-color:var(--faint)}
 .health .dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
 .health.is-warn .dot{background:var(--warn)} .health.is-warn{color:var(--warn)}

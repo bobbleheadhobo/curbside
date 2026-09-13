@@ -28,6 +28,31 @@ PRICE_DROP_THRESHOLD = 0.15
 
 TRIAGED = ("saved", "dismissed", "contacted")
 
+# Post-enrichment rejections that cannot come untrue. A listing does not grow a
+# photograph and it does not get younger, so re-deciding either one costs a
+# detail fetch to learn a fact we already hold.
+#
+# This list is short on purpose, and what is left off it is left off for a
+# reason:
+#
+# * `excluded_kw` -- those words are typed on a phone and deleted from a
+#   phone, so a term you remove has to let its listings back.
+# * `over_price`, `too_far`, `too_far_by_city` -- the gate below re-decides
+#   all three from the current price and the CURRENT radius, which is a
+#   number on the settings page. Sticking them would buy nothing and could
+#   only go stale.
+# * `duplicate_of:` -- the fingerprint is the weakest thing here. It has
+#   already collapsed four different "Curb alert" posts into one, and making
+#   a wrong merge permanent is exactly the confidently-wrong failure the
+#   relist detection was left inert to avoid. It costs a detail fetch a run;
+#   correctness is worth more than the fetch.
+#
+# `too_old` cannot be undone from the dashboard either: `max_age_days` lives
+# in config.yaml, so raising it will not bring these back. That is the one
+# case where the reason genuinely outlives the decision, and it is the right
+# trade for a listing already past the age the hunt asked for.
+PERMANENT_REJECTIONS = ("too_old", "no_photo", "nothing_to_judge")
+
 
 @lru_cache(maxsize=512)
 def _term_pattern(term: str) -> re.Pattern[str]:
@@ -69,6 +94,7 @@ def gate(
     statuses: Mapping[str, str],
     last_scores: Mapping[str, sqlite3.Row],
     upserts: Mapping[str, UpsertResult],
+    filtered: Mapping[str, str] | None = None,
 ) -> GateResult:
     """Decide who is worth spending money on. Pure: state comes in as dicts.
 
@@ -79,6 +105,9 @@ def gate(
 
     Rejections are RETURNED, not discarded, so the caller can record why. An
     empty result you cannot explain is indistinguishable from a broken scraper.
+
+    `filtered` is listing id -> the reason this hunt last filtered it on, and
+    it is what stops a permanent rejection being re-learned every run.
     """
     candidates: list[Candidate] = []
     rejected: list[tuple[str, str]] = []
@@ -112,6 +141,20 @@ def gate(
 
         if hunt.exclude and (hit := matches_any(listing, hunt.exclude)):
             rejected.append((listing.id, f"excluded_kw:{hit}"))
+            continue
+
+        # A post-enrichment rejection for a reason that cannot come untrue is
+        # a decision, not a gap -- but it leaves no score, so without this it
+        # reads as "never judged" and comes back as a candidate on every run,
+        # is fetched over HTTP again, and is dropped again. Forever.
+        #
+        # That is not theoretical. Three photoless Craigslist posts held three
+        # of the free sweep's five candidate slots for four days, so the 73
+        # listings queued behind them were never judged at all while
+        # `n_deferred` sat at a flat 78 and every individual run looked fine.
+        was_filtered = (filtered or {}).get(listing.id)
+        if was_filtered and was_filtered.startswith(PERMANENT_REJECTIONS):
+            rejected.append((listing.id, was_filtered))
             continue
 
         prior = last_scores.get(listing.id)

@@ -47,7 +47,7 @@
        destinations, so this cannot be one wrapping anchor -- links do not
        nest. The whole-card target is an overlay stretched across it, and the
        title sits above that on z-index. #}
-    <a class="card-open" href="/listing/{{i.id}}"
+    <a class="card-open" href="/listing/{{i.id}}?back={{ back|urlencode }}"
        aria-label="Details for {{i.title}}"></a>
     {# The placeholder sits underneath and the photo covers it, so a source URL
        that has expired -- Facebook's last about four days -- degrades to a

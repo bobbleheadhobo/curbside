@@ -1311,3 +1311,76 @@ def test_the_fixtures_do_not_rot_with_the_calendar(rig):
         later = ages_at(future)
     assert [round(a, 3) for a in later] == [round(a, 3) for a in ages], (
         "the fixtures still move with the calendar")
+
+
+def test_a_permanent_reject_does_not_hold_a_candidate_slot_forever(rig):
+    """REGRESSION, found live: `n_deferred` sat at a flat 78 for four days.
+
+    A post-enrichment rejection leaves no score, so on the next run the gate
+    read it as never-judged and admitted it again. Being among the freshest
+    listings it won a slot under the batch cap again, was fetched again, and
+    was dropped again. Three photoless Craigslist posts held three of the free
+    sweep's five slots that way, so the 73 listings behind them were never
+    judged at all -- while every individual run looked perfectly healthy.
+    """
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+
+    from conftest import make_listing
+    from dealbot.models import RawListing
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"),
+                   max_results=2)
+    now = datetime.now(timezone.utc)
+
+    class Feed:
+        """One photoless post, permanently the freshest thing on the page, and
+        four ordinary listings queued behind it."""
+        name = "fixture"
+
+        def search(self, hunt):
+            return iter([RawListing("fixture", n, {}, now)
+                         for n in ("bare", "a", "b", "c", "d")])
+
+        def parse(self, raw):
+            bare = raw.source_id == "bare"
+            return make_listing(
+                lid=f"fixture:{raw.source_id}", price_cents=0,
+                # Distinct titles: identical ones share a dup_key and the
+                # cross-source check would drop three of the four.
+                title=("Free junk metal removal" if bare
+                       else f"Free coffee table {raw.source_id}"),
+                description="come and take it",
+                images=() if bare else ("a.jpg",),
+                posted_at=now - timedelta(minutes=1 if bare else 60))
+
+    feed = Feed()
+    judged: set[str] = set()
+    for _ in range(3):
+        run_hunt(store, hunt, feed, scorer, notifiers, cfg.location)
+        judged |= {r["listing_id"] for r in store.conn.execute("SELECT listing_id FROM scores")}
+
+    # The photoless one is rejected once and never costs a slot again, so
+    # three runs of two slots reach all four real listings.
+    assert judged == {"fixture:a", "fixture:b", "fixture:c", "fixture:d"}
+    assert store.statuses(hunt.id)["fixture:bare"] == "filtered"
+    assert store.unjudged_counts().get(hunt.id, 0) == 0
+
+
+def test_the_backlog_actually_drains_run_over_run(rig):
+    """`n_deferred` exists to make a GROWING backlog visible. It only means
+    that if a flat one is impossible, so the count has to fall every run until
+    it reaches zero."""
+    from dataclasses import replace
+    cfg, store, source, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"),
+                   max_results=2)
+
+    seen = []
+    for _ in range(6):
+        r = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+        seen.append(store.unjudged_counts().get(hunt.id, 0))
+
+    assert seen == sorted(seen, reverse=True), f"backlog never drained: {seen}"
+    assert seen[-1] == 0, f"backlog stalled at {seen[-1]}"

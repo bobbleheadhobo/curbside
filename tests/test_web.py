@@ -557,9 +557,11 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     # a failing fetch beats a partial pause
     assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched()
                   )["label"] == "Fetch failing"
-    # a quota pause is not a failing fetch: the fetch worked
+    # a quota pause is not a failing fetch: the fetch worked, and the pill
+    # has to say WHICH pause -- the reason used to live in a `title` tooltip,
+    # which on a phone is nowhere at all
     assert health(_row(warning="scoring skipped: daily spend ceiling reached"),
-                  [], hunts, _sched())["label"] == "Judging paused"
+                  [], hunts, _sched())["label"] == "Judging paused: spend ceiling"
     # some hunts off beats the clock
     assert health(_row(), hunts[:2], hunts, _sched(open_=False)
                   )["label"] == "2 hunts off"
@@ -741,8 +743,10 @@ def test_a_card_offers_two_destinations_and_does_not_nest_links(tmp_path):
     assert card, "no card rendered"
     c = card.group(0)
 
-    assert re.search(r'<a class="card-open" href="/listing/x:1"', c), \
-        "the whole-card tap no longer opens the detail page"
+    # The `back` rides along, so Dismiss on the detail page can return to the
+    # list the card was opened from instead of sitting there saying "dismissed".
+    assert re.search(r'<a class="card-open" href="/listing/x:1\?back=', c), \
+        "the whole-card tap no longer opens the detail page, or lost its back"
     title = re.search(r'<h2><a class="out" href="([^"]+)" target="_blank"', c)
     assert title and title.group(1) == "https://example.com/item/1", \
         "the title no longer opens the marketplace"
@@ -755,3 +759,124 @@ def test_a_card_offers_two_destinations_and_does_not_nest_links(tmp_path):
     # Gestures are an ADDITION: both buttons must survive, because a swipe is
     # invisible, undiscoverable and unavailable without a touchscreen.
     assert re.findall(r'name="status" value="(\w+)"', c) == ["saved", "dismissed"]
+
+
+# --- saying why the judging stopped ---------------------------------------
+
+def test_a_standdown_reason_is_found_even_beside_another_warning():
+    """A run can lose a detail fetch AND stand aside, and `pipeline` joins the
+    two with "; ". Matching only the start of the column meant that run
+    reported neither pause."""
+    from dealbot.web.app import standdown_reason
+    assert standdown_reason("scoring skipped: 5-hour plan window at 72% "
+                            "(ceiling 70%) -- standing aside") \
+        == "5-hour plan window at 72% (ceiling 70%)"
+    assert standdown_reason("2 detail fetches failed; scoring skipped: "
+                            "daily spend ceiling reached ($10.02 of $10.00)") \
+        == "daily spend ceiling reached ($10.02 of $10.00)"
+    # both standdowns count: interrupted stopped the judging just as skipped did
+    assert standdown_reason("scoring interrupted: rate limit") == "rate limit"
+    assert standdown_reason("2 detail fetches failed") is None
+    assert standdown_reason(None) is None
+
+
+def test_every_reason_the_scorer_can_raise_fits_the_pill():
+    """The pill is one line in a top bar on a phone, so a reason it cannot
+    hold is a reason nobody reads. These are the messages
+    `ClaudeCodeScorer.check_available` actually raises."""
+    from dealbot.web.app import short_reason
+    for raised, want in (
+        ("5-hour plan window at 72% (ceiling 70%)", "plan 72%"),
+        ("7-day plan window at 91% (ceiling 90%)", "plan 91%"),
+        ("daily spend ceiling reached ($10.02 of $10.00)", "spend ceiling"),
+        ("paused (rate limit), 42 min remaining", "rate limit"),
+        ("api.anthropic.com unreachable", "offline"),
+    ):
+        assert short_reason(raised) == want
+        assert len(want) <= 15
+
+
+def test_an_unmapped_reason_still_says_something():
+    """The fallback is what stops a new ceiling reading as a bare "Judging
+    paused" -- the exact failure this fixes."""
+    from dealbot.web.app import short_reason
+    got = short_reason("some new ceiling (with detail), and more")
+    assert got == "some new ceiling"
+
+
+def test_the_runs_page_agrees_with_the_pill(tmp_path):
+    """The pill links here to explain itself. /runs only knew about the
+    rate-limit pause in `settings`, so a run that stood aside from the plan
+    ceiling lit the pill amber and then said "Running" on the page it sent
+    you to."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    s.finish_run(s.start_run(hunt, "x"),
+                 warning="scoring skipped: 5-hour plan window at 72% "
+                         "(ceiling 70%) -- standing aside")
+
+    page = client.get("/runs").text
+    assert "5-hour plan window at 72%" in page
+    assert "Running. Stands aside" not in page
+
+
+# --- deciding on the detail page closes it --------------------------------
+
+def _detail(tmp_path, status="wanted"):
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    l = Listing(id="x:1", source="x", source_id="1", title="A Wide TV Stand",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+    s.set_status(hunt.id, "x:1", status)
+    s.save_score(Score(listing_id="x:1", hunt_id=hunt.id, model="m",
+                       scored_at=datetime.now(timezone.utc), match="yes",
+                       deal_score=9.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=True, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r"),
+                 priced_at_cents=0)
+    return client, cfg, hunt
+
+
+def test_deciding_on_the_detail_page_returns_to_the_list(tmp_path):
+    """It used to save in place, so the listing you had just dismissed stayed
+    on screen with the word "dismissed" in it -- the one view where acting on
+    a listing left it sitting in front of you."""
+    client, _, hunt = _detail(tmp_path)
+    page = client.get("/listing/x:1?back=/free").text
+    assert 'value="/free"' in page, "the detail page lost where it came from"
+    assert "data-inplace" not in page, \
+        "a decision here must leave the page, not re-render it"
+
+    r = client.post("/triage", data={"hunt_id": hunt.id, "listing_id": "x:1",
+                                     "status": "dismissed", "back": "/free"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/free"
+
+
+def test_the_detail_page_defaults_to_somewhere_real(tmp_path):
+    """Opened from a bookmark there is no list to go back to."""
+    client, _, _ = _detail(tmp_path)
+    assert 'value="/"' in client.get("/listing/x:1").text
+
+
+def test_a_back_off_this_dashboard_is_refused(tmp_path):
+    """`back` is now a query parameter as well as a form field, so it is
+    reader-supplied and ends up in a Location header."""
+    from dealbot.web.app import _safe_back
+    for hostile in ("https://evil.test/x", "//evil.test/x", "javascript:x"):
+        assert _safe_back(hostile) == "/"
+    assert _safe_back("/free") == "/free"
+
+    client, _, hunt = _detail(tmp_path)
+    r = client.post("/triage",
+                    data={"hunt_id": hunt.id, "listing_id": "x:1",
+                          "status": "saved", "back": "https://evil.test/x"},
+                    follow_redirects=False)
+    assert r.headers["location"] == "/"

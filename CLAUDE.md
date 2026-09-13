@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 369 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 395 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -194,6 +194,20 @@ matching one of your wants is refused outright. Everything else here:
 through. An unrecognised city, an undated listing, a listing whose detail fetch
 failed — all pass, or get deferred. Failing closed silently drops the thing the
 user wanted; failing open costs one request.
+
+**But a rejection that cannot come untrue must STICK.** A filtered listing has
+no score, so on the score alone it is indistinguishable from one never judged —
+and the gate re-admitted it, the pipeline re-fetched it over HTTP, and the
+post-enrichment check dropped it again, every run, forever. Those listings are
+among the freshest, so they won slots under the batch cap: three photoless
+Craigslist posts held three of the free sweep's five slots for four days, and
+the 73 listings queued behind them were never judged at all. `n_deferred` sat
+at a flat 78 and every individual run looked healthy. `filters.PERMANENT_REJECTIONS`
+is that list, and it is deliberately three entries long — `too_old`,
+`no_photo`, `nothing_to_judge`. Read the comment above it before adding a
+fourth: `excluded_kw` and `too_far` are re-decided from a phone, and
+`duplicate_of:` rests on a fingerprint that has already merged four different
+posts into one.
 
 **A rejection must be recorded, never just dropped.** `store.record_rejections`
 is what makes a drop explainable on `/hunt` instead of a listing silently

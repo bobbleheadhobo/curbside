@@ -44,6 +44,7 @@
         {%- if quota.override %}Spending anyway for {{ quota.override_mins }} more min.
         {%- elif quota.paused %}{{ quota.reason }}, {{ quota.mins }} min left.
           Collecting carries on.
+        {%- elif quota.standdown %}Paused: {{ quota.standdown }}. Collecting carries on.
         {%- else %}Running. Stands aside when the plan window gets tight.{% endif %}</small></span>
     <div class="triage-actions">
       <form method="post" action="/quota/override" data-inplace="main"

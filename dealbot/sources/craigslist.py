@@ -26,7 +26,9 @@ The `?format=rss` endpoint is blocked outright (403), so this is the path.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
+from html import unescape
 from typing import Any, Iterator
 
 import requests
@@ -56,6 +58,35 @@ PATH_FREE, PATH_ALL = "zip", "sss"
 def _fields(item: list) -> dict[int, list]:
     return {e[0]: e[1:] for e in item
             if isinstance(e, list) and e and isinstance(e[0], int)}
+
+
+# Craigslist's `body` is HTML, not text. Every one of the 310 descriptions
+# collected carries a `<br>`, and the ones with a phone number carry a
+# `<showcontactinfo>` element the site swaps for the digits in a browser.
+# Left in, that markup reaches the two places it does not belong: the prompt,
+# where the model reads tags as if the seller had typed them, and the card,
+# which escapes them and shows the reader a literal "<br>".
+_BR = re.compile(r"<br\s*/?>", re.I)
+_TAG = re.compile(r"<[^>]*>")
+_BLANK_RUN = re.compile(r"\n{3,}")
+_TRAILING_SPACE = re.compile(r"[ \t]+\n")
+
+
+def _plain_text(body: str | None) -> str | None:
+    """The seller's words, with Craigslist's markup taken back out.
+
+    Tags are dropped rather than escaped, and their text content is kept: a
+    `<b>free</b>` keeps the word and loses the emphasis, and an empty element
+    like `<showcontactinfo>` simply disappears. Entities are unescaped LAST,
+    so a seller who typed "&lt;br&gt;" ends up with those four characters
+    rather than a line break they never asked for.
+    """
+    if not body:
+        return body
+    text = _TAG.sub("", _BR.sub("\n", body))
+    text = unescape(text)
+    text = _TRAILING_SPACE.sub("\n", text)
+    return _BLANK_RUN.sub("\n\n", text).strip() or None
 
 
 def _latlon(encoded: Any) -> tuple[float | None, float | None]:
@@ -195,7 +226,7 @@ class CraigslistSource(Throttled):
             distance = round(haversine_miles(self.location.lat, self.location.lng,
                                              lat, lng), 1)
 
-        body = d.get("body")
+        body = _plain_text(d.get("body"))
         # Condition arrives as a structured attribute; fold it into the text the
         # model reads rather than inventing a new field for one source.
         for attr in d.get("attributes") or []:

@@ -268,10 +268,76 @@
     });
   }
 
+  /* Triage from the detail page, which has no card to fold.
+   *
+   * It used to save in place, so the listing you had just dismissed stayed on
+   * screen with the word "dismissed" somewhere in it -- the one view where
+   * acting on a listing left it sitting in front of you. Deciding is the last
+   * thing you do here, so the decision closes the page and returns you to the
+   * list, where the card is already gone because the server rendered it that
+   * way.
+   *
+   * The undo has to survive the navigation, so it travels in sessionStorage
+   * and is picked up on arrival. With this script absent the form posts and
+   * the 303 does the same journey without it.
+   */
+  function actAndLeave(form) {
+    var data = new FormData(form);
+    var kind = data.get("status");
+    var back = data.get("back") || "/";
+    post("/triage", data).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      try {
+        sessionStorage.setItem("curbside:undo", JSON.stringify({
+          kind: kind, hunt_id: data.get("hunt_id"),
+          listing_id: data.get("listing_id"),
+          was: form.getAttribute("data-was") || "wanted"
+        }));
+      } catch (e) { /* private mode: lose the undo, not the navigation */ }
+      location.assign(back);
+    }).catch(function () {
+      toast("That did not save. Still connected?", null, null, true);
+    });
+  }
+
+  /* What /triage will take back. A card only ever sits in a bin, but the
+     detail page opens on ANY listing -- `filtered`, `new`, `gone` -- and
+     offering to restore a status the endpoint rejects is an Undo button that
+     answers 400. Offer nothing rather than something that does not work. */
+  var UNDOABLE = ["saved", "dismissed", "contacted", "wanted", "free_find",
+                  "scored"];
+
+  /* The other half: offer it once, on the page we landed on. */
+  function undoFromLastPage() {
+    var raw;
+    try {
+      raw = sessionStorage.getItem("curbside:undo");
+      sessionStorage.removeItem("curbside:undo");
+    } catch (e) { return; }
+    if (!raw) return;
+    var u;
+    try { u = JSON.parse(raw); } catch (e) { return; }
+    if (!u || !u.listing_id) return;
+    if (UNDOABLE.indexOf(u.was) < 0) { toast(LABEL[u.kind] + "."); return; }
+    toast(LABEL[u.kind] + ".", "Undo", function () {
+      post("/triage", {hunt_id: u.hunt_id, listing_id: u.listing_id,
+                       status: u.was}).then(function (r) {
+        if (r.ok) { location.reload(); return; }
+        toast("That did not save. Still connected?", null, null, true);
+      });
+    });
+  }
+
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
     var card = form.closest && form.closest("article.card");
     if (!card) {
+      if (form.getAttribute("action") === "/triage"
+          && !form.hasAttribute("data-inplace")) {
+        ev.preventDefault();
+        actAndLeave(form);
+        return;
+      }
       if (form.hasAttribute && form.hasAttribute("data-inplace")) {
         ev.preventDefault();
         inplace(form);
@@ -292,6 +358,12 @@
       block(card, input.value);
     }
   });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", undoFromLastPage);
+  } else {
+    undoFromLastPage();
+  }
 
   /* --- never show me this again ----------------------------------------- */
 
