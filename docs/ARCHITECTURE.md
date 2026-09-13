@@ -21,6 +21,11 @@ Three rules keep it from becoming a mystery:
 * Only `--due` is gated. A hand-run `dealbot once` always runs.
 * `start == end` means **always on**, not never on — it fails open like every
   other filter here.
+* The window may **wrap midnight**, and the hours panel states how long it
+  actually is: "Awake 21 hours a day. This window runs past midnight." Two
+  clock times alone hide that — 11pm to 8pm reads like a night shift and is 21
+  hours awake, the near-opposite — and a control you misread is a control that
+  lies, which is the same failure the health pill exists to prevent.
 * Being asleep is stated in the health pill on every page (`Asleep till 12pm`),
   and the first half hour after waking never reads as "quiet", because the last
   run is legitimately as old as the night.
@@ -52,6 +57,21 @@ end, since the timer cannot fire faster than that anyway.
 Each hunt runs **once per source**, so there are 6 hunt×source combinations. A
 run counts toward the cadence only if it finished, had no error, and actually
 scored — a `--no-score` pass fetches but does not reset the clock.
+
+**Which makes the `error` column load-bearing, and it bit.** A scoring
+standdown — the plan window shutting before a batch (`scoring skipped`) or part
+way through one (`scoring interrupted`) — was recorded there. The fetch had
+succeeded in both cases; only the judging stood aside. But `last_success_at`
+reads `error`, so those hunts came up due on *every* tick: measured on the live
+box, the free sweep ran at a median 16 minutes against a configured 30, and
+`want:tv-stand` at 15 against a configured 60. That is 2-4x the intended
+requests, at two sources that throttle silently, retrying something no amount
+of fetching can fix.
+
+Both go in `warning` now. The rule: **`error` means the FETCH failed; anything
+else that went wrong is a `warning`.** Note there are two standdown phrases and
+fixing one and not the other is the easy mistake — a test greps `run_hunt` for
+both.
 
 Units live in `~/.config/systemd/user/`: `curbside.timer` → `curbside.service`,
 plus `curbside-web.service` for the dashboard (bound to localhost).
@@ -154,7 +174,11 @@ from "silently broken", so it is no longer the caller's to remember.
   sit, and age there is a *buy* signal, which is what the motivated-seller flag
   is built on. Undated listings always pass; Craigslist's search feed omits the
   date, so failing closed would discard most of what it returns.
-- **Cap** at `max_results_per_run` (5) per hunt per source, newest first. The
+- **Cap** at `max_results_per_run` (5) per hunt per source, newest first — by
+  `pipeline.freshness`, which falls back to `first_seen` when there is no
+  posting date. Ordering on `posted_at` alone made this a no-op for Craigslist,
+  whose search feed carries no date: every candidate tied on the `datetime.min`
+  fallback and a stable sort handed the slots to feed order. The
   overflow stays `new` so a cold start arrives gradually rather than as one
   bill.
 

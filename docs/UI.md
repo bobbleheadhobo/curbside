@@ -353,6 +353,19 @@ It is the only solid block of accent in the interface.
 the gear reads as configuration; `/` is the page you are on when you think "I
 should look for one of those". The empty state links there as well.
 
+**The hours panel says how long the window is, not just its two ends.**
+`Schedule.span_label`: "Awake 21 hours a day. This window runs past midnight." Clock times alone hide
+a wrapping window: 11pm to 8pm reads like a night shift and is in fact 21 hours
+awake, the near-opposite. That was reported as a bug in the code, and the code
+was right at every layer — form names, parsing, the save round trip, the wrap
+arithmetic. The defect was that the interface described the window in the one
+way that concealed what it meant, which is the same class of problem as a pause
+switch nobody can see.
+
+Two boundaries are easy to get wrong and are tested: a window that legitimately
+wraps (8pm to 6am is 10 hours, not 14), and `start == end`, which is all day
+rather than zero.
+
 **Settings is a gear in the top bar, not a sixth tab.** Five tabs is what fits
 across a phone. Hours and wants are set once a month; the bins are skimmed
 daily. If you add another destination, it goes in the top bar too.

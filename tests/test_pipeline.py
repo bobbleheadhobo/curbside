@@ -1265,3 +1265,49 @@ def test_neither_kind_of_scoring_standdown_counts_as_a_failed_fetch(rig, tmp_pat
         assert f'result.error = f"{phrase}' not in src, (
             f"{phrase!r} is back in `error`; the cadence will collapse again")
         assert phrase in src
+
+
+def test_the_fixtures_do_not_rot_with_the_calendar(rig):
+    """REGRESSION: the recordings carry ABSOLUTE dates and hunts filter on
+    `max_age_days`, so the suite aged out from under itself.
+
+    A fixture recorded on the 8th cleared the sweep's 7-day age filter until
+    the 13th, when one listing crossed the line and a test about unparseable
+    detail fetches began failing for reasons that had nothing to do with it.
+    Every later day would have taken another listing with it.
+
+    `FixtureSource.search` slides the whole recording forward so its newest
+    listing is "now", which keeps what the file encodes -- the relative ages --
+    and makes the date of capture irrelevant.
+    """
+    import datetime as dt
+    from unittest import mock
+    _cfg, _store, source, _scorer, _notifiers = rig
+    hunt = next(h for h in _cfg.hunts if h.name == "free-nearby")
+
+    def ages_at(when):
+        posted = [source.parse(r).posted_at for r in source.search(hunt)]
+        assert all(p is not None for p in posted), "fixture lost its dates"
+        return sorted((when - p).total_seconds() / 86400 for p in posted)
+
+    ages = ages_at(dt.datetime.now(dt.timezone.utc))
+    # The newest is always right now, whenever this happens to run. Seconds of
+    # slack: `search` takes its own clock reading a moment after this one.
+    assert -0.001 < ages[0] < 0.01, f"newest is {ages[0]:.3f} days old"
+    # And the ~2-day spread the recording encodes survives the shift...
+    assert 1.5 < ages[-1] < 2.5, f"oldest is {ages[-1]:.2f} days old"
+    # ... which is what keeps the whole file clear of the age filter.
+    assert ages[-1] < hunt.max_age_days
+
+    # The actual proof: six months from now, identical.
+    future = dt.datetime(2027, 3, 13, 12, 0, tzinfo=dt.timezone.utc)
+
+    class FrozenDT(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future
+
+    with mock.patch("dealbot.sources.fixture.datetime", FrozenDT):
+        later = ages_at(future)
+    assert [round(a, 3) for a in later] == [round(a, 3) for a in ages], (
+        "the fixtures still move with the calendar")

@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 368 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 369 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -102,6 +102,15 @@ existed: dismissal learning described as "not yet wired" when it was wired,
 "notifications are not built yet" while Discord had been running for days, and
 two CLI commands that never existed. A doc that lies is worse than no doc,
 because it gets followed.
+
+**Fixtures carry absolute dates, and hunts filter on `max_age_days`.** So a
+recording rots with the calendar unless something stops it: a file captured on
+the 8th cleared the sweep's 7-day filter until the 13th, when one listing
+crossed the line and a test about unparseable detail fetches began failing for
+reasons unrelated to it. `FixtureSource.search` slides the whole recording
+forward so its newest listing is "now", preserving the relative ages the file
+encodes. If you add a dated fixture, it inherits this; do not "fix" a rotting
+test by editing the date.
 
 **Every test must stay offline.** Sources are tested against recorded responses
 in `fixtures/` — including a captured *throttled* Facebook page, which is the

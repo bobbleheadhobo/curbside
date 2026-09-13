@@ -173,7 +173,7 @@ run_hunt(store, hunt, source, scorer, notifiers, location):
   3. PARSE + validate
   4. STORE                     upsert, record_price, mark_matches, mark_gone
   5. GATE                      filters.gate(); rejections are RECORDED
-  5a. CAP at max_results       newest first
+  5a. CAP at max_results       newest first, by pipeline.freshness
   5b. TOP UP from the backlog  spare capacity goes to listings never judged
   6. ENRICH survivors          description, coordinates, all photos
   6a. re-check distance, age, exclude terms   (only knowable after enrichment)
@@ -305,7 +305,10 @@ Four bins, sorted by *why* a listing is there rather than by how sure we are:
 - **Listing** (`/listing/<id>`) — images, full description, score history with
   requirements and unknowns, price sparkline, link out, triage.
 - **Runs** (`/runs`) — per run: fetched / new / candidates / scored / wanted /
-  free / images / cost / error. Also carries the two pause switches (sweeps, and
+  free / images / cost / error / warning. `error` means the FETCH failed and is
+  the column `last_success_at` reads; a run that fetched but stood aside from
+  the plan quota is a `warning`, or its cadence collapses onto the timer.
+  Also carries the two pause switches (sweeps, and
   everything) and the list of hunts.
 
 Triage is **one** POST endpoint, `/triage`, writing `hunt_matches.status`
