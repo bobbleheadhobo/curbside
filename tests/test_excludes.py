@@ -371,3 +371,77 @@ def test_a_new_hunt_in_the_file_gets_its_terms(app):
                          "sweep:curb-alerts": ["mattress", "firewood"]})
     assert store.hunt_excludes()[SWEEP] == ("mattress",)          # untouched
     assert store.hunt_excludes()["sweep:curb-alerts"] == ("mattress", "firewood")
+
+
+# --- blocking a word from the listing page ---------------------------------
+
+def test_the_block_control_is_on_the_listing_page_too(tmp_path):
+    """Reported: it is in the free inbox, and opening the listing to look at
+    it properly took the control away."""
+    import re
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    from tests.test_web import _client
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    sweep = next(h for h in cfg.hunts if h.kind == "sweep")
+    l = Listing(id="x:1", source="x", source_id="1", title="Free mattress set",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(sweep.id, [l])
+    s.set_status(sweep.id, "x:1", "free_find")
+
+    page = client.get("/listing/x:1?back=/free").text
+    ctx = re.search(r'<div class="blockctx"[^>]*>', page)
+    assert ctx, "no way to block a word from the listing page"
+    markup = ctx.group(0)
+    # The four things app.js reads. A card states the same four, which is what
+    # lets one implementation serve both.
+    for attr in ("data-hunt", "data-listing", "data-status", "data-title"):
+        assert attr in markup, attr
+    assert f'data-hunt="{sweep.id}"' in markup
+    assert 'data-back="/free"' in markup
+    assert "blocktoggle" in page and "addterm" in page
+
+
+def test_a_want_only_listing_offers_no_block(tmp_path):
+    """Blocked words belong to a sweep: they stop the free trawl dragging a
+    category back every half hour. A want hunt searches its own terms."""
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    from tests.test_web import _client
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    want = next(h for h in cfg.hunts if h.kind == "want")
+    l = Listing(id="x:2", source="x", source_id="2", title="A media console",
+                description=None, price_cents=9900, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(want.id, [l])
+    s.set_status(want.id, "x:2", "wanted")
+
+    assert "blockctx" not in client.get("/listing/x:2").text
+
+
+def test_the_card_states_its_own_title_for_the_suggester(tmp_path):
+    """The word suggestions used to be read out of the card's `.info h2`. The
+    detail page has no such element, so both now carry the title as data."""
+    import re
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    from tests.test_web import _client
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    sweep = next(h for h in cfg.hunts if h.kind == "sweep")
+    l = Listing(id="x:3", source="x", source_id="3", title="Free mattress set",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(sweep.id, [l])
+    s.set_status(sweep.id, "x:3", "free_find")
+    s.save_score(Score(listing_id="x:3", hunt_id=sweep.id, model="m",
+                       scored_at=datetime.now(timezone.utc), match="no",
+                       deal_score=6.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=True, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r"),
+                 priced_at_cents=0)
+
+    card = re.search(r'<article class="card"[^>]*>', client.get("/free").text)
+    assert card and 'data-title="Free mattress set"' in card.group(0)

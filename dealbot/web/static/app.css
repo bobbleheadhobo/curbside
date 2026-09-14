@@ -758,6 +758,12 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 @media (min-width:900px){.toast{bottom:24px}}
 
 /* --- never show me this ---------------------------------------------------- */
+/* The same control on the detail page. `.blockrow` already supplies the rule
+   above itself, and `.triage-help` supplies one below, so the row must not
+   draw a third. */
+.blockctx .triage-row{border-bottom:0}
+.blockctx .blocktoggle[aria-expanded=true]{
+  background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
 .blockrow{
   padding:12px 12px 13px;border-top:1px solid var(--line-soft);background:var(--bg)
 }

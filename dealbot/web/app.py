@@ -652,10 +652,17 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         matches = [dict(r) for r in store.conn.execute(
             "SELECT * FROM hunt_matches WHERE listing_id=?", (listing_id,))]
         history = store.price_history(listing_id)
+        # Blocked words belong to a sweep: they are what stops the free trawl
+        # dragging the same category back every 30 minutes, and a want hunt
+        # searches its own terms instead. So the control appears only when this
+        # listing actually reached a sweep, and acts on that sweep's list.
+        sweeps = {h.id for h in _live().hunts if h.kind == "sweep"}
+        blockable = next((m for m in matches if m["hunt_id"] in sweeps), None)
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
             history=history, sparkline=_sparkline(history),
-            photos=photo_verdict(scores), back=_safe_back(back)))
+            photos=photo_verdict(scores), blockable=blockable,
+            back=_safe_back(back)))
 
     def _error_page(request: Request, status: int, heading: str,
                     detail: str, recovery: str) -> Response:

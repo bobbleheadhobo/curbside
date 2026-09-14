@@ -147,6 +147,34 @@
     <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
       This listing has not matched a hunt.</div>
     {% endfor %}
+    {# Blocking a word was reachable only from a card in the free inbox, so
+       opening the listing to look at it properly took the control away. Same
+       four data attributes as the card carries, which is what lets one
+       implementation in app.js serve both. #}
+    {% if blockable %}
+    <div class="blockctx" data-hunt="{{blockable.hunt_id}}"
+         data-listing="{{listing.id}}" data-status="{{blockable.status}}"
+         data-title="{{listing.title}}" data-back="{{back}}">
+      <div class="triage-row">
+        <span class="who">Never show me things like this
+          <small>Drop future free listings containing a word.</small></span>
+        <div class="triage-actions">
+          <button type="button" class="blocktoggle" aria-expanded="false">
+            <svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>
+            Block a word</button>
+        </div>
+      </div>
+      <div class="blockrow" hidden>
+        <p>Counted on the settings page, so you can see what it cost you.</p>
+        <div class="chips"></div>
+        <form class="addterm">
+          <input type="text" name="term" placeholder="another word"
+                 autocapitalize="none" autocomplete="off" spellcheck="false">
+          <button>Block</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
     {% if matches %}
     <p class="triage-help">
       <b>Save</b> moves it to Saved. <b>Dismiss</b> takes it out of the bin and

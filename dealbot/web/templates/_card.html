@@ -41,7 +41,7 @@
 {% set motivated = (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
 {% set has_why = i.reasoning or i.requirements or i.unknowns or i.red_flags %}
 <article class="card" data-hunt="{{i.hunt_id}}" data-listing="{{i.id}}"
-         data-status="{{i.status}}">
+         data-status="{{i.status}}" data-title="{{i.title}}">
   <div class="card-main">
     {# The card opens the DETAIL page; the title opens the marketplace. Two
        destinations, so this cannot be one wrapping anchor -- links do not

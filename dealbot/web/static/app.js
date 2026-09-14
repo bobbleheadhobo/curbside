@@ -281,23 +281,30 @@
    * and is picked up on arrival. With this script absent the form posts and
    * the 303 does the same journey without it.
    */
+  /* Hand an undo across a navigation. Used by both things that decide on a
+     page with no card to fold: triage on the detail page, and blocking a word
+     from it. `term` is set only by the second, and undoing that has to unblock
+     the word as well as restore the listing. */
+  function handOff(payload) {
+    try {
+      sessionStorage.setItem("curbside:undo", JSON.stringify(payload));
+    } catch (e) { /* private mode: lose the undo, not the navigation */ }
+  }
+
   function actAndLeave(form) {
     var data = new FormData(form);
-    var kind = data.get("status");
     var back = data.get("back") || "/";
     post("/triage", data).then(function (r) {
       if (!r.ok) throw new Error(r.status);
-      try {
-        sessionStorage.setItem("curbside:undo", JSON.stringify({
-          kind: kind, hunt_id: data.get("hunt_id"),
-          listing_id: data.get("listing_id"),
-          // NOT `|| "wanted"`. A missing status is unknown, not `wanted`, and
-          // guessing means Undo files the listing into a bin it was never in.
-          // Empty fails the UNDOABLE check below, so the toast simply says
-          // what happened and offers nothing it cannot deliver.
-          was: form.getAttribute("data-was") || ""
-        }));
-      } catch (e) { /* private mode: lose the undo, not the navigation */ }
+      handOff({
+        kind: data.get("status"), hunt_id: data.get("hunt_id"),
+        listing_id: data.get("listing_id"),
+        // NOT `|| "wanted"`. A missing status is unknown, not `wanted`, and
+        // guessing means Undo files the listing into a bin it was never in.
+        // Empty fails the UNDOABLE check below, so the toast simply says
+        // what happened and offers nothing it cannot deliver.
+        was: form.getAttribute("data-was") || ""
+      });
       location.assign(back);
     }).catch(function () {
       toast("That did not save. Still connected?", null, null, true);
@@ -324,9 +331,17 @@
     if (!u || !u.listing_id) return;
     // Stale storage from an older version, or a status this build does not
     // know, rendered the toast as the literal "undefined."
-    var said = LABEL[u.kind] || "Saved";
-    if (UNDOABLE.indexOf(u.was) < 0) { toast(said + "."); return; }
-    toast(said + ".", "Undo", function () {
+    var said = u.term ? "Never showing \u201c" + u.term + "\u201d again."
+                      : (LABEL[u.kind] || "Saved") + ".";
+    if (UNDOABLE.indexOf(u.was) < 0) { toast(said); return; }
+    toast(said, "Undo", function () {
+      // Unblock first: a restored listing that is still blocked would be
+      // filtered out again on the next run, so the undo would look like it
+      // worked and quietly not have.
+      if (u.term) {
+        post("/settings/exclude",
+             {hunt_id: u.hunt_id, term: u.term, remove: "1"});
+      }
       post("/triage", {hunt_id: u.hunt_id, listing_id: u.listing_id,
                        status: u.was}).then(function (r) {
         if (r.ok) { location.reload(); return; }
@@ -337,6 +352,14 @@
 
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
+    // Checked FIRST, and against the block context rather than a card: this
+    // form is on the detail page now too, where there is no card to find.
+    if (form.classList && form.classList.contains("addterm")) {
+      ev.preventDefault();
+      var bctx = blockCtx(form);
+      if (bctx) block(bctx, form.querySelector("input[name=term]").value);
+      return;
+    }
     var card = form.closest && form.closest("article.card");
     if (!card) {
       if (form.getAttribute("action") === "/triage"
@@ -357,12 +380,6 @@
       if (kind !== "saved" && kind !== "dismissed") return;
       ev.preventDefault();
       act(form, card, kind);
-      return;
-    }
-    if (form.classList.contains("addterm")) {
-      ev.preventDefault();
-      var input = form.querySelector("input[name=term]");
-      block(card, input.value);
     }
   });
 
@@ -381,13 +398,19 @@
     "works working please come first serve served today tomorrow asap sale " +
     "moving take taking away giving give box lot lots plus inch inches").split(" ");
 
+  /* The element carrying a blockable listing: a card in a bin, or the panel on
+     the detail page. Both state the same four things in data attributes, which
+     is what lets one implementation serve both. */
+  function blockCtx(el) {
+    return el && el.closest ? el.closest("[data-hunt][data-listing]") : null;
+  }
+
   /* Candidate words off the title, because the useful block is a category --
      "mattress", "recliner", "firewood" -- and it is almost always a noun that
      is already in the title. Typed entry stays for everything else. */
-  function suggest(card) {
-    var h = card.querySelector(".info h2");
+  function suggest(title) {
     var seen = {}, out = [];
-    (h ? h.textContent : "").toLowerCase().split(/[^a-z0-9]+/).forEach(function (w) {
+    (title || "").toLowerCase().split(/[^a-z0-9]+/).forEach(function (w) {
       if (w.length < 4 || seen[w] || STOP.indexOf(w) >= 0 || /^\d+$/.test(w)) return;
       seen[w] = 1;
       out.push(w);
@@ -395,22 +418,32 @@
     return out.slice(0, 6);
   }
 
-  function block(card, term) {
+  function block(ctx, term) {
     term = (term || "").trim().toLowerCase();
     if (term.length < 3) {
       toast("Too short to block safely.", null, null, true);
       return;
     }
-    var hunt = card.getAttribute("data-hunt");
-    var listing = card.getAttribute("data-listing");
-    var was = card.getAttribute("data-status");
+    var hunt = ctx.getAttribute("data-hunt");
+    var listing = ctx.getAttribute("data-listing");
+    var was = ctx.getAttribute("data-status");
+    // A card folds away where it sits. The detail page has nothing to fold,
+    // and once the listing is dismissed there is nothing to stay for, so it
+    // leaves for the list -- the journey Save and Dismiss there already make.
+    var card = ctx.matches("article.card") ? ctx : null;
     post("/settings/exclude", {hunt_id: hunt, term: term})
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (!res.ok) { toast(res.error, null, null, true); return; }
-        var restore = leave(card, "blocked");
+        var restore = card ? leave(card, "blocked") : null;
         return post("/triage", {hunt_id: hunt, listing_id: listing,
                                 status: "dismissed"}).then(function () {
+          if (!card) {
+            handOff({kind: "blocked", hunt_id: hunt, listing_id: listing,
+                     was: was || "", term: term});
+            location.assign(ctx.getAttribute("data-back") || "/");
+            return;
+          }
           toast("Never showing “" + term + "” again.", "Undo", function () {
             post("/settings/exclude", {hunt_id: hunt, term: term, remove: "1"});
             post("/triage", {hunt_id: hunt, listing_id: listing,
@@ -426,16 +459,17 @@
   document.addEventListener("click", function (ev) {
     var t = ev.target.closest && ev.target.closest(".blocktoggle, .chips button");
     if (!t) return;
-    var card = t.closest("article.card");
+    var ctx = blockCtx(t);
+    if (!ctx) return;
     if (t.classList.contains("blocktoggle")) {
       ev.preventDefault();
-      var row = card.querySelector(".blockrow");
+      var row = ctx.querySelector(".blockrow");
       var open = row.hidden;
       row.hidden = !open;
       t.setAttribute("aria-expanded", open ? "true" : "false");
       var chips = row.querySelector(".chips");
       if (open && chips && !chips.childElementCount) {
-        suggest(card).forEach(function (w) {
+        suggest(ctx.getAttribute("data-title")).forEach(function (w) {
           var b = document.createElement("button");
           b.type = "button";
           b.textContent = w;
@@ -446,7 +480,7 @@
       return;
     }
     ev.preventDefault();
-    block(card, t.textContent);
+    block(ctx, t.textContent);
   });
 
   /* --- swipe a card to save or dismiss ---------------------------------- */

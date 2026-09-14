@@ -344,6 +344,36 @@ In the week around a daylight-saving change an hour of runs can land in the
 neighbouring bar; both switches happen at 2am, which is an hour the bot is
 generally asleep for.
 
+## Blocking a word works from a card OR the listing page
+
+It lived only on a free-sweep card, so opening a listing to look at it properly
+took the control away — which is the wrong way round, since the listing page is
+where you go when the card did not tell you enough.
+
+**One implementation serves both.** `app.js` finds its context with
+`closest("[data-hunt][data-listing]")` rather than `closest("article.card")`,
+and both the card and the panel on the listing page state the same four things
+as data attributes: `data-hunt`, `data-listing`, `data-status` and
+`data-title`. The title moved onto the card as an attribute for this — the word
+suggestions used to be read out of the card's `.info h2`, an element the detail
+page does not have.
+
+**A card folds; the listing page leaves.** There is nothing to fold there and
+nothing to stay for once the listing is dismissed, so it returns to
+`data-back`, the same journey Save and Dismiss make from that page. The undo
+travels in `sessionStorage` like theirs, and carries the term as well: undoing
+a block has to **unblock the word first**, or the restored listing is filtered
+out again on the next run and the undo looks like it worked without having.
+
+**The control is offered only where a sweep matched.** Blocked words are what
+stop the free trawl dragging a category back every half hour; a want hunt
+searches its own terms instead. A listing matched only by a want gets no block
+control, and the one that is shown acts on that sweep's list.
+
+Like the card's, this is JavaScript-only — the `addterm` form has no action and
+nothing to fall back to. That was already true of the card and is the one place
+in this interface where it is.
+
 ## The photo pass has three states, and the page must admit to all of them
 
 Discord's footer says "photos checked" and the listing page carried the same
