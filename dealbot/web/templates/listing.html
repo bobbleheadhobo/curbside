@@ -29,7 +29,37 @@
 
 <div class="section">
   <h2>Scores</h2>
-  <div class="panel"><div class="wrap"><table class="responsive">
+  <div class="panel">
+    {# Whether the model looked at the photographs, in all THREE states. It
+       used to be a chip that appeared when it had, so "judged on the text
+       alone" and "asked for a look and never got one" were the same blank
+       space. The second is not a non-event: it means the image budget ran
+       out on a listing the model said it could not settle without seeing. #}
+    {% if photos %}
+    <div class="state-line photostate {{ 'asked' if photos.asked }}">
+      {% if photos.checked %}
+        <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>
+        <span><b>Photos checked.</b>
+          {%- if photos.before is not none %}
+            Looking took the score from
+            <b>{{ '%.1f'|format(photos.before) }}</b> to
+            <b>{{ '%.1f'|format(photos.after) }}</b>.
+          {%- endif %}</span>
+      {% elif photos.asked %}
+        <svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
+        <span><b>Photos not checked.</b> The model asked for a look and the
+          image budget ran out.</span>
+      {% else %}
+        <svg class="i" aria-hidden="true"><use href="#i-noimg"/></svg>
+        <span><b>Judged on the text alone.</b> The model did not need the
+          photos.</span>
+      {% endif %}
+    </div>
+    {% if photos.question %}
+    <p class="photoq">{{ photos.question }}</p>
+    {% endif %}
+    {% endif %}
+    <div class="wrap"><table class="responsive">
     <thead><tr><th>When</th><th>Hunt</th><th>Model</th><th class="n">Score</th>
       <th>Want</th><th>Flags</th><th>Reasoning</th></tr></thead>
     <tbody>
@@ -46,7 +76,7 @@
     {% endfor %}
     </tbody></table></div>
     {% set latest = scores[0] if scores else none %}
-    {% if latest and (latest.unknowns or latest.requirements or latest.images_checked) %}
+    {% if latest and (latest.unknowns or latest.requirements) %}
     <div class="whybody" style="padding:13px 15px;border-top:1px solid var(--line-soft)">
       {% if latest.unknowns %}
       <p class="unknowns"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
@@ -64,10 +94,8 @@
         {% endfor %}
       </ul>
       {% endif %}
-      {% if latest.images_checked %}
-      <p class="tags"><span class="chip">
-        <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>photos checked</span></p>
-      {% endif %}
+      {# the photos chip lived here, below the table and the requirements. It
+         says less than the line at the top of this panel and said it later. #}
     </div>
     {% endif %}
   </div>

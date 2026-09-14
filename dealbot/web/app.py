@@ -293,6 +293,42 @@ def short_reason(reason: str) -> str:
     return reason.split(" (")[0].split(",")[0][:24].strip() or reason[:24]
 
 
+def photo_verdict(scores: list[dict]) -> dict | None:
+    """Whether the model looked at the photographs, and what it got for it.
+
+    THREE states, and the interface only ever admitted to one. A chip appeared
+    when the photos had been checked and nothing appeared otherwise, so "judged
+    on the text alone" and "asked for a look and never got one" were the same
+    blank space. The second is not a non-event: 207 of the collected scores
+    have `needs_images` set and `images_checked` clear, which is the model
+    saying it could not decide without seeing them and the image budget
+    (`max_image_checks`) saying no.
+
+    Where it did look, the score BEFORE is worth as much as the verdict. Both
+    rows are kept for exactly this reason -- the text judgement stays next to
+    the one that looked -- and every sampled pair moved: 5.0 to 6.0, 1.0 to
+    3.0, 3.0 to 5.0. That is the image pass earning its ~15x cost, stated
+    rather than assumed.
+    """
+    if not scores:
+        return None
+    latest = scores[0]
+    checked = bool(latest["images_checked"])
+    # The text pass on the same hunt, which is the "before". Matched on the
+    # hunt because one listing can be judged by several, and their scores are
+    # answers to different questions.
+    prior = next((s for s in scores[1:]
+                  if s["hunt_id"] == latest["hunt_id"] and not s["images_checked"]),
+                 None)
+    return {
+        "checked": checked,
+        "asked": bool(latest["needs_images"]) and not checked,
+        "question": (latest["image_question"] or "").strip() or None,
+        "before": prior["deal_score"] if checked and prior else None,
+        "after": latest["deal_score"],
+    }
+
+
 def _safe_back(back: str) -> str:
     """Where a triage button returns to, once we have checked it is here.
 
@@ -619,7 +655,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
             history=history, sparkline=_sparkline(history),
-            back=_safe_back(back)))
+            photos=photo_verdict(scores), back=_safe_back(back)))
 
     def _error_page(request: Request, status: int, heading: str,
                     detail: str, recovery: str) -> Response:

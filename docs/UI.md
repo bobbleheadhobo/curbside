@@ -344,6 +344,35 @@ In the week around a daylight-saving change an hour of runs can land in the
 neighbouring bar; both switches happen at 2am, which is an hour the bot is
 generally asleep for.
 
+## The photo pass has three states, and the page must admit to all of them
+
+Discord's footer says "photos checked" and the listing page carried the same
+chip, below the score table and the requirements. Both only ever spoke in the
+positive, so **"judged on the text alone" and "asked for a look and never got
+one" were the same blank space** — which is how a reader concludes the site
+does not say at all.
+
+They are not the same thing. 207 of the collected scores have `needs_images`
+set and `images_checked` clear: the model saying it could not settle the
+listing without seeing the photographs, and `max_image_checks` saying no. That
+state is amber on the page, because it is a caution about how much the
+judgement rests on rather than a fault.
+
+`photo_verdict` in `app.py` computes the three, and the line sits at the TOP of
+the Scores panel rather than under the table.
+
+**Where it did look, show the score before.** Both rows are kept for exactly
+this reason — the text judgement stays next to the one that looked — and it
+was never displayed. Every sampled pair moved, and they move in both
+directions: one went from 7.0 down to 6.0 when the photographs showed a corner
+unit. The "before" is matched on the HUNT as well as the listing, because one
+listing can be judged by several and their scores answer different questions.
+
+**`image_question` is shown too.** The model writes down what it wanted the
+photographs to answer ("Does the media console appear at least 70 inches wide,
+or is there any reference like a TV"), and on a listing nobody looked at, that
+question is the exact thing a person can settle in two seconds.
+
 ## /stats has no tab, on purpose
 
 Five tabs is what fits across a phone, and the sixth thing was already spent

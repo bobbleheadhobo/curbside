@@ -1282,3 +1282,79 @@ def test_a_free_judgement_is_not_listed_as_something_we_paid_for(tmp_path):
                        cost_usd=0.0), priced_at_cents=0)
     assert s.dearest_since(when.isoformat()) == []
     s.close()
+
+
+# --- whether the model looked at the photographs --------------------------
+
+def _score_row(**kw):
+    base = dict(hunt_id="want:tv-stand", deal_score=5.0, images_checked=0,
+                needs_images=0, image_question=None)
+    return {**base, **kw}
+
+
+def test_the_photo_verdict_has_three_states_not_two():
+    """Reported: Discord says whether the photos were checked and the site
+    did not appear to. It did, as a chip that showed up when they HAD been --
+    so "judged on the text alone" and "asked for a look and never got one"
+    were the same blank space. 207 collected scores are the second."""
+    from dealbot.web.app import photo_verdict
+
+    checked = photo_verdict([_score_row(images_checked=1, deal_score=6.0)])
+    assert checked["checked"] and not checked["asked"]
+
+    asked = photo_verdict([_score_row(needs_images=1)])
+    assert asked["asked"] and not asked["checked"]
+
+    text_only = photo_verdict([_score_row()])
+    assert not text_only["checked"] and not text_only["asked"]
+
+    assert photo_verdict([]) is None
+
+
+def test_the_score_before_the_photos_is_kept_and_shown():
+    """Both rows are kept for exactly this reason: the text judgement stays
+    next to the one that looked. Every sampled pair moved, and one went DOWN
+    from 7.0 to 6.0 when the photos showed a corner unit."""
+    from dealbot.web.app import photo_verdict
+    v = photo_verdict([_score_row(images_checked=1, deal_score=6.0),
+                       _score_row(deal_score=7.0)])
+    assert v["before"] == 7.0 and v["after"] == 6.0
+
+
+def test_a_before_score_from_another_hunt_is_not_borrowed():
+    """One listing can be judged by several hunts, and their scores answer
+    different questions. A 9.0 from the free sweep is not the 'before' of a
+    tv-stand appraisal."""
+    from dealbot.web.app import photo_verdict
+    v = photo_verdict([_score_row(images_checked=1, deal_score=6.0),
+                       _score_row(hunt_id="sweep:free-nearby", deal_score=9.0)])
+    assert v["before"] is None
+
+
+def test_an_unlooked_at_listing_says_so_on_its_page(tmp_path):
+    """The state that used to be silent, and the one worth knowing: the model
+    could not settle it without seeing the photos and the image budget said
+    no."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    l = Listing(id="x:1", source="x", source_id="1", title="A media console",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+    s.save_score(Score(listing_id="x:1", hunt_id=hunt.id, model="m",
+                       scored_at=datetime.now(timezone.utc), match="unknown",
+                       deal_score=6.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=True, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r",
+                       needs_images=True,
+                       image_question="Is it at least 70 inches wide?"),
+                 priced_at_cents=0)
+
+    page = client.get("/listing/x:1").text
+    assert "Photos not checked" in page
+    assert "image budget ran out" in page
+    assert "Is it at least 70 inches wide?" in page, \
+        "the question the photos were meant to answer is worth reading"

@@ -645,6 +645,15 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   font-size:13.5px;border-bottom:1px solid var(--line-soft);color:var(--dim)
 }
 .state-line svg.i{font-size:16px;flex:none}
+/* Amber, not red: the model wanting a look it did not get is a caution about
+   how much the judgement rests on, not a fault. */
+.state-line.photostate{align-items:flex-start}
+.state-line.photostate.asked{background:var(--warn-soft);color:var(--warn)}
+.state-line.photostate.asked b{color:var(--warn)}
+.photoq{
+  margin:0;padding:10px 15px 12px 39px;font-size:12.5px;line-height:1.5;
+  color:var(--dim);border-bottom:1px solid var(--line-soft)
+}
 .state-line b{color:var(--fg);font-weight:600}
 
 
