@@ -15,6 +15,12 @@
   <span class="num">{{ '%.0f'|format(listing.distance_mi) }} mi</span>{% endif %}
   <span>{{listing.city or 'unknown city'}}</span>
   <span>seller {{listing.seller_name or 'unknown'}}</span>
+  {# When the SELLER posted it, which this page never said. The card carries a
+     relative age ("listed 12d ago"); the exact date only ever existed in the
+     database. Facebook states it on every listing, Craigslist only on the
+     item page, so an un-enriched Craigslist listing genuinely has none. #}
+  <span>{% if listing.posted_at %}listed {{ when(listing.posted_at) }}
+        {%- else %}listing date unknown{% endif %}</span>
   <a class="btn" href="{{listing.url}}" target="_blank" rel="noopener">
     <svg class="i" aria-hidden="true"><use href="#i-open"/></svg>Open on the marketplace</a>
 </p>
@@ -63,7 +69,7 @@
       <th>Want</th><th>Flags</th><th>Reasoning</th></tr></thead>
     <tbody>
     {% for s in scores %}
-    <tr><td class="lead num" data-label="When">{{ (s.scored_at or '')[:16]|replace('T',' ') }}</td>
+    <tr><td class="lead num" data-label="When">{{ when(s.scored_at) }}</td>
       <td data-label="Hunt">{{s.hunt_id}}</td><td data-label="Model">{{s.model}}</td>
       <td class="n num" data-label="Score">{{ '%.1f'|format(s.deal_score) }}</td>
       <td data-label="Want">{{s.matched_want or '—'}}</td>
@@ -107,8 +113,10 @@
     <div class="wrap"><table>
       <thead><tr><th>Observed</th><th class="n">Price</th></tr></thead>
       <tbody>
-      {% for when, cents in history %}
-      <tr><td class="num">{{ (when or '')[:16]|replace('T',' ') }}</td>
+      {# NOT `when`: that is the timestamp formatter in the context, and a
+         loop variable of the same name shadows it inside the loop. #}
+      {% for observed_at, cents in history %}
+      <tr><td class="num">{{ when(observed_at) }}</td>
         <td class="n num">{% if cents is none %}—{% elif cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}</td></tr>
       {% else %}
       <tr><td colspan="2" style="color:var(--dim)">No observations yet.</td></tr>

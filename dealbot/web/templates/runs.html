@@ -101,7 +101,7 @@
     <tbody>
     {% for r in runs %}
     <tr class="{{'err' if r.error}}">
-      <td class="lead num" data-label="Started">{{ (r.started_at or '')[:16]|replace('T',' ') }}</td>
+      <td class="lead num" data-label="Started">{{ when(r.started_at) }}</td>
       <td data-label="Hunt">{{r.hunt_id}}</td>
       <td data-label="Source">{{r.source}}</td>
       <td class="n num {{'zero' if not r.n_fetched}}" data-label="Fetched">{{r.n_fetched}}</td>

@@ -269,6 +269,42 @@ Use `/thumb/{id}` for images, never `images[0]` directly — the route serves a
 cached local copy and falls back to the source URL. Facebook's URLs expire after
 about four days, so a card built on the raw URL rots.
 
+## Timestamps go through `when()`, always
+
+Every date the interface printed was `raw[:16].replace("T", " ")`, and that was
+wrong twice over:
+
+* **24-hour**, which reads like a log line rather than like a person saying
+  when something happened.
+* **UTC, with nothing saying so.** A run shown as "19:50" happened at 1:50pm
+  where the user is. Every timestamp on the site was six hours out, and
+  nothing on the page admitted it.
+
+`local_stamp` converts to the configured zone and formats "14 Sep, 1:50pm". It
+is hand-rolled rather than `strftime("%-I:%M%p")`, matching
+`schedule.fmt_clock`: `%-` is a glibc extension, and lowercase "pm" with no
+space is the convention the rest of the interface already uses.
+
+It reaches templates as `when()` **in the context, not as a Jinja filter** —
+the filter table lives on a module-level `Environment`, so binding a timezone
+into it would make one app's clock another's.
+
+A test greps every template for the old slice-and-replace, because it is easy
+to reach for and wrong every time. Watch for the name too: `{% for when, cents
+in history %}` shadowed the formatter inside that loop.
+
+## The posted date was captured all along
+
+"Can we capture the date it was posted" — we already did. Facebook states it on
+every listing; Craigslist only on the item page, so an un-enriched Craigslist
+listing genuinely has none (345 of 409 enriched ones do). What was missing was
+anywhere to *read* it: the card carries a relative age ("listed 12d ago") and
+the detail page said nothing at all, so the exact date existed only in the
+database.
+
+It is on the detail meta line now, and a listing without one says "listing date
+unknown" rather than staying silent — silence there reads as "posted today".
+
 ## The health pill has the least room of anything
 
 It shares a phone's top bar with the brand and the settings gear, so it is the

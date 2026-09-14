@@ -1366,3 +1366,79 @@ def test_an_unlooked_at_listing_says_so_on_its_page(tmp_path):
     assert "image budget ran out" in page
     assert "Is it at least 70 inches wide?" in page, \
         "the question the photos were meant to answer is worth reading"
+
+
+# --- timestamps, in the reader's clock ------------------------------------
+
+def test_a_stamp_is_shown_in_the_readers_hours_not_utc():
+    """`raw[:16].replace("T", " ")` was wrong twice. It rendered 24-hour time,
+    which reads like a log line, and it rendered UTC with nothing saying so --
+    a run at "19:50" in the table happened at 1:50pm where the user is, so
+    every timestamp on the site was six hours out."""
+    from zoneinfo import ZoneInfo
+    from dealbot.web.app import local_stamp
+    abq = ZoneInfo("America/Denver")
+
+    assert local_stamp("2026-09-14T19:50:14+00:00", abq) == "14 Sep, 1:50pm"
+    # the two the clock arithmetic gets wrong: there is no 0am and no 0pm
+    assert local_stamp("2026-09-14T06:05:00+00:00", abq) == "14 Sep, 12:05am"
+    assert local_stamp("2026-09-14T18:00:00+00:00", abq) == "14 Sep, 12:00pm"
+    # and a conversion that moves the DATE as well as the time
+    assert local_stamp("2026-01-02T00:30:00+00:00", abq) == "1 Jan, 5:30pm"
+
+
+def test_a_stamp_with_no_zone_is_read_as_utc():
+    """Everything this project stores is UTC. A naive one is not local time."""
+    from zoneinfo import ZoneInfo
+    from dealbot.web.app import local_stamp
+    abq = ZoneInfo("America/Denver")
+    assert local_stamp("2026-09-14T19:50:14", abq) == \
+        local_stamp("2026-09-14T19:50:14+00:00", abq)
+
+
+def test_an_unreadable_stamp_is_shown_rather_than_swallowed():
+    """Failing open: a value that will not parse is still a value, and an
+    empty cell would hide that something is wrong with it."""
+    from dealbot.web.app import local_stamp
+    assert local_stamp("not a date") == "not a date"
+    assert local_stamp("") == "" and local_stamp(None) == ""
+
+
+def test_no_template_prints_a_raw_utc_timestamp():
+    """The old slice-and-replace is easy to reach for and wrong every time.
+    If a new table needs a date, it goes through `when()`."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for tpl in (root / "dealbot/web/templates").glob("*.html"):
+        text = tpl.read_text()
+        assert "replace('T',' ')" not in text, tpl.name
+        assert 'replace("T"," ")' not in text, tpl.name
+
+
+def test_the_listing_page_says_when_the_seller_posted_it(tmp_path):
+    """Asked for directly. It was captured all along -- Facebook states it on
+    every listing -- and the card carried only a relative age, so the exact
+    date existed nowhere but the database."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    l = Listing(id="x:1", source="x", source_id="1", title="A media console",
+                description=None, price_cents=0, currency="USD", url="u",
+                posted_at=datetime(2026, 9, 6, 19, 24, tzinfo=timezone.utc))
+    s.upsert_listing(l); s.mark_matches(cfg.hunts[0].id, [l])
+    assert "listed 6 Sep, 1:24pm" in client.get("/listing/x:1").text
+
+
+def test_a_listing_with_no_posted_date_says_so(tmp_path):
+    """Craigslist only reveals it on the item page, so one that was never
+    enriched genuinely has none. Silence would read as "posted today"."""
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    l = Listing(id="x:2", source="x", source_id="2", title="A media console",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(cfg.hunts[0].id, [l])
+    assert "listing date unknown" in client.get("/listing/x:2").text

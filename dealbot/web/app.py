@@ -305,6 +305,35 @@ def photo_verdict(scores: list[dict]) -> dict | None:
     }
 
 
+def local_stamp(raw, tz=None) -> str:
+    """A stored timestamp, in the reader's clock and the reader's hours.
+
+    Two things were wrong with `raw[:16].replace("T", " ")`, and the second is
+    the one that matters. It rendered 24-hour time, which reads like a log
+    line rather than like a person telling you when something happened. And it
+    rendered it in UTC with nothing saying so: a run at 19:50 in the table
+    happened at 1:50pm where the user is, so every timestamp on the site was
+    six hours wrong.
+
+    Hand-rolled rather than `strftime("%-I:%M%p")`, matching
+    `schedule.fmt_clock`: the `%-` flag is a glibc extension, and the lowercase
+    "pm" with no space is the convention the rest of the interface uses
+    ("Asleep till 12pm", "11am to 8pm").
+    """
+    if not raw:
+        return ""
+    try:
+        dt = datetime.fromisoformat(str(raw))
+    except ValueError:                      # not a timestamp: show it as-is
+        return str(raw)
+    if dt.tzinfo is None:                   # stored naive means stored UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone(tz) if tz else dt.astimezone()
+    h12 = local.hour % 12 or 12
+    suffix = "am" if local.hour < 12 else "pm"
+    return f"{local.day} {local:%b}, {h12}:{local.minute:02d}{suffix}"
+
+
 def _safe_back(back: str) -> str:
     """Where a triage button returns to, once we have checked it is here.
 
@@ -485,6 +514,10 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         all_paused = bool(hunts) and len(paused) == len(hunts)
         sweeps = [h for h in hunts if h.kind == "sweep"]
         return {"request": request, "hunts": hunts,
+                # Passed rather than registered as a Jinja filter: the filter
+                # table lives on a module-level Environment, so binding a
+                # timezone into it would make one app's clock another's.
+                "when": lambda raw: local_stamp(raw, base_cfg.schedule.tz),
                 "assets": asset_version(),
                 "paused_hunts": paused,
                 "all_paused": all_paused,
