@@ -13,6 +13,11 @@
     <i><b>{{ schedule.window_label if schedule.enabled else 'Always' }}</b>
       {{ 'awake' if schedule.enabled else 'on' }}</i>
   </p>
+  <p class="pagelinks">
+    <a class="btn tostats" href="/stats"
+      ><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg>
+      Stats and spend</a>
+  </p>
 </div>
 
 <div class="panel" id="hours" style="margin-bottom:18px">

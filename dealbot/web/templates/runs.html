@@ -4,17 +4,30 @@
 {% block content %}
 <div class="pagehead">
   <h1>Runs</h1>
+  {# THREE figures, not four. Four labelled ones do not fit a phone on one
+     line at a readable size, whatever the wording: shortening the labels got
+     it from 64 characters to 42 and it still wrapped on a 360px screen.
+     Spend is the one to go, because /stats now owns money and this page owns
+     health. `runs` stays as the denominator that makes `failed` mean
+     anything. #}
   <p class="stats">
-    <i><b>{{runs|length}}</b> fetch attempts</i>
+    <i><b>{{runs|length}}</b> runs</i>
     {% set failed = runs|selectattr('error')|list|length %}
     {% if failed %}
       <i class="hi"><b>{{failed}}</b> failed</i>{% endif %}
-    <i><b>${{ '%.2f'|format(runs|map(attribute='cost_usd')|reject('none')|sum) }}</b> spent</i>
     {% set waiting = backlog.values()|sum %}
     {% if waiting %}
-      <i class="hi"><b>{{ waiting }}</b> waiting to be judged</i>{% endif %}
+      <i class="hi"><b>{{ waiting }}</b> unjudged</i>{% endif %}
   </p>
   <p>Every fetch attempt, success or failure.</p>
+  {# Not a sixth tab: five is what fits across a phone, and this is a page you
+     read monthly. /runs is "is it working now", /stats is "is it worth
+     running", so this is where you would go looking. #}
+  <p class="pagelinks">
+    <a class="btn tostats" href="/stats"
+      ><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg>
+      Stats and spend</a>
+  </p>
 </div>
 
 <div class="panel" style="margin-bottom:18px">

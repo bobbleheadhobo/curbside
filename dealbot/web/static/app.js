@@ -291,7 +291,11 @@
         sessionStorage.setItem("curbside:undo", JSON.stringify({
           kind: kind, hunt_id: data.get("hunt_id"),
           listing_id: data.get("listing_id"),
-          was: form.getAttribute("data-was") || "wanted"
+          // NOT `|| "wanted"`. A missing status is unknown, not `wanted`, and
+          // guessing means Undo files the listing into a bin it was never in.
+          // Empty fails the UNDOABLE check below, so the toast simply says
+          // what happened and offers nothing it cannot deliver.
+          was: form.getAttribute("data-was") || ""
         }));
       } catch (e) { /* private mode: lose the undo, not the navigation */ }
       location.assign(back);
@@ -318,8 +322,11 @@
     var u;
     try { u = JSON.parse(raw); } catch (e) { return; }
     if (!u || !u.listing_id) return;
-    if (UNDOABLE.indexOf(u.was) < 0) { toast(LABEL[u.kind] + "."); return; }
-    toast(LABEL[u.kind] + ".", "Undo", function () {
+    // Stale storage from an older version, or a status this build does not
+    // know, rendered the toast as the literal "undefined."
+    var said = LABEL[u.kind] || "Saved";
+    if (UNDOABLE.indexOf(u.was) < 0) { toast(said + "."); return; }
+    toast(said + ".", "Undo", function () {
       post("/triage", {hunt_id: u.hunt_id, listing_id: u.listing_id,
                        status: u.was}).then(function (r) {
         if (r.ok) { location.reload(); return; }

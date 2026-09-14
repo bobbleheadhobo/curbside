@@ -53,7 +53,7 @@ def _client(tmp_path):
 
 def test_every_view_renders_on_an_empty_database(tmp_path):
     client, _ = _client(tmp_path)
-    for path in ("/", "/free", "/saved", "/skipped", "/runs"):
+    for path in ("/", "/free", "/saved", "/skipped", "/runs", "/stats"):
         assert client.get(path).status_code == 200, path
 
 
@@ -638,7 +638,8 @@ def test_a_page_view_never_writes_to_the_database(tmp_path):
 
     sqlite3.connect = watched
     try:
-        for path in ("/", "/free", "/saved", "/skipped", "/settings", "/runs"):
+        for path in ("/", "/free", "/saved", "/skipped", "/settings", "/runs",
+                     "/stats"):
             assert client.get(path).status_code == 200, path
     finally:
         sqlite3.connect = real_connect
@@ -880,3 +881,290 @@ def test_a_back_off_this_dashboard_is_refused(tmp_path):
                           "status": "saved", "back": "https://evil.test/x"},
                     follow_redirects=False)
     assert r.headers["location"] == "/"
+
+
+# --- /stats ----------------------------------------------------------------
+
+def _spent(store, hunt_id, source, usd, **counts):
+    """One finished run, for the money it cost."""
+    store.finish_run(store.start_run(
+        type("H", (), {"id": hunt_id})(), source), cost_usd=usd, **counts)
+
+
+def test_stats_costs_come_from_runs_not_scores(tmp_path):
+    """`runs.cost_usd` totalled $23.75 on the live box where `scores.cost_usd`
+    totalled $16.58: triage is saved on its score row with a zero cost and is
+    only ever counted at the run level. Sum the score rows and a third of the
+    money is gone."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spent(s, "want:tv-stand", "facebook", 2.00, n_scored=10)
+    _spent(s, "want:tv-stand", "craigslist", 1.00, n_scored=5)
+
+    assert s.spend_since(None)["usd"] == pytest.approx(3.00)
+    page = client.get("/stats").text
+    assert "$3.00" in page
+
+
+def test_stats_shows_what_a_hunt_cost_against_what_it_found(tmp_path):
+    """A cost on its own says nothing. The same $4 is cheap or pure waste
+    depending on whether anything came back, and on the first five days of
+    live data one want had spent that and saved nothing at all."""
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    _spent(s, hunt.id, "facebook", 4.00, n_scored=100, n_fetched=900)
+    l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
+                price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+    s.set_status(hunt.id, "x:1", "saved")
+
+    row = next(r for r in s.spend_by_hunt() if r["hunt_id"] == hunt.id)
+    assert row["usd"] == pytest.approx(4.00)
+    assert row["scored"] == 100 and row["saved"] == 1
+
+    page = client.get("/stats").text
+    assert "$4.00" in page and "$0.040" in page      # spent, and per judged
+
+
+def test_a_hunt_that_found_nothing_still_appears(tmp_path):
+    """An inner join would hide exactly the rows worth reading: the hunts that
+    cost money and matched nothing."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spent(s, "want:ghost", "facebook", 2.50, n_scored=40)
+
+    rows = s.spend_by_hunt()
+    assert [r["hunt_id"] for r in rows] == ["want:ghost"]
+    assert rows[0]["saved"] == 0
+    page = client.get("/stats").text
+    assert "ghost" in page
+    assert "saved nothing" in page, "a barren hunt has to say so"
+
+
+def test_a_deleted_want_keeps_its_spend_on_the_page(tmp_path):
+    """Deleting a want archives it. What it spent is still your money."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spent(s, "want:long-gone", "facebook", 1.25, n_scored=9)
+    page = client.get("/stats").text
+    assert "long-gone" in page and "deleted" in page
+
+
+def test_a_young_database_does_not_repeat_the_same_figure_three_times(tmp_path):
+    """Five days of history makes "last 7 days", "last 30 days" and "all time"
+    the same number, and three identical figures read as a bug."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spent(s, "want:tv-stand", "facebook", 6.00, n_scored=20)
+    page = client.get("/stats").text
+    assert page.count("all of it so far") == 2       # the week and the month
+
+
+def test_the_funnel_does_not_claim_repeats_are_distinct_listings(tmp_path):
+    """`n_fetched` sums per-run counts, so every run re-reads the whole feed:
+    85,028 "fetched" against 1,348 listings on file. Calling that "listings
+    seen" is a claim the number does not support."""
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spent(s, cfg.hunts[0].id, "facebook", 1.0, n_fetched=900, n_scored=3)
+    l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
+                price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l)
+
+    assert s.funnel()["fetched"] == 900
+    assert s.funnel()["distinct"] == 1
+    page = client.get("/stats").text
+    assert "index rows read" in page
+    assert "listings seen" not in page
+    assert "counts repeats" in page
+
+
+def test_stats_renders_on_an_empty_database(tmp_path):
+    """Before the first run there is no spend, no hunt row and no chart, and
+    dividing by any of them would 500 the page."""
+    client, _ = _client(tmp_path)
+    r = client.get("/stats")
+    assert r.status_code == 200
+    assert "Nothing has run yet" in r.text
+
+
+def test_the_stats_page_is_reachable_without_a_sixth_tab(tmp_path):
+    """Five tabs is what fits across a phone. This is read monthly, so it is
+    signposted from the two pages you would go looking on."""
+    import re
+    client, _ = _client(tmp_path)
+    for path in ("/runs", "/settings"):
+        assert 'href="/stats"' in client.get(path).text, path
+
+    tabbar = re.search(r'<nav class="tabbar".*?</nav>', client.get("/").text,
+                       re.S)
+    assert tabbar, "no tab bar rendered"
+    assert "/stats" not in tabbar.group(0), "stats must not be a sixth tab"
+
+
+def test_the_way_into_stats_is_a_control_not_a_footnote(tmp_path):
+    """Reported: the link was not apparent enough. It is a button now.
+
+    NOT `.primary` though: filled accent means "the action to take now"
+    everywhere else here, and a link to another page is not that."""
+    import re
+    client, _ = _client(tmp_path)
+    for path in ("/runs", "/settings"):
+        link = re.search(r'<a class="([^"]*)" href="/stats"',
+                         client.get(path).text)
+        assert link, f"{path} lost its way into /stats"
+        classes = link.group(1).split()
+        assert "btn" in classes, f"{path} link is not a control"
+        assert "primary" not in classes, \
+            f"{path} link claims to be the page's main action"
+
+
+def test_the_spend_chart_flags_a_day_lost_to_quota_not_every_day():
+    """Colouring any standdown painted all five live days amber, which is a
+    legend that describes every bar and so says nothing. Half the day's runs
+    is where the bill stops meaning what the bot would normally spend."""
+    from dealbot.web.app import _daybars
+    mostly = _daybars([{"day": "2026-09-11", "usd": 2.76, "runs": 346,
+                        "degraded": 295}], ceiling=10.0)
+    assert "var(--warn)" in mostly
+
+    a_few = _daybars([{"day": "2026-09-12", "usd": 6.90, "runs": 182,
+                       "degraded": 36}], ceiling=10.0)
+    assert "var(--accent)" in a_few and "var(--warn)" not in a_few
+
+
+def test_a_day_the_bot_did_not_run_is_a_gap_not_a_zero():
+    """A silent day and a day that found nothing are different facts, and a
+    zero-height bar claims the second."""
+    from dealbot.web.app import _daybars, _fill_days
+    filled = _fill_days([], 5)
+    assert len(filled) == 5 and all(d["usd"] is None for d in filled)
+    assert "<rect" not in _daybars(filled, ceiling=10.0)
+
+
+def _statline(html_text):
+    import re
+    from html import unescape
+    m = re.search(r'<p class="stats">.*?</p>', html_text, re.S)
+    return re.sub(r"\s+", " ",
+                  unescape(re.sub(r"<[^>]+>", " ", m.group(0)))).strip() if m else ""
+
+
+def test_no_page_head_stat_line_is_too_long_for_a_phone(tmp_path):
+    """Reported from the phone: the line wraps. /runs read "200 fetch attempts
+    36 failed $9.45 spent 77 waiting to be judged" -- 64 characters, which
+    pushes the page head onto three lines before a single listing is visible.
+
+    40 is what fits one line on a 360px phone. 48 was measured by eye and was
+    still wrapping in the screenshot that came back. The count is of the
+    rendered words, so shortening a label fixes it and adding a fifth figure
+    fails here rather than on the phone."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+
+    # Enough of everything that every conditional figure is showing.
+    for i in range(3):
+        lid = f"x:{i}"
+        l = Listing(id=lid, source="x", source_id=str(i), title=f"item {i}",
+                    description=None, price_cents=0, currency="USD", url="u")
+        s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+        s.set_status(hunt.id, lid, "scored")
+        s.save_score(Score(listing_id=lid, hunt_id=hunt.id, model="m",
+                           scored_at=datetime.now(timezone.utc),
+                           match="unknown", deal_score=7.0, est_value_cents=None,
+                           condition=None, matched_want=None, worth_grabbing=True,
+                           unknowns=("a",), requirements=(), red_flags=(),
+                           reasoning="r"), priced_at_cents=0)
+    s.finish_run(s.start_run(hunt, "facebook"), cost_usd=9.45,
+                 error="boom", n_scored=1)
+
+    for path in ("/", "/free", "/saved", "/skipped", "/runs", "/stats",
+                 "/settings"):
+        line = _statline(client.get(path).text)
+        assert len(line) <= 40, f"{path} stat line is {len(line)}: {line!r}"
+
+
+def test_the_stage_split_matches_the_names_the_scorer_actually_writes():
+    """`spend_by_stage` classifies on the shape of `scores.model`, and those
+    strings are built in two other files. If either renames its suffix the
+    split goes quietly wrong -- triage would be counted as appraisal AND left
+    in the remainder, so the page would add up to more than was spent."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    assert ':triage"' in (root / "dealbot/pipeline.py").read_text()
+    assert '+images"' in (root / "dealbot/scoring/claude_code.py").read_text()
+
+
+def test_the_stage_split_adds_up_to_what_was_actually_spent(tmp_path):
+    """Every dollar in `runs` lands in exactly one of the three figures.
+
+    Triage rows cost 0 today, so classifying them with appraisal looks
+    harmless -- and would double-count the day they cost anything, once under
+    appraisal and once inside the remainder."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    _client(tmp_path)
+    s = Store(tmp_path / "t2.db")
+    hunt = type("H", (), {"id": "want:x"})()
+    s.finish_run(s.start_run(hunt, "facebook"), cost_usd=10.0)
+
+    l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
+                price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l)
+    for model, usd in (("sonnet", 4.0), ("sonnet+images", 1.5),
+                       ("claude_code:triage", 2.5)):
+        s.save_score(Score(listing_id="x:1", hunt_id="want:x", model=model,
+                           scored_at=datetime.now(timezone.utc), match="no",
+                           deal_score=1.0, est_value_cents=None, condition=None,
+                           matched_want=None, worth_grabbing=False, unknowns=(),
+                           requirements=(), red_flags=(), reasoning="r",
+                           cost_usd=usd), priced_at_cents=0)
+
+    st = s.spend_by_stage()
+    assert st["appraisal"] == pytest.approx(4.0)
+    assert st["images"] == pytest.approx(1.5)
+    # 2.5 billed triage, plus the 2.0 of the run that no score row claimed.
+    assert st["other"] == pytest.approx(4.5)
+    assert (st["appraisal"] + st["images"] + st["other"]
+            == pytest.approx(st["total"]))
+    s.close()
+
+
+def test_a_back_that_only_looks_local_is_refused():
+    """Both holes were the same mistake: judging the string handed over rather
+    than the URL a browser resolves. Tab, newline and carriage return are
+    stripped BEFORE parsing, and a backslash is normalised to a slash, so
+    "/<tab>/evil.test" and "/\\evil.test" are both "//evil.test" by the time
+    they reach the network."""
+    from dealbot.web.app import _safe_back
+    for hostile in ("//evil.test/x", "https://evil.test", "javascript:x",
+                    "/\\evil.test/x", "/\t/evil.test", "/\r\n/evil.test", ""):
+        assert _safe_back(hostile) == "/", hostile
+    for ours in ("/", "/free", "/free?a=1", "/hunt/want:tv-stand",
+                 "/listing/facebook:123"):
+        assert _safe_back(ours) == ours, ours
+
+
+def test_a_standdown_with_no_reason_does_not_report_its_own_prefix():
+    """Splitting on ": " returns the whole clause when there is no separator,
+    so a bare "scoring skipped" came back as its own reason and the pill read
+    "Judging paused: scoring skipped"."""
+    from dealbot.web.app import standdown_reason
+    for bare in ("scoring skipped", "scoring skipped:", "scoring skipped: "):
+        assert standdown_reason(bare) == "reason not recorded", bare
+    # and it still has to report the pause, not fall through and hide it
+    assert standdown_reason("2 detail fetches failed") is None

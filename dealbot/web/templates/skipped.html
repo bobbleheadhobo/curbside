@@ -8,11 +8,13 @@
 <div class="pagehead">
   <h1>Skipped</h1>
   <p class="stats">
-    <i><b>{{total}}</b> judged and passed over</i>
+    {# "judged and passed over" repeats the sentence below it word for word,
+       and made this the longest stat line on the site once /runs was cut. #}
+    <i><b>{{total}}</b> skipped</i>
     {% if unsure %}
       <i class="hi"><b>{{unsure}}</b> unverified</i>{% endif %}
     {% if close %}
-      <i><b>{{close}}</b> scored 6 or better</i>{% endif %}
+      <i><b>{{close}}</b> scored 6+</i>{% endif %}
     {% if truncated %}
       <i>showing top {{items|length}}</i>{% endif %}
   </p>

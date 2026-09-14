@@ -800,6 +800,150 @@ class Store:
             "SELECT hunt_id, COUNT(*) n FROM hunt_matches WHERE status='new' "
             "GROUP BY hunt_id")}
 
+    # --- stats ----------------------------------------------------------------
+    #
+    # Every figure on /stats comes from `runs`, not from `scores`, and the
+    # difference is not cosmetic: `runs.cost_usd` totals $23.75 over the first
+    # five days where `scores.cost_usd` totals $16.58. The gap is the triage
+    # pass, which is saved on its score row with `cost_usd = 0` and only ever
+    # counted at the run level. `runs` also carries `hunt_id` and `source`, so
+    # every split the page shows is both complete and attributable. Sum the
+    # score rows instead and a third of the money disappears.
+
+    def spend_since(self, since: str | None) -> dict[str, float]:
+        """Total spend and run count since an ISO timestamp, or for all time.
+
+        `since` is compared as a string against `started_at`, which is ISO-8601
+        UTC throughout, so lexical order is chronological order.
+        """
+        where = "WHERE started_at >= ?" if since else ""
+        args = (since,) if since else ()
+        r = self.conn.execute(
+            f"SELECT COALESCE(SUM(cost_usd), 0) usd, COUNT(*) runs, "
+            f"COALESCE(SUM(n_scored), 0) scored FROM runs {where}", args
+        ).fetchone()
+        return {"usd": r["usd"], "runs": r["runs"], "scored": r["scored"]}
+
+    def spend_by_day(self, days: int = 30) -> list[dict[str, Any]]:
+        """One row per day, newest last. Days with no run are absent rather
+        than zero -- the caller fills the gaps, because a day the bot was off
+        and a day it found nothing are different facts and only one of them is
+        worth colouring."""
+        return [dict(r) for r in self.conn.execute(
+            """SELECT substr(started_at, 1, 10) day,
+                      SUM(cost_usd) usd, COUNT(*) runs, SUM(n_scored) scored,
+                      SUM(warning IS NOT NULL OR error IS NOT NULL) degraded
+               FROM runs
+               WHERE started_at >= date('now', ?)
+               GROUP BY day ORDER BY day""", (f"-{int(days)} days",))]
+
+    def spend_by_hunt(self, since: str | None = None) -> list[dict[str, Any]]:
+        """What each hunt cost and what it actually found.
+
+        The outcome columns are the point. A want's cost means nothing on its
+        own -- $3.65 is either cheap or pure waste depending on whether it
+        found anything, and on the first five days of live data one want had
+        spent that and saved nothing at all.
+
+        The outcome columns are SUBQUERIES, not a join, and that is the whole
+        trick. Joining `runs` to `hunt_matches` fans the run rows out once per
+        match before `SUM` ever sees them, so every cost on the page would be
+        multiplied by however many listings that hunt happened to match. A
+        subquery also keeps a hunt with runs and no matches at zero rather than
+        dropping it, and those are precisely the rows worth reading.
+        """
+        where = "WHERE r.started_at >= ?" if since else ""
+        args = (since,) if since else ()
+        return [dict(r) for r in self.conn.execute(
+            f"""SELECT r.hunt_id,
+                       SUM(r.cost_usd) usd, SUM(r.n_fetched) fetched,
+                       SUM(r.n_scored) scored,
+                       SUM(r.n_wanted + r.n_free_find) binned,
+                       COUNT(*) runs,
+                       (SELECT COUNT(*) FROM hunt_matches m
+                         WHERE m.hunt_id = r.hunt_id AND m.status = 'saved') saved,
+                       (SELECT COUNT(*) FROM hunt_matches m
+                         WHERE m.hunt_id = r.hunt_id
+                           AND m.status = 'dismissed') dismissed
+                FROM runs r {where}
+                GROUP BY r.hunt_id ORDER BY usd DESC""", args)]
+
+    def spend_by_source(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT source, SUM(cost_usd) usd, SUM(n_fetched) fetched "
+            "FROM runs GROUP BY source ORDER BY usd DESC")]
+
+    def spend_by_stage(self) -> dict[str, float]:
+        """Appraisal, the image pass, and everything else.
+
+        The first two are attributed on the score row. The third is the
+        remainder against `runs`, and is labelled as derived wherever it is
+        shown, because it is "what the runs cost that no score claimed"
+        rather than a measured triage figure. It is triage in practice.
+        """
+        rows = {r["model"]: r["usd"] for r in self.conn.execute(
+            "SELECT model, COALESCE(SUM(cost_usd), 0) usd FROM scores "
+            "GROUP BY model")}
+        # The three shapes a `scores.model` takes, and where each is written:
+        # "<model>:triage" in pipeline._triage_scores, "<model>+images" in
+        # ClaudeCodeScorer.resolve_with_images, and the bare model name for an
+        # appraisal. Triage is matched EXPLICITLY rather than left to fall in
+        # with appraisal: its rows cost 0 today, so lumping them in is
+        # harmless right now and would silently double-count the day someone
+        # bills them -- counted once under appraisal and once inside the
+        # remainder below. tests/test_web.py pins the three spellings.
+        images = sum(v for k, v in rows.items() if k.endswith("+images"))
+        triage = sum(v for k, v in rows.items() if k.endswith(":triage"))
+        appraisal = sum(v for k, v in rows.items()
+                        if not k.endswith(("+images", ":triage")))
+        total = self.conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) t FROM runs").fetchone()["t"]
+        return {"appraisal": appraisal, "images": images,
+                "other": max(0.0, total - appraisal - images - triage) + triage,
+                "total": total}
+
+    def token_totals(self) -> dict[str, int]:
+        """Cache reads against fresh input.
+
+        CLAUDE.md says prompt-prefix stability is money and that rebuilding
+        the dismissal block per run would cost ~3x forever. That claim has
+        never been checkable from the interface. If this ratio ever collapses,
+        the bill triples and nothing else looks wrong.
+        """
+        r = self.conn.execute(
+            "SELECT COALESCE(SUM(input_tokens), 0) input, "
+            "COALESCE(SUM(cache_read_tokens), 0) cached, "
+            "COALESCE(SUM(output_tokens), 0) output FROM scores").fetchone()
+        return dict(r)
+
+    def funnel(self) -> dict[str, int]:
+        """Fetched to saved, in one row. The whole design in five numbers, and
+        the fastest way to see a scraper that has stopped returning anything or
+        a gate that has stopped holding."""
+        r = self.conn.execute(
+            "SELECT COALESCE(SUM(n_fetched), 0) fetched, "
+            "COALESCE(SUM(n_candidates), 0) candidates, "
+            "COALESCE(SUM(n_scored), 0) scored, "
+            "COALESCE(SUM(n_wanted + n_free_find), 0) binned FROM runs"
+        ).fetchone()
+        saved = self.conn.execute(
+            "SELECT COUNT(*) n FROM hunt_matches WHERE status='saved'"
+        ).fetchone()["n"]
+        # `n_fetched` sums per-run counts, so every run re-reads the whole feed
+        # and the same listing is counted again each time: 85,028 "fetched"
+        # against 1,348 listings actually on file. The funnel is work done, not
+        # things seen, and the page has to say so or the first number reads as
+        # a claim about distinct listings.
+        distinct = self.conn.execute(
+            "SELECT COUNT(*) n FROM listings").fetchone()["n"]
+        return {**dict(r), "saved": saved, "distinct": distinct}
+
+    def first_run_at(self) -> str | None:
+        """So the page can say how much history it is talking about instead of
+        drawing an empty month and looking like a crash."""
+        r = self.conn.execute("SELECT MIN(started_at) t FROM runs").fetchone()
+        return r["t"] if r else None
+
     # --- wants --------------------------------------------------------------
 
     def seed_wants(self, wants: Iterable[Want]) -> int:

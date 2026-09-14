@@ -58,6 +58,7 @@ dealbot/web/
     listing.html    /listing/<id>  detail, scores, price sparkline
     error.html      404 / 400 / 500, in the normal shell
     runs.html       /runs    the Searching panel, every fetch attempt, the hunts
+    stats.html      /stats   what it costs and what each hunt found for it
     settings.html   /settings  waking hours, sweep cadence, the wants list
     want_form.html  /wants/new and /wants/<name>  add or edit one want
   static/
@@ -267,6 +268,107 @@ SQL. The ones the card actually reads:
 Use `/thumb/{id}` for images, never `images[0]` directly — the route serves a
 cached local copy and falls back to the source URL. Facebook's URLs expire after
 about four days, so a card built on the raw URL rots.
+
+## The page-head stat line has a length budget
+
+Reported from the phone: it wraps. `/runs` read "200 fetch attempts · 36
+failed · $9.45 spent · 77 waiting to be judged" — 64 characters, which pushed
+the page head onto three lines before a single listing was visible.
+
+**40 rendered characters is the ceiling, and a test measures it** across every
+page. Below 430px the figures also shrink a step.
+
+Shortening the wording was not enough on its own, and the screenshot that came
+back proved it: 64 characters became 42 and still wrapped on a 360px screen.
+**Three labelled figures is what actually fits.** So `/runs` lost one
+entirely, and the right one to lose was spend, because `/stats` now owns money
+and `/runs` owns health. `runs` stayed as the denominator that makes `failed`
+mean anything.
+
+The wording cuts stand on their own merit as well: two labels were restating
+their own heading. `/runs` said "fetch attempts" under a heading reading Runs,
+and `/skipped` said "judged and passed over" directly above a sentence reading
+"Judged, then passed over."
+
+Adding a fourth figure to a page head will fail that test rather than the
+phone, which is the point: this line is the first thing on every screen and
+the easiest one to quietly overfill.
+
+**The way into `/stats` is a `.btn`, never `.primary`.** Filled accent means
+"the action to take now" throughout this interface: resume the sweeps, judge
+anyway. A link to another page is not that, however much it wants noticing, so
+it takes the soft accent treatment and lets the icon carry the colour.
+
+## `back` is reader-supplied, and looking local is not being local
+
+Triage buttons carry a `back`, and since the detail page takes one as a query
+parameter it is now reader-supplied and ends up in a `Location` header.
+`_safe_back` is the one place that decides, and `_answer` runs everything
+through it.
+
+Rejecting `//host` is not enough. Both holes it had were the same mistake,
+judging the string handed over rather than the URL a browser resolves:
+
+* **Tab, newline and carriage return are stripped before parsing**, so
+  `/<tab>/evil.test` is not a path starting `/t`. It is `//evil.test`.
+* **A backslash is normalised to a forward slash**, so `/\evil.test` is
+  `//evil.test` by the time it is resolved.
+
+Strip the first three characters, then treat `/` and `\` as off-site in
+second place. A test walks both shapes.
+
+## /stats has no tab, on purpose
+
+Five tabs is what fits across a phone, and the sixth thing was already spent
+on the settings gear. `/stats` is read monthly and acted on by rewording a
+want or slowing it down, so it is signposted from `/runs` and `/settings`
+rather than taking a tab from a page read daily. A test asserts it stays out
+of the tab bar.
+
+**It answers a different question from `/runs`.** `/runs` is "is it working
+right now" — the pause switches, the backlog, the last hundred fetch attempts.
+`/stats` is "is it worth running", which wants months rather than minutes.
+Merging them was considered and rejected: one page carrying both horizons
+means every number needs a qualifier.
+
+**Every figure comes from `runs`, never from `scores`.** Measured on the fifth
+day of live running, `runs.cost_usd` totalled $24.52 and `scores.cost_usd`
+totalled $17.10. The gap is the triage pass, which is written to its score row with
+`cost_usd = 0` and only ever counted at the run level, so summing score rows
+loses about a third of the money. `runs` also carries `hunt_id` and `source`,
+so every split on the page is attributable as well as complete. The one place
+the page shows the remainder — the "triage" figure under Where it goes — says
+`(derived)` next to it.
+
+**The stage split is classified on `scores.model`, whose spellings are set in
+two other files.** `"<model>:triage"` comes from `pipeline`, `"<model>+images"`
+from `ClaudeCodeScorer.resolve_with_images`, and a bare model name means an
+appraisal. Triage is matched explicitly rather than left to fall in with
+appraisal: those rows cost 0 today, so lumping them together is harmless right
+now and would double-count the day anyone bills them, once under appraisal and
+once inside the derived remainder. A test pins the spellings and another
+asserts the three figures still add up to what was spent.
+
+**The outcome columns in `spend_by_hunt` are subqueries, not a join.** Joining
+`runs` to `hunt_matches` fans the run rows out once per match before `SUM` sees
+them, so every cost on the page would be multiplied by however many listings
+that hunt matched.
+
+**Three numbers on this page can lie if nobody watches them.** Each has a
+test:
+
+* **`n_fetched` counts repeats.** Every run re-reads the whole feed, so it
+  read 85,210 index rows against 1,387 listings on file. The funnel says
+  "index rows read", not "listings seen", and states the distinct count
+  underneath.
+* **A young database repeats itself.** With five days of history, "last 7
+  days", "last 30 days" and "all time" are one number, and three identical
+  figures read as a bug. Any window covering the whole history says "all of
+  it so far" instead.
+* **"Today" uses UTC.** Not the local day, because `check_available` compares
+  the daily spend ceiling against UTC midnight. A local-midnight figure here
+  would disagree with the number that actually stops the judging, which is
+  the one thing that panel exists to make predictable.
 
 ## Things not to break
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
 
@@ -183,6 +184,56 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
             f'vector-effect="non-scaling-stroke" points="{coords}"/></svg>')
 
 
+def _daybars(days: list[dict], ceiling: float, w: int = 300, h: int = 44) -> str:
+    """Inline SVG of daily spend, drawn the way `_sparkline` is: by hand, in
+    house colours, with no library to load on a phone.
+
+    A day the bot did not run is a GAP, not a zero. The caller fills the
+    calendar so the bars are evenly spaced in time -- a run of five bars means
+    five days whether or not one of them was silent -- but a silent day gets
+    no bar at all, because a day off and a day that found nothing are
+    different facts.
+    """
+    if not days:
+        return ""
+    top = max([d["usd"] or 0 for d in days] + [ceiling if ceiling > 0 else 0]) or 1
+    slot = w / len(days)
+    bar = max(2.0, slot - 2)
+    out = []
+    if ceiling > 0:
+        y = h - (ceiling / top) * (h - 2)
+        out.append(f'<line x1="0" y1="{y:.1f}" x2="{w}" y2="{y:.1f}" '
+                   f'stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3"/>')
+    for i, d in enumerate(days):
+        usd = d["usd"]
+        if usd is None:
+            continue
+        bh = max(1.0, (usd / top) * (h - 2))
+        # Amber where MOST of that day's runs stood aside, not where any did.
+        # Flagging any standdown painted all five days amber on the live box,
+        # which is a legend that describes every bar and therefore tells you
+        # nothing. Half is the point where the day's bill stops meaning what
+        # the bot would normally spend.
+        runs = d.get("runs") or 0
+        fill = ("var(--warn)" if runs and (d.get("degraded") or 0) / runs >= 0.5
+                else "var(--accent)")
+        out.append(f'<rect x="{i * slot + 1:.1f}" y="{h - bh:.1f}" '
+                   f'width="{bar:.1f}" height="{bh:.1f}" rx="1.5" fill="{fill}"/>')
+    return (f'<svg width="100%" height="{h}" viewBox="0 0 {w} {h}" '
+            f'preserveAspectRatio="none" role="img" '
+            f'aria-label="daily spend">{"".join(out)}</svg>')
+
+
+def _fill_days(rows: list[dict], days: int) -> list[dict]:
+    """Every date in the window, in order, whether or not it has a run."""
+    have = {r["day"]: r for r in rows}
+    today = datetime.now(timezone.utc).date()
+    return [have.get((today - timedelta(days=n)).isoformat(),
+                     {"day": (today - timedelta(days=n)).isoformat(),
+                      "usd": None, "runs": 0, "scored": 0, "degraded": 0})
+            for n in range(days - 1, -1, -1)]
+
+
 # `pipeline` writes a standdown as "<what happened>: <why>", and joins it to
 # any other warning from the same run with "; " -- so this is a clause inside
 # the column, not necessarily the whole of it.
@@ -199,9 +250,18 @@ def standdown_reason(warning: str | None) -> str | None:
     """
     for clause in str(warning or "").split("; "):
         clause = clause.strip()
-        if clause.startswith(STANDDOWNS):
-            reason = clause.split(": ", 1)[-1]
-            return reason.split(" -- ")[0].strip() or None
+        for prefix in STANDDOWNS:
+            if not clause.startswith(prefix):
+                continue
+            # Cut the PREFIX off, not "everything before the first colon".
+            # Splitting on ": " returns the whole clause when there is no
+            # separator, so a bare "scoring skipped" came back as its own
+            # reason and the pill read "Judging paused: scoring skipped".
+            reason = clause[len(prefix):].lstrip(": ").split(" -- ")[0].strip()
+            # The pause is real even when nothing explains it, and saying so
+            # beats returning None and letting the pill fall through to some
+            # other state -- which would hide a stopped scorer completely.
+            return reason or "reason not recorded"
     return None
 
 
@@ -225,18 +285,32 @@ def short_reason(reason: str) -> str:
         return "rate limit"
     if "unreachable" in reason:
         return "offline"
-    return reason.split(" (")[0].split(",")[0][:24]
+    return reason.split(" (")[0].split(",")[0][:24].strip() or reason[:24]
 
 
 def _safe_back(back: str) -> str:
     """Where a triage button returns to, once we have checked it is here.
 
     `back` is a form field and now also a query parameter on the detail page,
-    so it is reader-supplied and ends up in a Location header. Anything that
-    is not a path on this dashboard becomes "/": a bare "/" is a page, "//x"
-    and "https://x" are somebody else's site.
+    so it is reader-supplied and ends up in a Location header. Anything that is
+    not a path on this dashboard becomes "/".
+
+    Checking `startswith("//")` is not enough, and both holes are the same
+    mistake -- judging the string we were handed rather than the URL a browser
+    will resolve:
+
+    * **Tab, newline and carriage return are STRIPPED before parsing.** So
+      "/\t/evil.test" is not a path beginning "/t", it is "//evil.test", a
+      protocol-relative URL to somebody else's host.
+    * **A backslash is normalised to a forward slash.** So "/\\evil.test" is
+      "//evil.test" by the time it is resolved.
+
+    Strip the first, then treat both characters as off-site in second place.
     """
-    return back if back.startswith("/") and not back.startswith("//") else "/"
+    cleaned = back.translate({9: None, 10: None, 13: None})
+    if not cleaned.startswith("/") or cleaned[1:2] in ("/", "\\"):
+        return "/"
+    return cleaned
 
 
 def health(row, paused, hunts, sched) -> dict:
@@ -1013,6 +1087,69 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         else:
             store.set_setting(OVERRIDE_UNTIL, "0")
         return _answer(request, back)
+
+    @app.get("/stats")
+    def stats(request: Request):
+        """What it costs, and what it found for the money.
+
+        A separate page from /runs on purpose. /runs answers "is it working
+        right now"; this answers "is it worth running", which is a question
+        you ask monthly and act on by rewording a want or deleting it. The two
+        want different time horizons and different numbers.
+
+        Every figure comes from `runs` -- see the note above `Store.spend_since`
+        for why summing `scores` would lose a third of the money.
+        """
+        cfg = _live()
+        now = datetime.now(timezone.utc)
+        # The SAME day boundary the spend ceiling uses. `check_available`
+        # compares against UTC midnight, so showing a local-midnight figure
+        # here would disagree with the number that actually stops the judging,
+        # which is the one thing this panel exists to make predictable.
+        windows = {
+            "today": now.strftime("%Y-%m-%dT00:00:00+00:00"),
+            "week": (now - timedelta(days=7)).isoformat(),
+            "month": (now - timedelta(days=30)).isoformat(),
+            "all": None,
+        }
+        spend = {k: store.spend_since(v) for k, v in windows.items()}
+
+        first = store.first_run_at()
+        history_days = ((now - datetime.fromisoformat(first)).days + 1
+                        if first else 0)
+        ceiling = cfg.scorer.daily_cost_limit_usd
+        days = _fill_days(store.spend_by_day(30), min(30, max(history_days, 1)))
+
+        # A run rate, from the shorter of a week and what we actually have.
+        # Annualising four days of a new bot would be a made-up number stated
+        # to the cent.
+        rate_days = min(7, history_days) or 1
+        per_day = spend["week"]["usd"] / rate_days
+
+        hunts = {h.id: h for h in cfg.hunts}
+        by_hunt = []
+        for row in store.spend_by_hunt():
+            hunt = hunts.get(row["hunt_id"])
+            by_hunt.append({
+                **row,
+                "name": hunt.name if hunt else row["hunt_id"].split(":", 1)[-1],
+                # A want deleted from /settings stops running and keeps its
+                # history. What it spent is still your money and still belongs
+                # in the total.
+                "live": hunt is not None,
+                "per_scored": (row["usd"] / row["scored"]) if row["scored"] else None,
+                "per_save": (row["usd"] / row["saved"]) if row["saved"] else None,
+            })
+
+        tokens = store.token_totals()
+        billed = tokens["input"] + tokens["cached"]
+        return TEMPLATES.TemplateResponse(request, "stats.html", ctx(
+            request, spend=spend, days=days, bars=_daybars(days, ceiling),
+            ceiling=ceiling, per_day=per_day, history_days=history_days,
+            by_hunt=by_hunt, by_source=store.spend_by_source(),
+            stages=store.spend_by_stage(), funnel=store.funnel(),
+            tokens=tokens,
+            cache_pct=(tokens["cached"] / billed * 100) if billed else None))
 
     @app.get("/runs")
     def runs(request: Request):

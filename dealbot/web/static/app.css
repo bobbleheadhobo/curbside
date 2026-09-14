@@ -233,6 +233,14 @@ main.wide{max-width:1100px}
   font-variant-numeric:tabular-nums
 }
 .stats .hi b{color:var(--warn)}
+/* Phone first, and this is the line that overflows first: the figures shrink
+   rather than push the page head onto a third line. Below 430px covers every
+   phone in portrait. */
+@media (max-width:430px){
+  .stats{gap:2px 8px;font-size:12.5px}
+  .stats b{font-size:13.5px}
+  .stats i + i::before{margin-right:8px}
+}
 .stats a{color:var(--accent)}
 .stats a b{color:var(--accent)}
 .pagehead p{margin:9px 0 0;color:var(--dim);font-size:13.5px;line-height:1.55;max-width:62ch}
@@ -775,6 +783,94 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 }
 .term button:hover{background:var(--bad-soft);color:var(--bad)}
 .termnote{margin:9px 0 0;font-size:12.5px;line-height:1.5;color:var(--dim)}
+
+/* A way into a page that has no tab. Reads as a link rather than a button:
+   it is a signpost, not an action. */
+.pagelinks{display:flex;flex-wrap:wrap;gap:10px;margin:13px 0 0}
+/* A way into a page that has no tab, so it has to look like a control rather
+   than a footnote. NOT `.primary`: filled accent means "the action to take
+   now" everywhere else here (resume the sweeps, judge anyway), and a link to
+   another page is not that. The icon carries the colour instead. */
+.btn.tostats{border-color:var(--accent-soft);background:var(--accent-soft);color:var(--accent)}
+.btn.tostats svg.i{color:var(--accent)}
+.btn.tostats:hover{border-color:var(--accent);background:var(--accent-soft)}
+
+/* --- /stats ---------------------------------------------------------------
+   Four figures, a bar per day, and three splits. All of it reads at arm's
+   length on a phone, so the numbers are large and the labels are small: this
+   is a page you glance at monthly, not one you study. */
+.figures{
+  display:grid;grid-template-columns:repeat(2,1fr);
+  border-bottom:1px solid var(--line-soft)
+}
+@media (min-width:700px){ .figures{grid-template-columns:repeat(4,1fr)} }
+.figure{
+  padding:14px 15px;border-right:1px solid var(--line-soft);
+  border-bottom:1px solid var(--line-soft)
+}
+/* The trailing borders of the grid, which otherwise draw against the panel
+   edge and read as a misalignment. */
+.figures .figure:nth-child(2n){border-right:0}
+.figures .figure:nth-last-child(-n+2){border-bottom:0}
+@media (min-width:700px){
+  .figures .figure:nth-child(2n){border-right:1px solid var(--line-soft)}
+  .figures .figure:last-child{border-right:0}
+  .figures .figure{border-bottom:0}
+}
+.figure b{
+  display:block;font-size:23px;font-weight:640;letter-spacing:-.02em;
+  color:var(--fg);font-variant-numeric:tabular-nums
+}
+.figure span{display:block;margin-top:2px;font-size:12.5px;color:var(--dim)}
+.figure small{display:block;margin-top:3px;font-size:11.5px;color:var(--faint)}
+.figure small.hi{color:var(--warn);font-weight:550}
+
+.daybars{padding:15px 15px 9px}
+.daybars .axis{
+  display:flex;justify-content:space-between;margin:5px 0 0;
+  font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums
+}
+.panel-note{
+  margin:0;padding:11px 15px;font-size:12.5px;line-height:1.55;color:var(--dim);
+  border-top:1px solid var(--line-soft)
+}
+.panel-note.hi{color:var(--warn);background:var(--warn-soft)}
+.panel-note a{color:var(--accent);font-weight:550}
+
+.splits{display:grid;grid-template-columns:1fr}
+@media (min-width:700px){ .splits{grid-template-columns:repeat(3,1fr)} }
+.split{padding:13px 15px;border-bottom:1px solid var(--line-soft)}
+.split:last-child{border-bottom:0}
+@media (min-width:700px){
+  .split{border-bottom:0;border-right:1px solid var(--line-soft)}
+  .split:last-child{border-right:0}
+}
+.split h3{
+  margin:0 0 8px;font-size:11.5px;font-weight:600;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.04em
+}
+.split dl{display:grid;grid-template-columns:1fr auto;gap:5px 12px;margin:0}
+.split dt{font-size:13px;color:var(--dim)}
+.split dt small{color:var(--faint);font-size:11px}
+.split dd{
+  margin:0;text-align:right;font-size:13px;font-weight:550;color:var(--fg);
+  font-variant-numeric:tabular-nums
+}
+
+/* Fetched to saved. It scrolls sideways rather than wrapping: the order is
+   the meaning, and a funnel that reflows into two rows stops being one. */
+.funnel{
+  display:flex;align-items:center;gap:4px;padding:15px;
+  overflow-x:auto;-webkit-overflow-scrolling:touch
+}
+.funnel .step{flex:1 0 auto;min-width:88px}
+.funnel .step b{
+  display:block;font-size:18px;font-weight:640;letter-spacing:-.015em;
+  color:var(--fg);font-variant-numeric:tabular-nums
+}
+.funnel .step span{display:block;margin-top:1px;font-size:12.5px;color:var(--dim)}
+.funnel .step small{display:block;margin-top:1px;font-size:11px;color:var(--faint)}
+.funnel .arrow{flex:none;color:var(--line);font-size:19px;padding:0 2px}
 
 @media (prefers-reduced-motion:reduce){
   /* Not a blanket kill. Colour and background transitions are not motion, and

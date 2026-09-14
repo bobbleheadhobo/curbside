@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Stats &middot; Curbside{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+{# What it costs, and what it found for the money. /runs answers "is it
+   working right now"; this answers "is it worth running". #}
+<div class="pagehead">
+  <h1>Stats</h1>
+  <p class="stats">
+    <i><b>${{ '%.2f'|format(spend.all.usd) }}</b> all time</i>
+    <i><b>{{ funnel.scored }}</b> judged</i>
+    <i><b>{{ history_days }}</b> day{{ '' if history_days == 1 else 's' }}</i>
+  </p>
+  <p>What the bot spends, and what each hunt found for it.</p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Spend</h2>
+  <div class="figures">
+    {% for label, key in [('Today','today'), ('Last 7 days','week'),
+                          ('Last 30 days','month'), ('All time','all')] %}
+    <div class="figure">
+      <b class="num">${{ '%.2f'|format(spend[key].usd) }}</b>
+      <span>{{ label }}</span>
+      {# With five days of history, "last 7 days" and "all time" are the same
+         number, and three identical figures read as a bug rather than as a
+         young database. Each window says when it covers everything. #}
+      {% if key == 'today' and ceiling %}
+      <small class="{{ 'hi' if spend.today.usd >= ceiling else '' }}"
+        >of ${{ '%.0f'|format(ceiling) }} ceiling</small>
+      {% elif key in ('week', 'month') and spend[key].usd >= spend.all.usd %}
+      <small>all of it so far</small>
+      {% elif spend[key].scored %}
+      <small>{{ spend[key].scored }} judged</small>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if bars %}
+  <div class="daybars">
+    {{ bars|safe }}
+    <p class="axis"><span>{{ days[0].day[5:] }}</span><span>{{ days[-1].day[5:] }}</span></p>
+  </div>
+  {% endif %}
+  <p class="panel-note">
+    About ${{ '%.2f'|format(per_day) }} a day: roughly
+    ${{ '%.0f'|format(per_day * 30) }} a month at this rate.
+    Amber marks a day when most runs stood aside on quota.
+  </p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Each hunt</h2>
+  {# The outcome columns are the point. A cost on its own says nothing: the
+     same $4 is cheap or pure waste depending on whether anything came back. #}
+  <div class="wrap"><table class="responsive">
+    <thead><tr>
+      <th>Hunt</th><th class="n">Spent</th><th class="n">Fetched</th>
+      <th class="n">Judged</th><th class="n">Binned</th><th class="n">Saved</th>
+      <th class="n">Dismissed</th><th class="n">Per judged</th>
+      <th class="n">Per save</th>
+    </tr></thead>
+    <tbody>
+    {% for h in by_hunt %}
+    <tr>
+      <td class="lead" data-label="Hunt">{{h.name}}
+        {% if not h.live %}<span class="kind">deleted</span>{% endif %}</td>
+      <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd or 0) }}</td>
+      <td class="n num" data-label="Fetched">{{ '{:,}'.format(h.fetched or 0) }}</td>
+      <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored or 0}}</td>
+      <td class="n num {{'zero' if not h.binned}}" data-label="Binned">{{h.binned or 0}}</td>
+      <td class="n num {{'zero' if not h.saved}}" data-label="Saved">{{h.saved}}</td>
+      <td class="n num {{'zero' if not h.dismissed}}" data-label="Dismissed">{{h.dismissed}}</td>
+      <td class="n num" data-label="Per judged">
+        {%- if h.per_scored %}${{ '%.3f'|format(h.per_scored) }}{% else %}&mdash;{% endif %}</td>
+      <td class="n num" data-label="Per save">
+        {%- if h.per_save %}${{ '%.2f'|format(h.per_save) }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="nostack">
+      <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
+        <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+        <b>Nothing has run yet</b>
+        <p>Costs appear here after the first pass.</p>
+      </div></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% set barren = by_hunt|selectattr('saved','equalto',0)|selectattr('usd','gt',1.0)|list %}
+  {% if barren %}
+  <p class="panel-note hi">
+    {% for h in barren %}{{h.name}} has spent
+      ${{ '%.2f'|format(h.usd) }} and saved nothing.
+      {% endfor %}Worth rewording or slowing down in
+    <a href="/settings">settings</a>.
+  </p>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Where it goes</h2>
+  <div class="splits">
+    <div class="split">
+      <h3>By stage</h3>
+      <dl>
+        <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(stages.appraisal) }}</dd>
+        <dt>Photo checks</dt><dd class="num">${{ '%.2f'|format(stages.images) }}</dd>
+        {# Derived, and labelled so: it is what the runs cost that no score
+           row claimed. Triage is saved with a zero cost on its score. #}
+        <dt>Triage <small>(derived)</small></dt>
+        <dd class="num">${{ '%.2f'|format(stages.other) }}</dd>
+      </dl>
+    </div>
+    <div class="split">
+      <h3>By source</h3>
+      <dl>
+        {% for s in by_source %}
+        <dt>{{s.source}}</dt><dd class="num">${{ '%.2f'|format(s.usd or 0) }}</dd>
+        {% else %}<dt>Nothing yet</dt><dd class="num">&mdash;</dd>{% endfor %}
+      </dl>
+    </div>
+    <div class="split">
+      <h3>Prompt cache</h3>
+      {# CLAUDE.md says prefix stability is money and that rebuilding the
+         dismissal block per run would cost ~3x forever. Until now that claim
+         was not checkable from anywhere. If this figure falls, the bill
+         climbs and nothing else looks wrong. #}
+      <dl>
+        <dt>Read from cache</dt>
+        <dd class="num">{% if cache_pct is not none %}{{ '%.1f'|format(cache_pct) }}%
+          {%- else %}&mdash;{% endif %}</dd>
+        <dt>Fresh input</dt><dd class="num">{{ '{:,}'.format(tokens.input) }}</dd>
+        <dt>Output</dt><dd class="num">{{ '{:,}'.format(tokens.output) }}</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Fetched to saved</h2>
+  {# The gate's leverage, in one row. A scraper that has stopped returning
+     anything or a gate that has stopped holding both show up here first. #}
+  <div class="funnel">
+    {% for label, n, note in [
+        ('Fetched', funnel.fetched, 'index rows read'),
+        ('Past the gate', funnel.candidates, 'worth paying for'),
+        ('Judged', funnel.scored, 'cost money'),
+        ('Reached a bin', funnel.binned, 'shown to you'),
+        ('Saved', funnel.saved, 'you kept')] %}
+    <div class="step">
+      <b class="num">{{ '{:,}'.format(n) }}</b>
+      <span>{{label}}</span>
+      <small>{{note}}</small>
+    </div>
+    {% if not loop.last %}<div class="arrow" aria-hidden="true">&rsaquo;</div>{% endif %}
+    {% endfor %}
+  </div>
+  <p class="panel-note">
+    {% if funnel.fetched %}
+    The gate judged {{ '%.1f'|format(funnel.scored / funnel.fetched * 100) }}%
+    of what it read. Each run re-reads the whole feed, so that counts repeats:
+    {{ '{:,}'.format(funnel.distinct) }} listings are on file.
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
