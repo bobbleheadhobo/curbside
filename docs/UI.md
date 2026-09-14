@@ -269,6 +269,23 @@ Use `/thumb/{id}` for images, never `images[0]` directly — the route serves a
 cached local copy and falls back to the source URL. Facebook's URLs expire after
 about four days, so a card built on the raw URL rots.
 
+## The health pill has the least room of anything
+
+It shares a phone's top bar with the brand and the settings gear, so it is the
+tightest space in the interface. **19 rendered characters is the ceiling and a
+test measures every branch of the ladder** — 19 is "Asleep till 12:30pm", the
+longest the ladder can legitimately produce.
+
+"Judging paused: plan 72%" was 24 and was being cut off mid-word. A truncated
+reason is worse than no reason: it reads as a broken interface rather than a
+terse one.
+
+**So the label states the STATE, and the reason lives one tap away.** That is
+honest only because `/runs` now says it in full — it used to read "Running"
+while this pill went amber, and fixing that contradiction is what earns the
+short label. The full reason is also in the pill's `title`, which is a
+desktop-only convenience and never the only place a fact appears.
+
 ## The page-head stat line has a length budget
 
 Reported from the phone: it wraps. `/runs` read "200 fetch attempts · 36

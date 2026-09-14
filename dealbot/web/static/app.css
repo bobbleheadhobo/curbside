@@ -129,10 +129,10 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
    header cannot drift. It is the one solid block of accent in the interface;
    everything else spends the colour on state. */
 .brand .mark{width:24px;height:24px;display:block;flex:none}
-/* The label now carries the reason ("Judging paused: plan 72%"), because a
-   pill that only says something is wrong sends you looking. On a narrow phone
-   the brand takes what it needs first, so this shrinks and ellipsises rather
-   than pushing the settings gear off the edge. */
+/* The tightest space in the interface: this shares a phone's top bar with the
+   brand and the settings gear. The label is kept under 19 characters by a test
+   rather than by this rule, which is the backstop -- it shrinks and ellipsises
+   rather than pushing the gear off the edge. */
 .health{
   display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;
   border:1px solid var(--line);border-radius:99px;background:var(--card);

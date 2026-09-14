@@ -8,7 +8,6 @@ explain is a tool you stop opening.
 from __future__ import annotations
 
 import json
-import re
 import time
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
@@ -270,29 +269,6 @@ def standdown_reason(warning: str | None) -> str | None:
     return None
 
 
-def short_reason(reason: str) -> str:
-    """The same why, cut down to something a top-bar pill can hold.
-
-    The pill used to say "Judging paused" and keep the reason in a `title`
-    attribute. That is a tooltip, and the device this dashboard is read on has
-    no hover, so the reason was written down where it could never be seen.
-
-    The fallback is the point: an unmapped message still says something true
-    and merely says it at greater length. Nothing here can produce a bare
-    "Judging paused" again.
-    """
-    if "plan window" in reason:
-        pct = re.search(r"(\d+)%", reason)
-        return f"plan {pct.group(1)}%" if pct else "plan quota"
-    if "spend ceiling" in reason:
-        return "spend ceiling"
-    if "rate limit" in reason:
-        return "rate limit"
-    if "unreachable" in reason:
-        return "offline"
-    return reason.split(" (")[0].split(",")[0][:24].strip() or reason[:24]
-
-
 def photo_verdict(scores: list[dict]) -> dict | None:
     """Whether the model looked at the photographs, and what it got for it.
 
@@ -399,8 +375,16 @@ def health(row, paused, hunts, sched) -> dict:
     #     warning now, at the source.
     reason = standdown_reason(row["warning"]) if row is not None else None
     if reason:
-        return {"state": "warn",
-                "label": f"Judging paused: {short_reason(reason)}",
+        # The label says the STATE and nothing else. "Judging paused: plan
+        # 72%" is 24 characters in a pill that has to share a phone's top bar
+        # with the brand and the settings gear, and it was being cut off
+        # mid-word -- a truncated reason is worse than no reason, because it
+        # looks like the interface is broken rather than terse.
+        #
+        # The why is one tap away and stated in full: that is what the pill
+        # links to, and /runs used to contradict it by reading "Running" while
+        # this went amber. Fixing that is what makes a short label honest.
+        return {"state": "warn", "label": "Judging paused",
                 "detail": f"{reason}. Collecting normally. {detail}"}
 
     # 3. Some hunts off. Indefinite, and only you can undo it.

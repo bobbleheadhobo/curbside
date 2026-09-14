@@ -557,11 +557,14 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     # a failing fetch beats a partial pause
     assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched()
                   )["label"] == "Fetch failing"
-    # a quota pause is not a failing fetch: the fetch worked, and the pill
-    # has to say WHICH pause -- the reason used to live in a `title` tooltip,
-    # which on a phone is nowhere at all
-    assert health(_row(warning="scoring skipped: daily spend ceiling reached"),
-                  [], hunts, _sched())["label"] == "Judging paused: spend ceiling"
+    # a quota pause is not a failing fetch: the fetch worked. The LABEL says
+    # the state only. A reason cut off mid-word in a phone's top bar is worse
+    # than no reason: it reads as broken rather than terse. The reason is in
+    # `detail`, and stated in full on the page the pill links to.
+    pause = health(_row(warning="scoring skipped: daily spend ceiling reached"),
+                   [], hunts, _sched())
+    assert pause["label"] == "Judging paused"
+    assert "daily spend ceiling reached" in pause["detail"]
     # some hunts off beats the clock
     assert health(_row(), hunts[:2], hunts, _sched(open_=False)
                   )["label"] == "2 hunts off"
@@ -781,28 +784,33 @@ def test_a_standdown_reason_is_found_even_beside_another_warning():
     assert standdown_reason(None) is None
 
 
-def test_every_reason_the_scorer_can_raise_fits_the_pill():
-    """The pill is one line in a top bar on a phone, so a reason it cannot
-    hold is a reason nobody reads. These are the messages
-    `ClaudeCodeScorer.check_available` actually raises."""
-    from dealbot.web.app import short_reason
-    for raised, want in (
-        ("5-hour plan window at 72% (ceiling 70%)", "plan 72%"),
-        ("7-day plan window at 91% (ceiling 90%)", "plan 91%"),
-        ("daily spend ceiling reached ($10.02 of $10.00)", "spend ceiling"),
-        ("paused (rate limit), 42 min remaining", "rate limit"),
-        ("api.anthropic.com unreachable", "offline"),
-    ):
-        assert short_reason(raised) == want
-        assert len(want) <= 15
+def test_no_health_label_is_too_long_for_the_top_bar():
+    """The pill shares a phone's top bar with the brand and the settings gear,
+    so it has the least room in the interface. "Judging paused: plan 72%" was
+    24 characters and was being cut off mid-word.
 
-
-def test_an_unmapped_reason_still_says_something():
-    """The fallback is what stops a new ceiling reading as a bare "Judging
-    paused" -- the exact failure this fixes."""
-    from dealbot.web.app import short_reason
-    got = short_reason("some new ceiling (with detail), and more")
-    assert got == "some new ceiling"
+    19 is "Asleep till 12:30pm", the longest the ladder can legitimately
+    produce. A new label over that budget fails here rather than on the phone.
+    """
+    from dealbot.web.app import health
+    hunts = _hunts()
+    cases = [
+        (_row(error="boom"), hunts, hunts, _sched(open_=False)),
+        (_row(error="HTTPError"), hunts[:1], hunts, _sched()),
+        (_row(warning="scoring skipped: 5-hour plan window at 72% "
+                      "(ceiling 70%) -- standing aside"), [], hunts, _sched()),
+        (_row(), hunts[:2], hunts, _sched(open_=False)),
+        (_row(), hunts[:1], hunts, _sched()),
+        (_row(), [], hunts, _sched(open_=False)),
+        (None, hunts, hunts, _sched()),
+        (None, [], hunts, _sched()),
+        (_row(mins_ago=3), [], hunts, _sched()),
+        (_row(mins_ago=200), [], hunts, _sched()),
+        (_row(mins_ago=4000), [], hunts, _sched()),
+    ]
+    for args in cases:
+        label = health(*args)["label"]
+        assert len(label) <= 19, f"{label!r} is {len(label)} characters"
 
 
 def test_the_runs_page_agrees_with_the_pill(tmp_path):

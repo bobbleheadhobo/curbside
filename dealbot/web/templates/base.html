@@ -88,9 +88,11 @@
       <svg class="i" aria-hidden="true"><use href="#{{icon}}"/></svg>{{label}}</a>
     {% endfor %}
   </nav>
-  {# The label carries the reason, and the reason is the whole point: the pill
-     used to keep it in this `title` alone, which is a tooltip, and the phone
-     this is read on has no hover. The title stays as the longer version. #}
+  {# The label is the STATE and nothing more: this pill shares a phone's top
+     bar with the brand and the gear, and a reason appended to it was cut off
+     mid-word. The reason is stated in full on /runs, which is where this
+     links. The `title` carries it too, for a desktop pointer, but it is never
+     the only place a fact appears -- a tooltip is nowhere on a phone. #}
   <a class="health is-{{ health.state }}" href="/runs" title="{{ health.detail }}">
     <span class="dot" aria-hidden="true"></span
     ><span class="what">{{ health.label }}</span></a>
