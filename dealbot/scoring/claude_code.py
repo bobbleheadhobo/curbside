@@ -35,6 +35,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from ..config import ScorerConfig
+from ..schedule import local_day_start
 from ..connectivity import api_reachable
 from ..db import Store
 from ..models import Candidate, Hunt, Score
@@ -54,6 +55,20 @@ PAUSE_REASON = "scoring_paused_reason"
 # refusal from the other end still refuses.
 OVERRIDE_UNTIL = "quota_override_until"
 UTIL_5H, UTIL_7D, UTIL_AT = "util_five_hour", "util_seven_day", "util_recorded_at"
+
+
+def _tz(name: str | None):
+    """The configured zone, or the machine's. An unknown name is not worth
+    refusing to judge over: `local_day_start` falls back to local time, which
+    is what this bot ran on before the zone was configurable at all."""
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception:                                   # noqa: BLE001
+        log.warning("unknown scorer timezone %r; using local time", name)
+        return None
 
 
 class ScoringUnavailable(RuntimeError):
@@ -159,7 +174,11 @@ class ClaudeCodeScorer:
 
         limit = self.cfg.daily_cost_limit_usd
         if limit > 0:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
+            # The user's midnight, not UTC's. UTC midnight is 6pm in
+            # Albuquerque, inside the waking window on every day of the year,
+            # so this counter used to reset mid-evening and hand the bot a
+            # second full allowance for the rest of it.
+            today = local_day_start(_tz(self.cfg.timezone)).isoformat()
             spent = self.store.cost_since(today) + self._spent_this_process
             if spent >= limit:
                 raise ScoringUnavailable(

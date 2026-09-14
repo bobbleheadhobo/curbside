@@ -64,12 +64,20 @@ class ScorerConfig:
     # built-in rubric, so the bot judges by criteria other than the ones in the
     # file you edited, and nothing looks wrong.
     rubric_path: Path | None = None
-    # Hard ceiling on model spend per calendar day (UTC). Fetching continues
-    # past it -- that costs no quota -- so the bot keeps collecting and simply
-    # stops judging. The quota is shared with otter, and an unattended bot
-    # draining a cold-start backlog is exactly how you would find that out the
-    # hard way.
+    # Hard ceiling on model spend per calendar day, where the USER is -- see
+    # `schedule.local_day_start`. It used to be the UTC day, which in
+    # Albuquerque starts at 6pm and so fell inside the waking window every day
+    # of the year: the counter meant to cap a day's spending reset mid-evening
+    # and handed the bot a second full allowance for the rest of it.
+    #
+    # Fetching continues past the ceiling -- that costs no quota -- so the bot
+    # keeps collecting and simply stops judging. The quota is shared with
+    # otter, and an unattended bot draining a cold-start backlog is exactly how
+    # you would find that out the hard way.
     daily_cost_limit_usd: float = 10.0
+    # Where the user is, so "daily" means their day. Copied from
+    # `schedule.timezone`, which stays the one place a timezone is configured.
+    timezone: str | None = None
     # The real constraint is plan quota, not dollars, and it is shared with
     # otter's incident triage and your own interactive use. Claude Code reports
     # live utilisation in its rate_limit_event stream, so we can stand aside
@@ -414,6 +422,9 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         max_image_checks=int(sc.get("max_image_checks", 10)),
         images_per_check=int(sc.get("images_per_check", 2)),
         daily_cost_limit_usd=float(sc.get("daily_cost_limit_usd", 10.0)),
+        # Not a second place to configure it: the scorer needs the user's day
+        # boundary and the schedule block already knows where they are.
+        timezone=schedule.tz_name,
         max_five_hour_utilization=float(sc.get("max_five_hour_utilization", 0.70)),
         max_seven_day_utilization=float(sc.get("max_seven_day_utilization", 0.90)),
         utilization_stale_minutes=int(sc.get("utilization_stale_minutes", 30)),

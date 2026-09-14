@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 
 log = logging.getLogger("dealbot.schedule")
 
@@ -63,6 +63,26 @@ def fmt_clock(minute: int) -> str:
     h12 = h24 % 12 or 12
     suffix = "am" if h24 < 12 else "pm"
     return f"{h12}:{mm:02d}{suffix}" if mm else f"{h12}{suffix}"
+
+
+def local_day_start(tz: tzinfo | None, now: datetime | None = None) -> datetime:
+    """Midnight where the user is, as an aware UTC datetime.
+
+    ONE definition of "a day", because there were nearly two. The daily spend
+    ceiling used UTC midnight, which in Albuquerque is 6pm -- inside the waking
+    window on every day of the year. So the counter meant to cap a day's
+    spending reset in the middle of the evening and handed the bot a second
+    full allowance for the rest of it, and /stats reported yesterday evening's
+    spend as today's: read at 10:25 on a Monday morning, "Today" covered
+    everything since 6pm on the Sunday.
+
+    The ceiling and the page both ask this now, so they cannot drift from each
+    other or from what the word means to the person reading it.
+    """
+    now = now or datetime.now(timezone.utc)
+    local = now.astimezone(tz) if tz else now.astimezone()
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True)

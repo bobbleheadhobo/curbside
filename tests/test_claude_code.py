@@ -616,3 +616,36 @@ def test_an_unknown_rate_limit_status_still_stops_us():
                "result": "{}", "usage": {}}]
     facts = extract(parse_events("\n".join(json.dumps(e) for e in events)))
     assert facts.rate_limit_status not in (None, "allowed", "allowed_warning")
+
+
+def test_the_daily_ceiling_counts_the_users_day_not_utcs(scorer, monkeypatch):
+    """REGRESSION: UTC midnight is 6pm in Albuquerque, inside the waking window
+    every day of the year. Yesterday evening's spend counted against today, and
+    at 6pm the counter reset and handed the bot a second full allowance for the
+    rest of the evening."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    from dealbot.config import ScorerConfig
+    from dealbot.schedule import local_day_start
+
+    sc, store = scorer
+    sc.cfg = ScorerConfig(backend="claude_code", daily_cost_limit_usd=1.0,
+                          timezone="America/Denver")
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+
+    now = datetime.now(timezone.utc)
+    midnight = local_day_start(ZoneInfo("America/Denver"), now)
+
+    # $5 spent two hours before the user's midnight, against a $1 ceiling.
+    # Under the UTC day that was "today" for any morning reading, and judging
+    # would have stood aside on money already accounted for.
+    run_id = store.start_run(_hunt(), "x")
+    store.conn.execute("UPDATE runs SET started_at=?, cost_usd=? WHERE id=?",
+                       ((midnight - timedelta(hours=2)).isoformat(), 5.0, run_id))
+    sc.check_available()
+
+    # Spend inside the user's day still stops it.
+    store.finish_run(store.start_run(_hunt(), "x"), cost_usd=5.0)
+    with pytest.raises(ScoringUnavailable, match="daily spend"):
+        sc.check_available()

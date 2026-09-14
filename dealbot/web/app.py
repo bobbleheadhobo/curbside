@@ -224,10 +224,15 @@ def _daybars(days: list[dict], ceiling: float, w: int = 300, h: int = 44) -> str
             f'aria-label="daily spend">{"".join(out)}</svg>')
 
 
-def _fill_days(rows: list[dict], days: int) -> list[dict]:
-    """Every date in the window, in order, whether or not it has a run."""
+def _fill_days(rows: list[dict], days: int, offset_minutes: int = 0) -> list[dict]:
+    """Every date in the window, in order, whether or not it has a run.
+
+    `offset_minutes` has to match the one the rows were bucketed with, or the
+    newest bar is labelled with a date no row carries and renders as a gap.
+    """
     have = {r["day"]: r for r in rows}
-    today = datetime.now(timezone.utc).date()
+    today = (datetime.now(timezone.utc)
+             + timedelta(minutes=offset_minutes)).date()
     return [have.get((today - timedelta(days=n)).isoformat(),
                      {"day": (today - timedelta(days=n)).isoformat(),
                       "usd": None, "runs": 0, "scored": 0, "degraded": 0})
@@ -1100,14 +1105,16 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         Every figure comes from `runs` -- see the note above `Store.spend_since`
         for why summing `scores` would lose a third of the money.
         """
-        cfg = _live()
+        cfg, sched = _live(), _schedule()
         now = datetime.now(timezone.utc)
-        # The SAME day boundary the spend ceiling uses. `check_available`
-        # compares against UTC midnight, so showing a local-midnight figure
-        # here would disagree with the number that actually stops the judging,
-        # which is the one thing this panel exists to make predictable.
+        # The SAME boundary the spend ceiling uses, and it is the user's
+        # midnight rather than UTC's -- see `schedule.local_day_start`. Read at
+        # 10:25 on a Monday morning, "Today" used to cover everything since 6pm
+        # on the Sunday, because UTC midnight is 6pm in Albuquerque.
+        day_start = schedule_mod.local_day_start(sched.tz, now)
+        day_iso = day_start.isoformat()
         windows = {
-            "today": now.strftime("%Y-%m-%dT00:00:00+00:00"),
+            "today": day_iso,
             "week": (now - timedelta(days=7)).isoformat(),
             "month": (now - timedelta(days=30)).isoformat(),
             "all": None,
@@ -1118,7 +1125,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         history_days = ((now - datetime.fromisoformat(first)).days + 1
                         if first else 0)
         ceiling = cfg.scorer.daily_cost_limit_usd
-        days = _fill_days(store.spend_by_day(30), min(30, max(history_days, 1)))
+        # Bars are the user's days too, or the chart would disagree with the
+        # figure above it on which day is which.
+        offset = int((now.astimezone(sched.tz) if sched.tz
+                      else now.astimezone()).utcoffset().total_seconds() // 60)
+        days = _fill_days(store.spend_by_day(30, offset),
+                          min(30, max(history_days, 1)), offset)
 
         # A run rate, from the shorter of a week and what we actually have.
         # Annualising four days of a new bot would be a made-up number stated
@@ -1141,6 +1153,21 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 "per_save": (row["usd"] / row["saved"]) if row["saved"] else None,
             })
 
+        # What today's money actually went on. Same shape as the all-time
+        # table, scoped to the day, plus the individual listings that cost the
+        # most -- an image pass runs about 15x a text appraisal, so one
+        # photo-checked junk post shows up immediately.
+        today = {
+            "hunts": [{**r,
+                       "name": (hunts[r["hunt_id"]].name if r["hunt_id"] in hunts
+                                else r["hunt_id"].split(":", 1)[-1])}
+                      for r in store.spend_by_hunt(day_iso)],
+            "stages": store.spend_by_stage(day_iso),
+            "sources": store.spend_by_source(day_iso),
+            "dearest": store.dearest_since(day_iso, 5),
+            "started": day_start,
+        }
+
         tokens = store.token_totals()
         billed = tokens["input"] + tokens["cached"]
         return TEMPLATES.TemplateResponse(request, "stats.html", ctx(
@@ -1148,6 +1175,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             ceiling=ceiling, per_day=per_day, history_days=history_days,
             by_hunt=by_hunt, by_source=store.spend_by_source(),
             stages=store.spend_by_stage(), funnel=store.funnel(),
+            today=today, asleep=not sched.is_open(), tz_name=sched.tz_name,
             tokens=tokens,
             cache_pct=(tokens["cached"] / billed * 100) if billed else None))
 

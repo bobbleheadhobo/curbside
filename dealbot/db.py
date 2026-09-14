@@ -824,18 +824,28 @@ class Store:
         ).fetchone()
         return {"usd": r["usd"], "runs": r["runs"], "scored": r["scored"]}
 
-    def spend_by_day(self, days: int = 30) -> list[dict[str, Any]]:
+    def spend_by_day(self, days: int = 30,
+                     offset_minutes: int = 0) -> list[dict[str, Any]]:
         """One row per day, newest last. Days with no run are absent rather
         than zero -- the caller fills the gaps, because a day the bot was off
         and a day it found nothing are different facts and only one of them is
-        worth colouring."""
+        worth colouring.
+
+        `offset_minutes` shifts each run into the USER's day before bucketing,
+        so a bar means the day they lived through rather than the UTC one. It
+        is the offset as it stands now, so in the week around a daylight-saving
+        change an hour of runs can fall in the neighbouring bar. Both switches
+        happen at 2am, so that hour is one the bot is generally asleep for.
+        """
+        shift = f"{int(offset_minutes)} minutes"
         return [dict(r) for r in self.conn.execute(
-            """SELECT substr(started_at, 1, 10) day,
+            """SELECT date(started_at, ?) day,
                       SUM(cost_usd) usd, COUNT(*) runs, SUM(n_scored) scored,
                       SUM(warning IS NOT NULL OR error IS NOT NULL) degraded
                FROM runs
                WHERE started_at >= date('now', ?)
-               GROUP BY day ORDER BY day""", (f"-{int(days)} days",))]
+               GROUP BY day ORDER BY day""",
+            (shift, f"-{int(days) + 1} days"))]
 
     def spend_by_hunt(self, since: str | None = None) -> list[dict[str, Any]]:
         """What each hunt cost and what it actually found.
@@ -868,12 +878,14 @@ class Store:
                 FROM runs r {where}
                 GROUP BY r.hunt_id ORDER BY usd DESC""", args)]
 
-    def spend_by_source(self) -> list[dict[str, Any]]:
+    def spend_by_source(self, since: str | None = None) -> list[dict[str, Any]]:
+        where = "WHERE started_at >= ?" if since else ""
+        args = (since,) if since else ()
         return [dict(r) for r in self.conn.execute(
-            "SELECT source, SUM(cost_usd) usd, SUM(n_fetched) fetched "
-            "FROM runs GROUP BY source ORDER BY usd DESC")]
+            f"SELECT source, SUM(cost_usd) usd, SUM(n_fetched) fetched "
+            f"FROM runs {where} GROUP BY source ORDER BY usd DESC", args)]
 
-    def spend_by_stage(self) -> dict[str, float]:
+    def spend_by_stage(self, since: str | None = None) -> dict[str, float]:
         """Appraisal, the image pass, and everything else.
 
         The first two are attributed on the score row. The third is the
@@ -881,9 +893,13 @@ class Store:
         shown, because it is "what the runs cost that no score claimed"
         rather than a measured triage figure. It is triage in practice.
         """
+        # Two windows, two columns: a score is dated by `scored_at` and a run
+        # by `started_at`. They agree because a score is written inside the run
+        # that paid for it.
         rows = {r["model"]: r["usd"] for r in self.conn.execute(
             "SELECT model, COALESCE(SUM(cost_usd), 0) usd FROM scores "
-            "GROUP BY model")}
+            + ("WHERE scored_at >= ? " if since else "")
+            + "GROUP BY model", (since,) if since else ())}
         # The three shapes a `scores.model` takes, and where each is written:
         # "<model>:triage" in pipeline._triage_scores, "<model>+images" in
         # ClaudeCodeScorer.resolve_with_images, and the bare model name for an
@@ -897,7 +913,9 @@ class Store:
         appraisal = sum(v for k, v in rows.items()
                         if not k.endswith(("+images", ":triage")))
         total = self.conn.execute(
-            "SELECT COALESCE(SUM(cost_usd), 0) t FROM runs").fetchone()["t"]
+            "SELECT COALESCE(SUM(cost_usd), 0) t FROM runs"
+            + (" WHERE started_at >= ?" if since else ""),
+            (since,) if since else ()).fetchone()["t"]
         return {"appraisal": appraisal, "images": images,
                 "other": max(0.0, total - appraisal - images - triage) + triage,
                 "total": total}
@@ -937,6 +955,25 @@ class Store:
         distinct = self.conn.execute(
             "SELECT COUNT(*) n FROM listings").fetchone()["n"]
         return {**dict(r), "saved": saved, "distinct": distinct}
+
+    def dearest_since(self, since: str, limit: int = 5) -> list[dict[str, Any]]:
+        """The individual listings that cost the most, newest window first.
+
+        The most literal answer to "what did I spend money on", and the one
+        that catches a single odd listing eating an afternoon: an image pass
+        runs about 15x a text appraisal, so one photo-checked junk post shows
+        up here immediately.
+
+        APPRAISAL COST ONLY. Triage is billed per batch and written to its
+        score row as 0, so these figures are a floor rather than the whole of
+        what a listing cost. The column says so.
+        """
+        return [dict(r) for r in self.conn.execute(
+            """SELECT s.listing_id, s.hunt_id, s.cost_usd, s.deal_score,
+                      s.images_checked, l.title, l.price_cents
+               FROM scores s JOIN listings l ON l.id = s.listing_id
+               WHERE s.scored_at >= ? AND s.cost_usd > 0
+               ORDER BY s.cost_usd DESC LIMIT ?""", (since, int(limit)))]
 
     def first_run_at(self) -> str | None:
         """So the page can say how much history it is talking about instead of

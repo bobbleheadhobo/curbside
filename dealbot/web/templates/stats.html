@@ -46,7 +46,78 @@
     About ${{ '%.2f'|format(per_day) }} a day: roughly
     ${{ '%.0f'|format(per_day * 30) }} a month at this rate.
     Amber marks a day when most runs stood aside on quota.
+    {# Worth saying once: the ceiling and this page now agree on when a day
+       starts, and it is the user's midnight. It used to be UTC, which here is
+       6pm. #}
+    Days run midnight to midnight{% if tz_name %}, {{ tz_name }}{% endif %}.
   </p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <h2>Today</h2>
+  {# What the figure above it actually went on. Same shape as the all-time
+     table so the two read the same way, plus the individual listings that
+     cost the most: an image pass runs about 15x a text appraisal, so one
+     photo-checked junk post shows up here straight away. #}
+  {% if today.hunts %}
+  <div class="wrap"><table class="responsive">
+    <thead><tr><th>Hunt</th><th class="n">Spent</th><th class="n">Judged</th>
+      <th class="n">Binned</th></tr></thead>
+    <tbody>
+    {% for h in today.hunts %}
+    <tr>
+      <td class="lead" data-label="Hunt">{{h.name}}</td>
+      <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd) }}</td>
+      <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored}}</td>
+      <td class="n num {{'zero' if not h.binned}}" data-label="Binned">{{h.binned}}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <div class="splits">
+    <div class="split">
+      <h3>By stage</h3>
+      <dl>
+        <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(today.stages.appraisal) }}</dd>
+        <dt>Photo checks</dt><dd class="num">${{ '%.2f'|format(today.stages.images) }}</dd>
+        <dt>Triage <small>(derived)</small></dt>
+        <dd class="num">${{ '%.2f'|format(today.stages.other) }}</dd>
+      </dl>
+    </div>
+    <div class="split">
+      <h3>By source</h3>
+      <dl>
+        {% for s in today.sources %}
+        <dt>{{s.source}}</dt><dd class="num">${{ '%.2f'|format(s.usd) }}</dd>
+        {% else %}<dt>Nothing yet</dt><dd class="num">&mdash;</dd>{% endfor %}
+      </dl>
+    </div>
+    <div class="split">
+      <h3>Dearest judged</h3>
+      {% if today.dearest %}
+      <ol class="dearest">
+        {% for d in today.dearest %}
+        <li>
+          <a href="/listing/{{d.listing_id}}?back=/stats">{{ d.title }}</a>
+          <span class="num">${{ '%.3f'|format(d.cost_usd) }}</span>
+          {% if d.images_checked %}
+          <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {# Appraisal only: triage is billed per batch and written to its score
+         row as 0, so these are a floor rather than the whole cost. #}
+      <p class="hint">Appraisal only. Triage is billed per batch.</p>
+      {% else %}
+      <p class="hint">Nothing judged yet.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="panel-note">Nothing spent yet today.
+    {% if asleep %}The bot is asleep.{% endif %}</p>
+  {% endif %}
 </div>
 
 <div class="panel" style="margin-bottom:18px">

@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 411 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 419 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -170,6 +170,14 @@ at 15 against a configured 60 — 2-4x the intended requests, at two sources tha
 throttle silently, to retry something no amount of fetching can fix. The health
 pill had been taught to special-case the error string, which fixed how it looked
 and left the cadence broken. Fix the column, not the display.
+
+**A "day" is the user's day, in one place.** `schedule.local_day_start` is
+that place, and both the daily spend ceiling and `/stats` call it. It was UTC
+midnight on both sides, which in Albuquerque is 6pm and inside the waking
+window every day of the year: the ceiling reset mid-evening and handed the bot
+a second full allowance, and the dashboard reported yesterday evening's spend
+as today's. The zone is configured once, in `schedule.timezone`, and copied to
+`ScorerConfig.timezone` rather than set twice.
 
 **Fetching is free; judgement is not.** Every pause — quota ceiling, rate limit,
 spend ceiling, connectivity — stops the *judging* and lets the *collecting*

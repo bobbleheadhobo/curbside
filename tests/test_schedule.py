@@ -192,3 +192,51 @@ def test_the_settings_page_shows_the_span(tmp_path):
     body = client.get("/settings").text
     assert "Awake 21 hours a day." in body
     assert "runs past midnight" in body
+
+
+# --- what a "day" is, for the spend ceiling and for the page ---------------
+
+def test_a_day_starts_where_the_user_is_not_where_utc_is():
+    """The daily spend ceiling used UTC midnight, which in Albuquerque is 6pm
+    and so fell INSIDE the waking window every day of the year. The counter
+    meant to cap a day's spending reset in the middle of the evening and
+    handed the bot a second full allowance for the rest of it."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    from dealbot.schedule import local_day_start
+
+    abq = ZoneInfo("America/Denver")
+    # 10:25 on a Monday morning, which is when this was noticed.
+    now = datetime(2026, 9, 14, 16, 25, tzinfo=timezone.utc)
+    start = local_day_start(abq, now)
+
+    assert start == datetime(2026, 9, 14, 6, 0, tzinfo=timezone.utc)
+    assert start.astimezone(abq).hour == 0
+    # the old boundary was 6pm the previous evening, local
+    old = now.replace(hour=0, minute=0)
+    assert old.astimezone(abq).hour == 18
+    assert old.astimezone(abq).day == 13
+
+
+def test_the_day_boundary_follows_daylight_saving():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    from dealbot.schedule import local_day_start
+
+    abq = ZoneInfo("America/Denver")
+    summer = local_day_start(abq, datetime(2026, 7, 1, 20, 0, tzinfo=timezone.utc))
+    winter = local_day_start(abq, datetime(2026, 12, 1, 20, 0, tzinfo=timezone.utc))
+    assert summer.hour == 6            # MDT, UTC-6
+    assert winter.hour == 7            # MST, UTC-7
+    for start, zone in ((summer, abq), (winter, abq)):
+        assert start.astimezone(zone).hour == 0
+
+
+def test_no_timezone_falls_back_to_the_machine_rather_than_to_utc():
+    """Failing open, like everything else here. A bot with no zone configured
+    is one running on the machine's clock, which is what it did before the
+    zone was configurable at all."""
+    from datetime import datetime, timezone
+    from dealbot.schedule import local_day_start
+    now = datetime(2026, 9, 14, 16, 25, tzinfo=timezone.utc)
+    assert local_day_start(None, now).astimezone().hour == 0

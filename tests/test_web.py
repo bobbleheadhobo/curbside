@@ -1168,3 +1168,117 @@ def test_a_standdown_with_no_reason_does_not_report_its_own_prefix():
         assert standdown_reason(bare) == "reason not recorded", bare
     # and it still has to report the pause, not fall through and hide it
     assert standdown_reason("2 detail fetches failed") is None
+
+
+# --- what today's money went on -------------------------------------------
+
+def _today_iso(cfg=None):
+    """The user's midnight, as the page and the spend ceiling both compute it."""
+    from zoneinfo import ZoneInfo
+    from dealbot.schedule import local_day_start
+    name = cfg.schedule.tz_name if cfg else None
+    return local_day_start(ZoneInfo(name) if name else None)
+
+
+def _spend_today(store, cfg, hunt_id, source, usd, **counts):
+    """A run an hour into the user's day, so it lands in today whatever the
+    clock says when the suite runs."""
+    from datetime import timedelta
+    run_id = store.start_run(type("H", (), {"id": hunt_id})(), source)
+    store.conn.execute("UPDATE runs SET started_at=? WHERE id=?",
+                       ((_today_iso(cfg) + timedelta(hours=1)).isoformat(), run_id))
+    store.finish_run(run_id, cost_usd=usd, **counts)
+    return run_id
+
+
+def test_today_breaks_down_where_the_money_went(tmp_path):
+    """The Today figure says how much. This says what on."""
+    client, cfg = _client(tmp_path)
+    from dealbot.db import Store
+    s = Store(cfg.db_path)
+    _spend_today(s, cfg, "want:tv-stand", "facebook", 2.00,
+                 n_scored=20, n_wanted=2)
+    _spend_today(s, cfg, "sweep:free-nearby", "craigslist", 0.50, n_scored=6)
+
+    page = client.get("/stats").text
+    body = page[page.index("<h2>Today</h2>"):page.index("<h2>Each hunt</h2>")]
+    assert "tv-stand" in body and "free-nearby" in body
+    assert "$2.00" in body and "$0.50" in body
+    assert "facebook" in body and "craigslist" in body
+
+
+def test_today_ignores_yesterday_evening(tmp_path):
+    """The boundary this page and the spend ceiling share is the USER's
+    midnight. UTC's is 6pm in Albuquerque, so an evening's spend used to show
+    up as the next morning's."""
+    from datetime import timedelta
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+
+    run_id = s.start_run(type("H", (), {"id": "want:tv-stand"})(), "facebook")
+    s.conn.execute("UPDATE runs SET started_at=? WHERE id=?",
+                   ((_today_iso(cfg) - timedelta(hours=2)).isoformat(), run_id))
+    s.finish_run(run_id, cost_usd=7.77, n_scored=30)
+
+    page = client.get("/stats").text
+    body = page[page.index("<h2>Today</h2>"):page.index("<h2>Each hunt</h2>")]
+    assert "Nothing spent yet today" in body
+    assert "7.77" not in body
+    assert "$7.77" in page, "and it still counts towards all time"
+
+
+def test_the_dearest_listing_today_is_findable(tmp_path):
+    """An image pass runs about 15x a text appraisal, so one photo-checked
+    junk post can eat an afternoon. It should be one glance away."""
+    from datetime import timedelta
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spend_today(s, cfg, "sweep:free-nearby", "craigslist", 1.0, n_scored=2)
+
+    when = _today_iso(cfg) + timedelta(hours=1)
+    for lid, title, model, usd in (
+            ("x:1", "A cheap chair", "sonnet", 0.003),
+            ("x:2", "Free junk metal removal", "sonnet+images", 0.052)):
+        l = Listing(id=lid, source="x", source_id=lid[-1], title=title,
+                    description=None, price_cents=0, currency="USD", url="u")
+        s.upsert_listing(l)
+        s.save_score(Score(listing_id=lid, hunt_id="sweep:free-nearby",
+                           model=model, scored_at=when, match="no",
+                           deal_score=1.0, est_value_cents=None, condition=None,
+                           matched_want=None, worth_grabbing=False, unknowns=(),
+                           requirements=(), red_flags=(), reasoning="r",
+                           images_checked=1 if "image" in model else 0,
+                           cost_usd=usd), priced_at_cents=0)
+
+    rows = s.dearest_since(_today_iso(cfg).isoformat())
+    assert [r["listing_id"] for r in rows] == ["x:2", "x:1"], "dearest first"
+
+    page = client.get("/stats").text
+    assert "Free junk metal removal" in page
+    assert "$0.052" in page
+    assert "Appraisal only" in page, "the figure is a floor and must say so"
+
+
+def test_a_free_judgement_is_not_listed_as_something_we_paid_for(tmp_path):
+    """Triage rows carry a zero cost. A list of what money went on must not be
+    padded with things that cost nothing."""
+    from datetime import timedelta
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    _client(tmp_path)
+    s = Store(tmp_path / "dearest.db")
+    l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
+                price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l)
+    when = _today_iso()
+    s.save_score(Score(listing_id="x:1", hunt_id="h", model="claude_code:triage",
+                       scored_at=when + timedelta(hours=1), match="no",
+                       deal_score=0.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=False, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="",
+                       cost_usd=0.0), priced_at_cents=0)
+    assert s.dearest_since(when.isoformat()) == []
+    s.close()

@@ -317,6 +317,33 @@ judging the string handed over rather than the URL a browser resolves:
 Strip the first three characters, then treat `/` and `\` as off-site in
 second place. A test walks both shapes.
 
+## A day starts where the user is
+
+The daily spend ceiling compared against **UTC midnight**, which in Albuquerque
+is 6pm — inside the waking window on every day of the year. Two consequences,
+and the second is the worse one:
+
+* `/stats` reported yesterday evening as today. Measured at 10:25 on a Monday
+  morning, "Today" read $1.23 and every cent of it had been spent before 6pm
+  the previous evening.
+* The counter meant to **cap a day's spending reset in the middle of the
+  evening**, so a day that had already spent its allowance got a second full
+  one for the rest of the night. It never bound in practice — daily spend runs
+  $3-7 against a $10 ceiling — but it was a ceiling that could be exceeded by
+  design.
+
+`schedule.local_day_start(tz, now)` is the single definition, and both
+`ClaudeCodeScorer.check_available` and `/stats` call it. The zone comes from
+`schedule.timezone` in `config.yaml`, copied onto `ScorerConfig.timezone` so
+the scorer does not become a second place to configure one. With no zone set
+it falls back to the machine's local time, not to UTC, like every other
+fail-open default here.
+
+**The daily bars are bucketed the same way**, with the offset as it stands now.
+In the week around a daylight-saving change an hour of runs can land in the
+neighbouring bar; both switches happen at 2am, which is an hour the bot is
+generally asleep for.
+
 ## /stats has no tab, on purpose
 
 Five tabs is what fits across a phone, and the sixth thing was already spent
@@ -354,6 +381,13 @@ asserts the three figures still add up to what was spent.
 them, so every cost on the page would be multiplied by however many listings
 that hunt matched.
 
+**The Today panel answers the Spend panel.** The figure says how much, the
+panel says what on: per hunt, per stage, per source, and the dearest few
+listings judged. That last list is the one that catches a single odd listing
+eating an afternoon, because an image pass runs about 15x a text appraisal.
+Its costs are **appraisal only** and the panel says so: triage is billed per
+batch and written to its score row as 0, so a per-listing figure is a floor.
+
 **Three numbers on this page can lie if nobody watches them.** Each has a
 test:
 
@@ -365,10 +399,11 @@ test:
   days", "last 30 days" and "all time" are one number, and three identical
   figures read as a bug. Any window covering the whole history says "all of
   it so far" instead.
-* **"Today" uses UTC.** Not the local day, because `check_available` compares
-  the daily spend ceiling against UTC midnight. A local-midnight figure here
-  would disagree with the number that actually stops the judging, which is
-  the one thing that panel exists to make predictable.
+* **"Today" is the user's day, and so is the spend ceiling.** Both call
+  `schedule.local_day_start`, so neither can drift from the other or from
+  what the word means to the person reading it. It used to be the UTC day on
+  both sides, which is 6pm in Albuquerque: read at 10:25 on a Monday morning,
+  "Today" covered everything since 6pm on the Sunday. See the section below.
 
 ## Things not to break
 
