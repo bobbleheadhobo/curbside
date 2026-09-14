@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 419 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 427 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -377,6 +377,18 @@ Relist detection is **inert** — neither source exposes a seller id, so the
 fingerprint falls back to the listing's own id. That is deliberate: title+price
 matching produced false merges (four different "Curb alert" posts collapsing
 into one). Inert beats confidently wrong.
+
+**Duplicates are caught on TWO keys, and a third would need the same care.**
+`dup_key` is normalised title + exact price + coordinates, and catches the
+cross-post. `image_key` is the photo's own id + coordinates, and catches the
+repost — which `dup_key` misses whenever the seller changes anything it
+hashes. One gas stove reached Discord twice because Craigslist reported it at
+$0 on one posting and with no price at all on the other, so one item made two
+keys. Do **not** "fix" that by normalising the price: that merges a free
+listing with an unpriced one on title and place alone, which is the aggressive
+direction these keys exist to avoid. The photograph is the stronger evidence,
+and it is paired with coordinates precisely so two sellers posting the same
+stock shot of an appliance are still two listings.
 
 Comparables from the bot's own price history need about a month of observations.
 That is why the timer matters more than the polish — the data accrues with

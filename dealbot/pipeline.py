@@ -427,15 +427,28 @@ def run_hunt(
     seen_keys: dict[str, str] = {}
 
     def _duplicate(cand: Candidate) -> str | None:
-        key = cand.listing.dup_key
-        if not key:
+        # TWO identities, and either one is enough. `dup_key` is
+        # title+price+place and catches the cross-post; `img_key` is
+        # photo+place and catches the repost. A seller put the same gas stove
+        # up twice three minutes apart and both reached Discord, because
+        # Craigslist reported one at $0 and the other with no price at all and
+        # `dup_key` hashes the price exactly.
+        keys = [k for k in (cand.listing.dup_key, cand.listing.image_key) if k]
+        if not keys:
             return None
-        prior = store.scored_duplicate(hunt.id, key, cand.listing.id)
+        prior = store.scored_duplicate(hunt.id, cand.listing.dup_key,
+                                       cand.listing.id, cand.listing.image_key)
         if prior:
             return f"duplicate_of:{prior}"
-        if key in seen_keys:
-            return f"duplicate_of:{seen_keys[key]}"
-        seen_keys[key] = cand.listing.id
+        for key in keys:
+            if key in seen_keys:
+                return f"duplicate_of:{seen_keys[key]}"
+        # Both keys point at this listing, so a later candidate matching
+        # EITHER one is caught. Registering only the key that happened to be
+        # checked first would make the batch-local check weaker than the
+        # stored one for no reason.
+        for key in keys:
+            seen_keys[key] = cand.listing.id
         return None
 
     gr = _drop(store, hunt, gr, _duplicate,

@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS listings (
   posted_at     TEXT,
   fingerprint   TEXT NOT NULL,
   dup_key       TEXT,
+  img_key       TEXT,
   first_seen    TEXT NOT NULL,
   last_seen     TEXT NOT NULL,
   -- 0 once the listing is known to be off the market. Until the re-check pass
@@ -206,6 +207,7 @@ class Store:
                         ("image_question", "TEXT"),
                         ("images_checked", "INTEGER NOT NULL DEFAULT 0"))),
             ("listings", (("dup_key", "TEXT"),
+                          ("img_key", "TEXT"),
                           ("previous_price_cents", "INTEGER"),
                           ("sold_at", "TEXT"),
                           ("sold_reason", "TEXT"))),
@@ -232,6 +234,8 @@ class Store:
         # new column fails on every pre-existing database.
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_dup_key "
                           "ON listings(dup_key)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_img_key "
+                          "ON listings(img_key)")
         # The bin views filter on status ALONE, without a hunt_id, so
         # ix_matches_status(hunt_id, status) never applied to them -- every bin
         # page scanned hunt_matches. Worse, the one-row-per-listing subquery
@@ -340,8 +344,9 @@ class Store:
                 """INSERT INTO listings (id, source, source_id, title, description,
                      price_cents, previous_price_cents, currency, url, city, lat, lng, distance_mi,
                      seller_id, seller_name, images, category, posted_at,
-                     fingerprint, dup_key, first_seen, last_seen, is_active, raw)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+                     fingerprint, dup_key, img_key, first_seen, last_seen,
+                     is_active, raw)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
                 (listing.id, listing.source, listing.source_id, listing.title,
                  listing.description, listing.price_cents,
                  listing.previous_price_cents, listing.currency,
@@ -349,7 +354,8 @@ class Store:
                  listing.distance_mi, listing.seller_id, listing.seller_name,
                  json.dumps(list(listing.images)), listing.category,
                  listing.posted_at.isoformat() if listing.posted_at else None,
-                 listing.fingerprint, listing.dup_key, now, now,
+                 listing.fingerprint, listing.dup_key, listing.image_key,
+                 now, now,
                  json.dumps(listing.raw)),
             )
             return UpsertResult(listing.id, True, False, None, is_relist,
@@ -375,6 +381,10 @@ class Store:
                  lng          = COALESCE(?, lng),
                  distance_mi  = COALESCE(?, distance_mi),
                  dup_key      = COALESCE(?, dup_key),
+                 -- COALESCE for the same reason as the rest: Facebook's search
+                 -- feed carries one photo and no coordinates, so the key only
+                 -- becomes computable at detail time.
+                 img_key      = COALESCE(?, img_key),
                  -- Craigslist only reveals postedDate on the item page, so
                  -- leaving these out of the UPDATE meant every Craigslist
                  -- listing had no age: no "listed 12d ago", no motivated-seller
@@ -396,7 +406,7 @@ class Store:
             (listing.title, listing.description, listing.price_cents,
              listing.previous_price_cents, listing.url,
              listing.city, listing.lat, listing.lng, listing.distance_mi,
-             listing.dup_key,
+             listing.dup_key, listing.image_key,
              listing.posted_at.isoformat() if listing.posted_at else None,
              listing.category, listing.seller_id, listing.seller_name,
              json.dumps(list(listing.images)), json.dumps(list(listing.images)),
@@ -405,16 +415,27 @@ class Store:
         return UpsertResult(listing.id, False, changed, previous, False,
                             first_seen=row["first_seen"])
 
-    def scored_duplicate(self, hunt_id: str, dup_key: str,
-                         exclude_id: str) -> str | None:
-        """A different listing with the same physical identity that this hunt has
-        already judged. Cross-posting to both marketplaces is common, and without
-        this you pay to appraise the same item twice and see it twice."""
+    def scored_duplicate(self, hunt_id: str, dup_key: str | None,
+                         exclude_id: str,
+                         img_key: str | None = None) -> str | None:
+        """A different listing with the same physical identity that this hunt
+        has already judged. Cross-posting to both marketplaces is common, and
+        without this you pay to appraise the same item twice and see it twice.
+
+        EITHER identity is enough. `dup_key` is title+price+place and catches
+        the cross-post; `img_key` is photo+place and catches the repost, which
+        `dup_key` misses whenever the seller changes anything it hashes -- one
+        gas stove was posted twice three minutes apart and reached Discord
+        twice because Craigslist called it $0 once and priceless the other.
+
+        A None key matches nothing rather than everything: SQL equality against
+        NULL is never true, which is the behaviour wanted here.
+        """
         row = self.conn.execute(
             """SELECT l.id FROM listings l
                JOIN scores s ON s.listing_id = l.id AND s.hunt_id = ?
-               WHERE l.dup_key = ? AND l.id <> ? LIMIT 1""",
-            (hunt_id, dup_key, exclude_id)).fetchone()
+               WHERE (l.dup_key = ? OR l.img_key = ?) AND l.id <> ? LIMIT 1""",
+            (hunt_id, dup_key, img_key, exclude_id)).fetchone()
         return row["id"] if row else None
 
     def record_price(self, listing_id: str, price_cents: int | None,

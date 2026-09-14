@@ -79,7 +79,8 @@ class Listing:                     # normalized, what the store holds
     images: tuple[str, ...]        # a listing with none of these is never judged
     category: str | None; posted_at: datetime | None
     raw: dict
-    # computed: dup_key (same item cross-source), fingerprint (relists, inert)
+    # computed: dup_key (same item cross-source), image_key (same item
+    #           reposted), fingerprint (relists, inert)
 
 @dataclass(frozen=True)
 class Score:

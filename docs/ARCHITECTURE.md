@@ -208,6 +208,14 @@ from "silently broken", so it is no longer the caller's to remember.
 
   Both run after enrichment, because that is where both arrive: Craigslist's
   search feed carries no description at all, and Facebook's carries one photo.
+- **Reposts.** A seller puts the same thing up twice, minutes apart, and
+  `dup_key` cannot see it: it hashes the price exactly, and Craigslist spells
+  "free" two ways (`-1` for no price shown, `0` for free). One gas stove was
+  posted at $0 and then with no price at all, so it made two keys, was
+  appraised twice and reached Discord twice. `image_key` — the photo's own id
+  plus coordinates — catches these. Backfilling it over the collected data
+  found 24 repost groups, one of them the same item posted four times, and
+  eight of them had been appraised more than once.
 - **Cross-source duplicates.** People post the same thing to both marketplaces.
   After enrichment (when both sources have coordinates) a `dup_key` of
   normalised title + exact price + coordinates rounded to ~1km identifies the
@@ -382,6 +390,7 @@ fails if either loses it.
 | Same listing, later run | primary key `source:source_id`, upserted |
 | Same listing, several queries in one run | in-run `seen` set |
 | Same item cross-posted to both sources | `dup_key` (needs coordinates, so post-enrichment) |
+| Same item reposted by its seller | `image_key` (the photo's id + coordinates) |
 | Same listing matched by several hunts | **deliberately not merged** — independent triage state per hunt |
 | Relist: same item, brand-new id | `fingerprint` — **inert**, since neither source exposes a seller id. Falls back to the listing's own id so relists are simply not detected rather than falsely detected. |
 

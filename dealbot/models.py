@@ -124,6 +124,28 @@ class RawListing:
     fetched_at: datetime
 
 
+# `_600x450` on Craigslist, and everything after "?" on Facebook: one is the
+# size we asked for and the other is a signature that expires. Neither says
+# anything about which photograph this is.
+_IMG_SIZE_SUFFIX = re.compile(r"_\d{2,4}x\d{2,4}$")
+
+
+def _image_id(url: str) -> str | None:
+    """The stable part of an image URL: the file's own name.
+
+    Facebook re-signs its URLs and they expire in about four days, so anything
+    from "?" onwards is noise. Craigslist serves the same upload at several
+    sizes under one id.
+    """
+    if not url or "://" not in url:
+        return None
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    name = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    name = _IMG_SIZE_SUFFIX.sub("", name).strip().lower()
+    # Two characters of filename is not an identity worth merging on.
+    return name if len(name) >= 8 else None
+
+
 @dataclass(frozen=True)
 class Listing:
     id: str                          # f"{source}:{source_id}"
@@ -151,6 +173,34 @@ class Listing:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def image_key(self) -> str | None:
+        """The same PHOTOGRAPH, in the same place. A second duplicate signal.
+
+        `dup_key` is deliberately conservative -- it has to be, because
+        title+price merging once collapsed four separate "Curb alert" posts
+        into one -- and being conservative it misses a plain repost. A seller
+        posted the same gas stove twice, three minutes apart, and the two
+        alerts differed only in that Craigslist reported one as $0 and the
+        other with no price at all. Title, coordinates, seller and PHOTO were
+        identical; `dup_key` hashes the price, so "0" and "None" made two keys
+        for one stove.
+
+        Both sources put a stable id in the image path and the volatile part in
+        the query string, which is what expires. So the same upload keeps the
+        same id even after Facebook's URL is re-signed.
+
+        Paired with coordinates ON PURPOSE. An image id alone would merge two
+        different sellers who happened to post the same stock photo of an
+        appliance, and losing a real listing silently is the failure that
+        matters here. Same picture AND the same square kilometre is one item.
+        """
+        ident = _image_id(self.images[0]) if self.images else None
+        if not ident or self.lat is None or self.lng is None:
+            return None
+        key = f"{ident}|{round(self.lat, 2)}|{round(self.lng, 2)}"
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+    @property
     def dup_key(self) -> str | None:
         """Identifies the same physical item CROSS-SOURCE, for people who post
         the same thing to Facebook and Craigslist.
@@ -160,6 +210,15 @@ class Listing:
         short and generic to discriminate ("Free", "Gone", "credenza"). Failing
         to dedupe costs one duplicate card and one wasted appraisal; merging two
         different couches loses a listing silently, which is worse.
+
+        **Price is hashed exactly, and a source can spell one price two ways.**
+        Craigslist returns -1 for "no price shown" and 0 for free, so the same
+        free item posted twice can arrive as `None` and as `0` and hash
+        differently -- which is exactly how one gas stove produced two alerts.
+        Normalising them here would merge a free listing with an unpriced one
+        on title and location alone, which is the aggressive direction this key
+        exists to avoid. `image_key` catches that case on stronger evidence
+        instead.
         """
         if self.lat is None or self.lng is None:
             return None

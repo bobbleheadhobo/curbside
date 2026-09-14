@@ -77,3 +77,63 @@ def test_dup_key_refuses_to_guess():
     assert a.dup_key != make_listing("a:3", **{**base, "lat": 35.4}).dup_key
     assert make_listing("a:4", **{**base, "lat": None}).dup_key is None
     assert make_listing("a:5", **{**base, "title": "Gone"}).dup_key is None
+
+
+# --- the same photograph, in the same place --------------------------------
+
+CL_IMG = "https://images.craigslist.org/00e0e_63Mjb6WaX9P_0t20CI_600x450.jpg"
+FB_IMG = ("https://scontent-den2-1.xx.fbcdn.net/v/t39.84726-6/"
+          "799972259_4492670121002242_9148355196896334986_n.jpg"
+          "?stp=c0.43.261.261a_dst-jpg&_nc_cat=109&oh=aaa")
+
+
+def test_a_repost_the_price_key_misses_is_caught_by_the_photo():
+    """REGRESSION, reported from Discord: one gas stove, two alerts.
+
+    The seller posted it twice three minutes apart. Same title, same
+    coordinates, same seller, same photograph -- and Craigslist reported one
+    at $0 and the other with no price at all. `dup_key` hashes the price
+    exactly, so "0" and "None" made two keys for one stove."""
+    base = dict(title="Free gas stove", lat=35.3285, lng=-106.5309,
+                images=(CL_IMG,))
+    free = make_listing("craigslist:a", price_cents=0, **base)
+    unpriced = make_listing("craigslist:b", price_cents=None, **base)
+
+    assert free.dup_key != unpriced.dup_key, "the key that missed it"
+    assert free.image_key is not None
+    assert free.image_key == unpriced.image_key
+
+
+def test_the_same_upload_at_another_size_is_the_same_photo():
+    a = make_listing("craigslist:a", lat=35.1, lng=-106.6, images=(CL_IMG,))
+    b = make_listing("craigslist:b", lat=35.1, lng=-106.6, images=(
+        "https://images.craigslist.org/00E0E_63Mjb6WaX9P_0t20CI_1200x900.jpg",))
+    assert a.image_key == b.image_key
+
+
+def test_a_resigned_facebook_url_is_the_same_photo():
+    """Facebook's URLs expire in about four days and come back re-signed. The
+    identity is in the path; everything after "?" is the signature."""
+    a = make_listing("facebook:a", lat=35.1, lng=-106.6, images=(FB_IMG,))
+    b = make_listing("facebook:b", lat=35.1, lng=-106.6,
+                     images=(FB_IMG.split("?")[0] + "?stp=OTHER&oh=zzz",))
+    assert a.image_key == b.image_key
+
+
+def test_one_stock_photo_in_two_towns_is_two_listings():
+    """The reason the key is photo AND place. Two sellers can post the same
+    manufacturer shot of an appliance, and merging them would lose a real
+    listing silently -- the failure this project minds most."""
+    a = make_listing("a:1", lat=35.08, lng=-106.65, images=(CL_IMG,))
+    b = make_listing("a:2", lat=35.68, lng=-105.94, images=(CL_IMG,))
+    assert a.image_key != b.image_key
+
+
+def test_the_photo_key_refuses_to_guess():
+    base = dict(lat=35.1, lng=-106.6, images=(CL_IMG,))
+    assert make_listing("a:1", **{**base, "images": ()}).image_key is None
+    assert make_listing("a:2", **{**base, "lat": None}).image_key is None
+    # a filename too short to be an identity
+    assert make_listing("a:3", **{**base,
+                                  "images": ("https://x.test/a.jpg",)}).image_key is None
+    assert make_listing("a:4", **{**base, "images": ("not a url",)}).image_key is None

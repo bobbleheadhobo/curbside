@@ -1384,3 +1384,120 @@ def test_the_backlog_actually_drains_run_over_run(rig):
 
     assert seen == sorted(seen, reverse=True), f"backlog never drained: {seen}"
     assert seen[-1] == 0, f"backlog stalled at {seen[-1]}"
+
+
+def test_a_repost_does_not_reach_the_alerts_twice(rig):
+    """REGRESSION, reported from Discord: one gas stove, two notifications.
+
+    The seller posted it twice, three minutes apart, and both arrived in the
+    same fetch. Same title, same coordinates, same seller, same photograph --
+    but Craigslist reported one at $0 and the other with no price at all, and
+    `dup_key` hashes the price exactly. So there were two keys for one stove
+    and both were judged, binned and announced.
+    """
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from conftest import make_listing
+    from dealbot.models import RawListing
+
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    now = datetime.now(timezone.utc)
+    photo = "https://images.craigslist.org/00e0e_63Mjb6WaX9P_0t20CI_600x450.jpg"
+
+    class Reposted:
+        name = "fixture"
+
+        def search(self, hunt):
+            return iter([RawListing("fixture", n, {}, now) for n in ("a", "b")])
+
+        def parse(self, raw):
+            return make_listing(
+                lid=f"fixture:{raw.source_id}", title="Free gas stove",
+                description="Works, just older and needs a good cleaning.",
+                # The two spellings of free that made two keys.
+                price_cents=0 if raw.source_id == "a" else None,
+                lat=35.3285, lng=-106.5309, images=(photo,), posted_at=now)
+
+    r = run_hunt(store, hunt, Reposted(), scorer, notifiers, cfg.location)
+
+    assert r.n_scored == 1, "the repost was judged as well as the original"
+    reasons = {row["listing_id"]: row["filter_reason"] for row in store.conn.execute(
+        "SELECT listing_id, filter_reason FROM hunt_matches WHERE hunt_id=?",
+        (hunt.id,))}
+    dropped = [lid for lid, why in reasons.items()
+               if (why or "").startswith("duplicate_of:")]
+    assert len(dropped) == 1, f"expected one of the pair dropped: {reasons}"
+
+
+def test_a_repost_arriving_in_a_LATER_run_is_still_caught(rig):
+    """The batch-local check only sees one fetch. A seller who reposts an hour
+    later is the same item and must be matched against what is already
+    judged, which is what the stored key is for."""
+    from datetime import datetime, timezone
+
+    from conftest import make_listing
+    from dealbot.models import RawListing
+
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    now = datetime.now(timezone.utc)
+    photo = "https://images.craigslist.org/00e0e_63Mjb6WaX9P_0t20CI_600x450.jpg"
+
+    class One:
+        name = "fixture"
+
+        def __init__(self, sid, price):
+            self.sid, self.price = sid, price
+
+        def search(self, hunt):
+            return iter([RawListing("fixture", self.sid, {}, now)])
+
+        def parse(self, raw):
+            return make_listing(
+                lid=f"fixture:{raw.source_id}", title="Free gas stove",
+                description="Works, just older.", price_cents=self.price,
+                lat=35.3285, lng=-106.5309, images=(photo,), posted_at=now)
+
+    first = run_hunt(store, hunt, One("a", 0), scorer, notifiers, cfg.location)
+    assert first.n_scored == 1
+
+    second = run_hunt(store, hunt, One("b", None), scorer, notifiers, cfg.location)
+    assert second.n_scored == 0, "the repost was appraised a second time"
+    why = store.conn.execute(
+        "SELECT filter_reason FROM hunt_matches WHERE listing_id='fixture:b'"
+    ).fetchone()["filter_reason"]
+    assert why == "duplicate_of:fixture:a"
+
+
+def test_two_different_things_photographed_apart_are_not_merged(rig):
+    """The other direction, and the one that matters more: merging two real
+    listings loses one silently."""
+    from datetime import datetime, timezone
+
+    from conftest import make_listing
+    from dealbot.models import RawListing
+
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    now = datetime.now(timezone.utc)
+
+    class Two:
+        name = "fixture"
+
+        def search(self, hunt):
+            return iter([RawListing("fixture", n, {}, now) for n in ("a", "b")])
+
+        def parse(self, raw):
+            a = raw.source_id == "a"
+            return make_listing(
+                lid=f"fixture:{raw.source_id}",
+                title="Free gas stove" if a else "Free dining chairs",
+                description="Come and take it.", price_cents=0,
+                lat=35.3285 if a else 35.11, lng=-106.5309 if a else -106.62,
+                images=(f"https://images.craigslist.org/00e0e_{raw.source_id}"
+                        f"AAAAAAAA_0t20CI_600x450.jpg",), posted_at=now)
+
+    r = run_hunt(store, hunt, Two(), scorer, notifiers, cfg.location)
+    assert r.n_scored == 2, "two real listings were collapsed into one"
