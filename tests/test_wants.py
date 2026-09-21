@@ -591,3 +591,164 @@ def test_drafting_uses_the_model_the_config_names(tmp_path):
     assert scorer._spent_this_process == 0.25, "the draft was counted twice"
     assert scorer.drain_unbilled() == 0.0, (
         "nothing drains unbilled spend in the web process; it would pile up unread")
+
+
+# --- a want you are finished with should stop following you around ----------
+
+
+def _want_with_listings(client, cfg, store, name="lamp"):
+    """A want holding one of each status archiving has an opinion about."""
+    from datetime import datetime, timezone
+    from dealbot.models import Listing, Score, Want
+    store.seed_wants((Want(name=name, description="a lamp",
+                           max_price_cents=10000, queries=("lamp",)),))
+    hid = f"want:{name}"
+    made = {}
+    for n, status in enumerate(("saved", "wanted", "scored", "dismissed",
+                                "grabbed")):
+        l = Listing(id=f"x:{n}", source="x", source_id=str(n),
+                    title=f"A {status} lamp", description=None, price_cents=0,
+                    currency="USD", url="u")
+        store.upsert_listing(l)
+        store.mark_matches(hid, [l])
+        store.save_score(Score(listing_id=l.id, hunt_id=hid, model="m",
+                               scored_at=datetime.now(timezone.utc),
+                               match="yes", deal_score=8.0,
+                               est_value_cents=None, condition=None,
+                               matched_want=name, worth_grabbing=True,
+                               unknowns=(), requirements=(), red_flags=(),
+                               reasoning="r"), priced_at_cents=0)
+        if status == "grabbed":
+            store.mark_grabbed(hid, l.id, 0)
+        else:
+            store.set_status(hid, l.id, status)
+        made[status] = l.id
+    return hid, made
+
+
+def test_removing_a_want_can_clear_what_it_found(app):
+    """Two saved listings from a want deleted weeks ago were still sitting on
+    /saved, and nothing but dismissing them one at a time would move them."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+    after = store.statuses(hid)
+
+    assert after[made["saved"]] == "archived"
+    assert after[made["wanted"]] == "archived"
+    assert after[made["scored"]] == "archived"
+    assert "Nothing saved yet" in client.get("/saved").text
+
+
+def test_clearing_is_not_deleting_and_not_dismissing(app):
+    """`dismissed` is the obvious reuse and is wrong twice: those titles become
+    negative examples in that hunt's next prompt, so it would teach the hunt to
+    avoid exactly what you asked it to find -- and it would record that you
+    rejected these when you did not.
+
+    Nothing is deleted either. The rows keep their scores and stay readable."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+
+    assert store.dismissed_titles(hid) == ["A dismissed lamp"], \
+        "archiving taught the hunt nothing it was not already taught"
+    n = store.conn.execute(
+        "SELECT COUNT(*) n FROM hunt_matches WHERE hunt_id=?", (hid,)
+    ).fetchone()["n"]
+    assert n == 5, "every row is still there"
+    kept = store.conn.execute(
+        "SELECT COUNT(*) n FROM scores WHERE hunt_id=?", (hid,)).fetchone()["n"]
+    assert kept == 5, "every score is still there"
+
+
+def test_a_thing_you_own_is_not_cleared_with_the_want(app):
+    """Deleting the want you found it through does not un-own it."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+
+    assert store.statuses(hid)[made["grabbed"]] == "grabbed"
+    assert "A grabbed lamp" in client.get("/saved?show=grabbed").text
+
+
+def test_removing_a_want_without_the_tick_leaves_its_bins_alone(app):
+    """Unchecking is right while you are still driving out to something it
+    found."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp"})
+
+    assert store.statuses(hid)[made["saved"]] == "saved"
+    assert "A saved lamp" in client.get("/saved").text
+
+
+def test_restoring_a_want_brings_its_list_back(app):
+    """They remember what they were, so this is not a one-way door."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+    client.post("/wants/archive", data={"name": "lamp", "restore": "1"})
+
+    after = store.statuses(hid)
+    assert after[made["saved"]] == "saved"
+    assert after[made["wanted"]] == "wanted"
+    assert after[made["scored"]] == "scored"
+
+
+def test_grabbing_can_end_the_search_it_came_from(app):
+    """Finding the thing is the reason the want existed, and this is the one
+    moment the user knows the search is over."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+
+    client.post("/grabbed", data={"hunt_id": hid, "listing_id": made["saved"],
+                                  "paid": "40", "done": "1"})
+
+    assert "lamp" not in [w.want.name for w in store.wants()], "the search stopped"
+    after = store.statuses(hid)
+    assert after[made["saved"]] == "grabbed", "the thing you just bought"
+    assert after[made["wanted"]] == "archived", "the rest of the search"
+
+
+def test_grabbing_without_the_tick_keeps_looking(app):
+    """You might be buying one of several."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/grabbed", data={"hunt_id": hid, "listing_id": made["saved"],
+                                  "paid": "40"})
+    assert "lamp" in [w.want.name for w in store.wants()]
+
+
+def test_the_free_sweep_is_never_finished(app):
+    """The tick is offered on a want hunt only: there is no "done" for the
+    trawl that finds things you never thought to search for."""
+    client, cfg, store = app
+    _want_with_listings(client, cfg, store)
+    assert "Done looking for" in client.get("/saved").text
+    assert "sweep:" not in client.get("/saved").text.split("donerow")[0][-400:]
+
+
+def test_a_want_removed_before_the_tick_existed_can_still_be_cleared(app):
+    """The tick only helps wants removed from now on, and the case that
+    prompted this was a want deleted weeks ago with two saved listings still
+    on /saved. Offered on the Removed list, and only when there is something
+    to clear -- a button that would do nothing is worse than no button."""
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp"})      # no tick
+
+    panel = client.get("/?manage=1").text
+    assert "Clear 3" in panel, "saved + wanted + scored, not the grabbed one"
+
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+    assert "Clear 3" not in client.get("/?manage=1").text
+    assert store.statuses(hid)[made["saved"]] == "archived"
+
+
+def test_nothing_to_clear_offers_no_button(app):
+    client, cfg, store = app
+    hid, made = _want_with_listings(client, cfg, store)
+    client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
+    assert "Clear " not in client.get("/?manage=1").text

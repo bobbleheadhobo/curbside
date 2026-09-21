@@ -103,15 +103,29 @@
       <a class="btn" href="/hunt/{{ hid }}">Open the hunt</a>
     </div>
   </div>
+  {# Removing a want left its listings in your bins, where they sat for weeks
+     with nothing but one-by-one dismissing to move them. The tick clears them;
+     it does not delete them. Checked by default because a want you are
+     deleting is one you are finished with, and unchecking is right only while
+     you are still driving out to something it found. #}
   <div class="control-row">
     <span class="who">Remove it
       <small>Stops the search. Deletes nothing.</small></span>
     <div class="triage-actions">
-      <form method="post" action="/wants/archive">
+      <form method="post" action="/wants/archive" id="remove-want">
         <input type="hidden" name="name" value="{{ stored.want.name }}">
         <button class="danger">
           <svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>Remove</button>
       </form>
+    </div>
+  </div>
+  <div class="control-row">
+    <label class="who" for="clear-matches">Clear what it found
+      <small>Takes its listings out of your bins. They stay on the hunt page,
+        and come back if you restore the want.</small></label>
+    <div class="triage-actions">
+      <input type="checkbox" id="clear-matches" name="clear" value="1" checked
+             form="remove-want">
     </div>
   </div>
 </div>

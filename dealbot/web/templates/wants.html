@@ -72,6 +72,18 @@
       <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
         still readable.</small>
     </a>
+    {# A want removed BEFORE the tick existed still has its listings in your
+       bins, and nothing else would move them. Offered only when there is
+       something to clear. #}
+    {% if r.in_bins %}
+    <form method="post" action="/wants/archive" data-inplace="#manage"
+          data-toast="Cleared.">
+      <input type="hidden" name="name" value="{{ r.w.name }}">
+      <input type="hidden" name="clear" value="1">
+      <button title="Take its {{ r.in_bins }} remaining listings out of your bins">
+        <svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>Clear {{ r.in_bins }}</button>
+    </form>
+    {% endif %}
     <form method="post" action="/wants/archive" data-inplace="#manage"
           data-toast="Restored.">
       <input type="hidden" name="name" value="{{ r.w.name }}">

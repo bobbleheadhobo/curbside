@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS hunt_matches (
   hunt_id       TEXT NOT NULL,
   listing_id    TEXT NOT NULL REFERENCES listings(id),
   matched_at    TEXT NOT NULL,
-  status        TEXT NOT NULL,          -- new|filtered|scored|wanted|free_find|saved|grabbed|dismissed|gone
+  status        TEXT NOT NULL,          -- new|filtered|scored|wanted|free_find|saved|grabbed|dismissed|archived|gone
   filter_reason TEXT,
   dismiss_note  TEXT,
   miss_count    INTEGER NOT NULL DEFAULT 0,
@@ -231,6 +231,7 @@ class Store:
                           ("paid_cents", "INTEGER"))),
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("status_before_gone", "TEXT"),
+                              ("status_before_archive", "TEXT"),
                               ("notified_at", "TEXT"),
                               ("rechecked_at", "TEXT"),
                               ("alerted_price_cents", "INTEGER"))),
@@ -510,7 +511,7 @@ class Store:
         # `grabbed` joins `saved` here for the same reason: both are the user's
         # own decision about a listing, and a thing sitting in their garage
         # must not be retired because the seller took the post down.
-        keep = "status NOT IN ('gone','saved','grabbed')"
+        keep = "status NOT IN ('gone','saved','grabbed','archived')"
         of_source = "listing_id IN (SELECT id FROM listings WHERE source=?)"
 
         # Seen again: reset the miss counter, and un-retire it. A listing that
@@ -1222,6 +1223,47 @@ class Store:
         self.conn.execute(
             "UPDATE wants SET archived_at=?, updated_at=? WHERE name=?",
             (_now(), _now(), name))
+
+    # What archiving a want may clear out of your bins, and what it may not.
+    # `grabbed` is absent because that is a thing you own -- deleting the want
+    # you found it through does not un-own it. `dismissed` is absent for the
+    # opposite reason: it is already out of every bin AND it is a training
+    # signal, and moving it would quietly stop teaching the hunt if the want
+    # ever came back. `filtered` and `gone` are already out.
+    ARCHIVABLE = ("wanted", "free_find", "saved", "scored", "new")
+
+    def archive_matches(self, hunt_id: str) -> int:
+        """Take a stopped hunt's listings out of every bin, keeping all of them.
+
+        The want is gone, so its leftovers should stop following you around --
+        two saved listings from a want deleted weeks ago were still sitting on
+        /saved. But NOTHING here is deleted: the rows keep their scores, their
+        reasons and their raw payloads, stay readable at /hunt/<id>, and
+        remember what they were so restoring the want can put them back.
+
+        A status of its own rather than `dismissed`, which would be the obvious
+        reuse and is wrong twice: dismissed titles become negative examples in
+        that hunt's next prompt, so this would teach the hunt to avoid exactly
+        what you asked it to find, and it would say you rejected these when you
+        did not.
+        """
+        marks = ",".join("?" * len(self.ARCHIVABLE))
+        cur = self.conn.execute(
+            f"""UPDATE hunt_matches
+                SET status_before_archive = COALESCE(status_before_archive, status),
+                    status = 'archived', updated_at = ?
+                WHERE hunt_id = ? AND status IN ({marks})""",
+            (_now(), hunt_id, *self.ARCHIVABLE))
+        return cur.rowcount
+
+    def unarchive_matches(self, hunt_id: str) -> int:
+        """Put them back where they were. Restoring a want restores its list."""
+        cur = self.conn.execute(
+            """UPDATE hunt_matches
+               SET status = COALESCE(status_before_archive, 'scored'),
+                   status_before_archive = NULL, updated_at = ?
+               WHERE hunt_id = ? AND status = 'archived'""", (_now(), hunt_id))
+        return cur.rowcount
 
     def restore_want(self, name: str) -> None:
         self.conn.execute(

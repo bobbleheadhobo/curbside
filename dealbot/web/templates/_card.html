@@ -253,7 +253,7 @@
   {% if grab and not got %}
   <div class="grabrow" hidden>
     <b>What did you pay?</b>
-    <form class="grabform" method="post" action="/grabbed">
+    <form class="grabform" method="post" action="/grabbed" id="grab-{{i.id}}">
       <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
       <input type="hidden" name="listing_id" value="{{i.id}}">
       <input type="hidden" name="back" value="{{back}}">
@@ -263,6 +263,17 @@
              value="{% if i.price_cents is not none %}{{ '%g'|format(i.price_cents/100) }}{% endif %}">
       <button class="primary">Grabbed it</button>
     </form>
+    {# Finding the thing is the reason the want existed, and this is the one
+       moment you know the search is over. Opt in: you might be buying one of
+       several. Only on a want hunt -- the free sweep is never finished. #}
+    {% if i.hunt_id.startswith('want:') %}
+    <label class="donerow" for="done-{{i.id}}">
+      <input type="checkbox" id="done-{{i.id}}" name="done" value="1"
+             form="grab-{{i.id}}">
+      <span>Done looking for <b>{{ i.hunt_id[5:] }}</b>. Stops the search and
+        clears what it found.</span>
+    </label>
+    {% endif %}
   </div>
   {% endif %}
   {% if block %}

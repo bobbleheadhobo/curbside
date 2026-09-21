@@ -103,9 +103,14 @@ SELECT status, COUNT(*) AS n FROM hunt_matches WHERE hunt_id = ? GROUP BY status
 # One row per want, not one query per want. This list moved onto `/` in the
 # same change, which turned its COUNT(*) into N queries on the busiest page in
 # the site -- paid on every load, panel unfolded or not.
+# `n` is everything the hunt ever matched; `in_bins` is how much of it is still
+# in front of you. The second is what decides whether a removed want is offered
+# a "clear what it found" button, because a button that would do nothing is
+# worse than no button.
 WANT_COUNTS_SQL = """
-SELECT hunt_id, COUNT(*) AS n FROM hunt_matches
-WHERE hunt_id IN (%s) GROUP BY hunt_id
+SELECT hunt_id, COUNT(*) AS n,
+       SUM(CASE WHEN status IN (%s) THEN 1 ELSE 0 END) AS in_bins
+FROM hunt_matches WHERE hunt_id IN (%s) GROUP BY hunt_id
 """
 
 REJECT_REASONS_SQL = """
@@ -1021,7 +1026,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     @app.post("/grabbed")
     def grabbed(request: Request, hunt_id: str = Form(...),
                 listing_id: str = Form(...), paid: str = Form(""),
-                undo: str = Form(""), back: str = Form("/saved")):
+                done: str = Form(""), undo: str = Form(""),
+                back: str = Form("/saved")):
         """You went and got it, and this is what you paid.
 
         Its own endpoint rather than a `/triage` status, because it carries a
@@ -1052,6 +1058,16 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             # the toast is about to say it worked.
             raise StarletteHTTPException(
                 404, f"no listing {listing_id!r} in hunt {hunt_id!r}")
+        # Finding the thing is the reason the want existed, so this is the one
+        # moment the user knows the search is over -- and the only one where
+        # they are already looking at the right control. Opt in, because you
+        # might be buying one of several, and it clears the leftovers in the
+        # same action rather than asking twice: being done means being done.
+        # The listing just grabbed is untouched, since `grabbed` is not in
+        # `Store.ARCHIVABLE`.
+        if done and hunt_id.startswith("want:"):
+            store.archive_want(hunt_id[len("want:"):])
+            store.archive_matches(hunt_id)
         return _answer(request, back)
 
     # --- settings: waking hours, cadence, and the wants list ---------------
@@ -1093,15 +1109,18 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         counts = {}
         if wants:
             ids = [sw.hunt_id for sw in wants]
-            counts = {r["hunt_id"]: r["n"] for r in store.conn.execute(
-                WANT_COUNTS_SQL % ",".join("?" * len(ids)), ids)}
+            marks = ",".join("?" * len(Store.ARCHIVABLE))
+            counts = {r["hunt_id"]: r for r in store.conn.execute(
+                WANT_COUNTS_SQL % (marks, ",".join("?" * len(ids))),
+                [*Store.ARCHIVABLE, *ids])}
         rows = []
         for sw in wants:
             rows.append({
                 "w": sw.want, "stored": sw, "hunt": by_id.get(sw.hunt_id),
                 "hunt_id": sw.hunt_id,
                 "paused": sw.hunt_id in off,
-                "matched": counts.get(sw.hunt_id, 0),
+                "matched": (counts.get(sw.hunt_id) or {"n": 0})["n"],
+                "in_bins": (counts.get(sw.hunt_id) or {"in_bins": 0})["in_bins"] or 0,
             })
         return rows
 
@@ -1434,15 +1453,30 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
 
     @app.post("/wants/archive")
     def archive_want(request: Request, name: str = Form(...),
-                     restore: str = Form("0"), back: str = Form(MANAGE_URL)):
+                     restore: str = Form("0"), clear: str = Form("0"),
+                     back: str = Form(MANAGE_URL)):
         """Deleting a want stops its hunt. It does NOT delete anything: every
         listing it matched, every score and every dismissal stays where it is,
         readable at /hunt/want:<name>, because nothing in this project is ever
-        deleted."""
+        deleted.
+
+        `clear` additionally takes its listings out of your bins. Without it a
+        want you finished with keeps following you around -- two saved listings
+        from a want deleted weeks ago were still on /saved, and nothing but
+        dismissing them one at a time would move them. Archiving is not
+        deleting: they keep everything, stay readable on the hunt page, and
+        remember what they were, so restoring the want puts them back.
+
+        Restoring always unarchives. Asking a second question at that point
+        would be asking whether you meant it.
+        """
         if restore == "1":
             store.restore_want(name)
+            store.unarchive_matches(f"want:{name}")
         else:
             store.archive_want(name)
+            if clear == "1":
+                store.archive_matches(f"want:{name}")
         return _answer(request, back)
 
     def _quota_state() -> dict:
