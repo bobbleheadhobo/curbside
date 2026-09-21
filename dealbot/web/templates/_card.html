@@ -84,9 +84,19 @@
       {# Straight out to the seller's page, in a new tab: on a phone this is
          usually the Marketplace or Craigslist app, and navigating away would
          lose your place in the bin. The icon is the only thing that says one
-         tap goes somewhere else. #}
+         tap goes somewhere else.
+
+         Not once you own it. The seller takes the post down after a sale, so
+         the link opens "this content isn't available" -- an invitation that
+         cannot be accepted, in the most tappable spot on the card. Plain text
+         falls through to the card's own overlay, so the title still opens the
+         listing page, which is where the useful things are now. #}
+      {% if got %}
+      <h2>{{i.title}}</h2>
+      {% else %}
       <h2><a class="out" href="{{i.url}}" target="_blank" rel="noopener"
              >{{i.title}}<svg class="i" aria-hidden="true"><use href="#i-open"/></svg></a></h2>
+      {% endif %}
 
       <p class="price">{{ price(i.price_cents, was, i.price_unclear) }}</p>
 

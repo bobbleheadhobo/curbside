@@ -2536,3 +2536,27 @@ def test_withdrawing_a_purchase_asks_first(tmp_path):
     client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
                                   "undo": "1"})
     assert store.statuses("h")[l.id] == "saved"
+
+
+def test_a_listing_you_own_stops_offering_to_open_the_marketplace(tmp_path):
+    """The seller takes the post down after a sale, so the link opens "this
+    content isn't available" -- an invitation that cannot be accepted, and on
+    the card it sat in the most tappable spot there is.
+
+    The title becomes plain text rather than a dead link, which falls through
+    to the card's own overlay: tapping it still opens the listing page, where
+    what you paid and when you got it now live."""
+    client, store, l = _saved_card(tmp_path)
+    assert 'class="out"' in client.get("/saved").text
+    assert "Open on the marketplace" in client.get(f"/listing/{l.id}").text
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+
+    card = client.get("/saved?show=grabbed").text
+    assert 'class="out"' not in card
+    assert l.title in card, "the title is still there, just not a link"
+    assert 'href="u"' not in card
+
+    page = client.get(f"/listing/{l.id}").text
+    assert "Open on the marketplace" not in page

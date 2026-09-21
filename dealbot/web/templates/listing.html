@@ -50,8 +50,13 @@
      item page, so an un-enriched Craigslist listing genuinely has none. #}
   <span>{% if listing.posted_at %}listed {{ when(listing.posted_at) }}
         {%- else %}listing date unknown{% endif %}</span>
+  {# Gone once it is yours: the seller takes the post down after a sale, so
+     this opens "this content isn't available". A button that cannot do its
+     job is worse than no button. #}
+  {% if not listing.grabbed_at %}
   <a class="btn" href="{{listing.url}}" target="_blank" rel="noopener">
     <svg class="i" aria-hidden="true"><use href="#i-open"/></svg>Open on the marketplace</a>
+  {% endif %}
 </p>
 
 {% if listing.images %}
