@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 541 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 542 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -337,7 +337,9 @@ snapshot entirely for a want, which also saves its daily WRITE.
 The instrument for a want is its `requires` list. When a want keeps being
 overruled -- **dismissals of listings its own bar called good enough**, which
 is `Store.overruled` -- the dashboard says so on that want's row and sends you
-there. Not a rate: every hunt here sits at 97-100% dismissed, because that is
+there. Counted **per want**: two disagreements on one want is a pattern, while
+three spread across three wants is three separate disagreements and says
+nothing about any of them. Not a rate: every hunt here sits at 97-100% dismissed, because that is
 how a bin gets emptied, and `want:bookshelf` had 36 dismissals with NONE over
 the bar. Saving the want resets the baseline, because rewriting it is the
 acknowledgement.

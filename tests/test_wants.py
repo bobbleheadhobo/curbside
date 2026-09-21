@@ -797,13 +797,14 @@ def test_the_nudge_appears_only_once_there_is_a_pattern(app):
     store.seed_wants((Want(name="lamp", description="a lamp",
                            max_price_cents=10000, queries=("lamp",)),))
 
-    _dismiss_at(store, "want:lamp", 2, score=9.0)
-    assert "Tighten what it asks for" not in client.get("/?manage=1").text
+    _dismiss_at(store, "want:lamp", 1, score=9.0)
+    assert "Tighten what it asks for" not in client.get("/?manage=1").text, \
+        "one is a fluke, not a pattern"
 
     _dismiss_at(store, "want:lamp", 1, score=9.0, start=300)
     body = client.get("/?manage=1").text
     assert "Tighten what it asks for" in body
-    assert "<b>3</b> that scored well enough" in body
+    assert "<b>2</b> that scored well enough" in body
 
 
 def test_rewriting_the_want_is_the_acknowledgement(app):
@@ -834,3 +835,20 @@ def test_a_stopped_want_is_not_nagged(app):
     _dismiss_at(store, "want:lamp", 5, score=9.0)
     client.post("/wants/archive", data={"name": "lamp"})
     assert "Tighten what it asks for" not in client.get("/?manage=1").text
+
+
+def test_the_nudge_is_about_one_want_not_about_you(app):
+    """Three over-bar dismissals spread across three wants are three separate
+    disagreements and say nothing about any of them. The count is per hunt, so
+    none of those three wants is nudged."""
+    client, cfg, store = app
+    from dealbot.models import Want
+    for n in ("one", "two", "three"):
+        store.seed_wants((Want(name=n, description=n, max_price_cents=10000,
+                               queries=(n,)),))
+        _dismiss_at(store, f"want:{n}", 1, score=9.0, start=500 + 50 * "one two three".split().index(n))
+
+    body = client.get("/?manage=1").text
+    assert "Tighten what it asks for" not in body
+    for n in ("one", "two", "three"):
+        assert store.overruled(f"want:{n}", 7.0) == 1

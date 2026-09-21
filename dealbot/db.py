@@ -780,9 +780,15 @@ class Store:
             (_now(), hunt_id, listing_id))
 
     # How many over-bar dismissals must pile up before the want is worth
-    # rewriting. Three, because the live counts are 9, 2 and 1: five would only
-    # ever fire on one want, and one fires on a fluke.
-    OVERRULED_THRESHOLD = 3
+    # rewriting. Counted PER WANT -- three spread across three wants is three
+    # different disagreements and says nothing about any of them.
+    #
+    # Two. One is a fluke; two independent times the want said yes and you said
+    # no is the smallest thing that is a pattern. Against the live counts of 9,
+    # 2 and 1 that speaks up about `stacked-ottoman` and stays quiet about
+    # `ceramic-plant-pots`, which is the right split: one dismissal is not yet
+    # evidence that anything is missing.
+    OVERRULED_THRESHOLD = 2
 
     def overruled(self, hunt_id: str, bar: float) -> int:
         """Dismissals of listings this hunt's own bar said were good enough.
