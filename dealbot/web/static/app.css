@@ -987,6 +987,17 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 /* Under the price, not beside it: it is a second decision, and a checkbox
    sharing a line with the confirm button gets caught by a thumb aiming at
    the button. */
+/* The confirmation behind "Not mine". Same reveal as `.grabrow`, tinted like
+   the thing it is about to undo rather than like a warning: the danger is the
+   button, not the question. */
+.ungrabrow{
+  padding:12px 15px 13px;border-top:1px solid var(--line-soft);background:var(--bg)
+}
+.ungrabrow b{display:block;font-size:13.5px;font-weight:620;margin-bottom:5px}
+.ungrabrow p{margin:0 0 10px;font-size:12.5px;line-height:1.5;color:var(--dim)}
+.ungrabrow button{min-height:38px;width:auto}
+.ungrabtoggle[aria-expanded=true]{
+  background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
 .donerow{
   display:flex;gap:9px;align-items:flex-start;margin:10px 0 0;
   font-size:12.5px;line-height:1.45;color:var(--dim);cursor:pointer

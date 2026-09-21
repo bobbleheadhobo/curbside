@@ -273,15 +273,13 @@
             {%- if listing.paid_cents == 0 %} Free.
             {%- elif listing.paid_cents is not none %} Paid ${{ '{:,.0f}'.format(listing.paid_cents/100) }}.
             {%- endif %}</small></span>
+        {# Behind a confirmation, because it throws away a date and a figure
+           nothing else remembers. It used to be one tap on a card in a list
+           and was pressed by accident; the stamp had to be restored by hand
+           from what a screenshot happened to show. #}
         <div class="triage-actions">
-          <form method="post" action="/grabbed">
-            <input type="hidden" name="hunt_id" value="{{grabbable.hunt_id}}">
-            <input type="hidden" name="listing_id" value="{{listing.id}}">
-            <input type="hidden" name="undo" value="1">
-            <input type="hidden" name="back" value="{{back}}">
-            <button title="Put it back in the saved list and forget the price">
-              <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Not mine</button>
-          </form>
+          <button type="button" class="ungrabtoggle" aria-expanded="false">
+            <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Not mine</button>
         </div>
         {% else %}
         <span class="who">You went and got it
@@ -293,6 +291,23 @@
         </div>
         {% endif %}
       </div>
+      {% if got %}
+      <div class="ungrabrow" hidden>
+        <b>Forget that you got this?</b>
+        <p>It goes back to your saved list, and
+          {%- if listing.paid_cents is not none %} what you paid
+            ({{ 'free' if listing.paid_cents == 0
+                else '$' ~ '{:,.0f}'.format(listing.paid_cents/100) }})
+          {%- else %} the record of it{% endif %} is not kept.</p>
+        <form method="post" action="/grabbed">
+          <input type="hidden" name="hunt_id" value="{{grabbable.hunt_id}}">
+          <input type="hidden" name="listing_id" value="{{listing.id}}">
+          <input type="hidden" name="undo" value="1">
+          <input type="hidden" name="back" value="{{back}}">
+          <button class="danger">Yes, it is not mine</button>
+        </form>
+      </div>
+      {% endif %}
       {% if not got %}
       <div class="grabrow" hidden>
         <b>What did you pay?</b>

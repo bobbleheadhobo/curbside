@@ -564,6 +564,20 @@
        The container is a card in a bin OR the panel on the detail page, so it
        is found by looking for the row rather than for a card -- the same
        reason `blockCtx` exists. */
+    /* Withdrawing a purchase reveals its confirmation the same way, and the
+       confirm form inside it is a plain post: it changes which tab the listing
+       belongs to, so the 303 lands you somewhere already correct. */
+    var u = ev.target.closest && ev.target.closest(".ungrabtoggle");
+    if (u) {
+      ev.preventDefault();
+      var uctx = u.closest(".grabctx");
+      var urow = uctx && uctx.querySelector(".ungrabrow");
+      if (!urow) return;
+      var uopen = urow.hidden;
+      urow.hidden = !uopen;
+      u.setAttribute("aria-expanded", uopen ? "true" : "false");
+      return;
+    }
     var g = ev.target.closest && ev.target.closest(".grabtoggle");
     if (g) {
       ev.preventDefault();

@@ -2198,19 +2198,26 @@ def test_something_you_own_does_not_look_like_something_you_lost(tmp_path):
     assert 'class="soldmark got">yours' in body
 
 
-def test_a_thing_you_bought_is_never_offered_as_a_bad_example(tmp_path):
-    """Dismissed titles become negative examples in that hunt's next prompt.
-    Offering Dismiss on something you liked enough to drive out and buy would
-    teach the hunt the exact opposite of what happened, so the grabbed list
-    offers one action and it is the recovery one."""
+def test_a_card_you_own_offers_nothing(tmp_path):
+    """Two reasons, and they point the same way.
+
+    Dismissed titles become negative examples in that hunt's next prompt, so
+    offering Dismiss on something you liked enough to drive out and buy would
+    teach the hunt the exact opposite of what happened.
+
+    And "Not mine" was here, in the slot Dismiss occupies on every other card:
+    REPORTED pressed by accident. One unconfirmed tap on a scrolling list threw
+    away a date and a figure nothing else remembers -- the stamp had to be
+    restored by hand, to the minute, from what a screenshot happened to show.
+    It lives on the listing page behind a confirmation now."""
     client, store, l = _saved_card(tmp_path)
     client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
                                   "paid": "180"})
     body = client.get("/saved?show=grabbed").text
 
     assert "Dismiss" not in body
-    assert "Not mine" in body
-    assert 'name="undo" value="1"' in body
+    assert "Not mine" not in body
+    assert 'name="undo"' not in body, "nothing destructive one tap from a list"
 
 
 def test_not_mine_puts_it_back_a_week_later(tmp_path):
@@ -2509,3 +2516,23 @@ def test_a_listing_in_no_bin_is_not_offered_the_button(tmp_path):
     s.upsert_listing(l); s.mark_matches("h", [l])          # status `new`
 
     assert 'class="grabctx"' not in client.get("/listing/x:20").text
+
+
+def test_withdrawing_a_purchase_asks_first(tmp_path):
+    """It throws away a date and a figure nothing else in the database
+    remembers, so it is not a bare button anywhere."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    body = client.get(f"/listing/{l.id}").text
+
+    assert 'class="ungrabtoggle"' in body
+    assert "Forget that you got this?" in body
+    assert "$180" in body.split("ungrabrow")[1][:400], \
+        "the confirmation names what is about to be lost"
+    # The row is revealed, not linked: the post itself still needs a press.
+    assert '<div class="ungrabrow" hidden>' in body
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "undo": "1"})
+    assert store.statuses("h")[l.id] == "saved"

@@ -208,20 +208,20 @@
     <button type="button" class="grabtoggle" aria-expanded="false">
       <svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Grabbed it</button>
     {% elif grab and got %}
-    {# The recovery path, and the ONLY action offered on something you own.
-       Dismiss must not appear here: dismissed titles become negative examples
-       in that hunt's next prompt, so dismissing a thing you liked enough to
-       drive out and buy teaches the exact opposite of what happened. Undo in
-       the toast covers the mistake you notice at once; this covers the one you
-       notice a week later. #}
-    <form class="inline" method="post" action="/grabbed">
-      <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
-      <input type="hidden" name="listing_id" value="{{i.id}}">
-      <input type="hidden" name="undo" value="1">
-      <input type="hidden" name="back" value="{{back}}">
-      <button title="Put it back in the saved list and forget the price">
-        <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Not mine</button>
-    </form>
+    {# NO action on a card you already own. "Not mine" lived here and was
+       pressed by accident: it is one unconfirmed tap on a scrolling list, in
+       the slot where Dismiss sits on every other card, and it throws away a
+       date and a figure that cannot be recovered -- the stamp was restored by
+       hand from what a screenshot happened to show, to the minute, because
+       nothing in the database remembers it.
+
+       It lives on the listing page now, behind a confirmation. Undo in the
+       toast still covers the mistake you notice at once.
+
+       Dismiss must not appear here either: dismissed titles become negative
+       examples in that hunt's next prompt, so dismissing a thing you liked
+       enough to drive out and buy teaches the exact opposite of what
+       happened. #}
     {% endif %}
     {% for s in actions %}
     <form class="inline" method="post" action="/triage">
