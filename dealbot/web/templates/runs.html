@@ -90,13 +90,101 @@
   </div>
 </div>
 
+{# What the plan has left. These numbers exist nowhere but Claude Code's own
+   event stream, so they arrive only when something is judged: the panel dates
+   the reading rather than implying it is live, and a reading that has outlived
+   its window shows no bar at all. Directly under the Judging switch, because
+   this is the rest of that sentence. #}
+<div class="panel" id="usage" style="margin-bottom:18px">
+  <h2>Plan usage</h2>
+  {% if usage.known %}
+  <div class="meters">
+    {% for w in usage.windows %}
+    <div class="meter">
+      <div class="meterhead">
+        <span>{{ w.label }} window</span>
+        <b{% if w.over %} class="hi"{% endif %}>
+          {%- if w.pct is none %}&mdash;{% else %}{{ w.pct }}%{% endif -%}
+        </b>
+      </div>
+      <div class="track">
+        {% if w.pct is not none %}
+        <div class="fill{% if w.over %} over{% endif %}" style="width:{{ w.pct }}%"></div>
+        {% endif %}
+        {% if w.ceiling_pct %}
+        <span class="ceiling" style="left:{{ w.ceiling_pct }}%"
+              title="Judging stands aside at {{ w.ceiling_pct }}%"></span>
+        {% endif %}
+      </div>
+      <small>
+        {%- if w.expired %}Reset since this reading.
+        {%- elif w.over %}Over the {{ w.ceiling_pct }}% mark, so judging stands aside.
+        {%- else %}Stands aside at {{ w.ceiling_pct }}%.
+        {%- endif %}
+        {%- if w.resets_in and not w.expired %} Resets {{ w.resets_in }}.{% endif -%}
+      </small>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="panel-note{% if usage.holding or usage.unenforced %} hi{% endif %}">
+    {%- if usage.holding %}Read {{ usage.as_of }}. Held until the window resets, with no calls spent asking again.
+    {%- elif usage.unenforced %}Read {{ usage.as_of }}. Too old to enforce, so judging carries on.
+    {%- else %}Read {{ usage.as_of }}, from the last listing judged.{% endif -%}
+  </p>
+  {% else %}
+  <p class="panel-note">No reading yet. Claude Code reports these windows only
+    while it judges, so this fills in after the next judged listing.</p>
+  {% endif %}
+</div>
+
+{# The pill links here to explain itself, and "Judging" is all it has room to
+   say. This is the rest of that sentence: which listings, from which hunt, at
+   which site. Under the switches rather than above them, because a pill
+   reading "Paused" sends you here for the switch. #}
+<div class="panel" id="judging" style="margin-bottom:18px">
+  <h2>What it is judging</h2>
+  {% if activity.now %}
+  <div class="state-line">
+    <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>
+    <span><b>Running now.</b>
+      {{ activity.now.hunt_id.split(':')[-1] }} at {{ activity.now.source }}.</span>
+  </div>
+  {% endif %}
+  {% for j in judged %}
+  <div class="judgedrow">
+    <a class="grow" href="/listing/{{j.listing_id}}?back=/runs">
+      <b>{{ j.title }}</b>
+      <small>{{ j.hunt }} &middot; {{ j.source }} &middot; {{ when(j.scored_at) }}</small>
+    </a>
+    {% if j.dropped %}
+    {# Not a verdict of zero: the cheap first pass read it and let it go. #}
+    <span class="chip">first pass</span>
+    {% else %}
+    <p class="score {{ 's-hi' if j.deal_score >= 7 else
+                       ('s-mid' if j.deal_score >= 5 else 's-lo') }}">
+      <b class="num">{{ '%.1f'|format(j.deal_score) }}</b><span class="num">/10</span></p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
+    Nothing judged yet. Listings are collected first and judged when the
+    window allows.</div>
+  {% endfor %}
+  {% if judged %}
+  <p class="settings-note"><b>{{ activity.scored }}</b> judged in the last
+    hour. The first pass reads every listing in a batch; an appraisal is one
+    call each.</p>
+  {% endif %}
+</div>
+
 <div class="panel" style="margin-bottom:18px">
   <div class="wrap"><table class="responsive">
     <thead><tr>
       <th>Started</th><th>Hunt</th><th>Source</th>
       <th class="n">Fetched</th><th class="n">New</th><th class="n">Cand</th>
       <th class="n">Scored</th><th class="n">Wanted</th><th class="n">Free</th>
-      <th class="n">Imgs</th><th class="n">Cost</th><th>Note</th>
+      <th class="n">Imgs</th><th class="n">Cost</th><th class="n">Took</th>
+      <th>Note</th>
     </tr></thead>
     <tbody>
     {% for r in runs %}
@@ -112,12 +200,18 @@
       <td class="n num {{'zero' if not r.n_free_find}}" data-label="Free">{{r.n_free_find}}</td>
       <td class="n num {{'zero' if not r.n_image_checks}}" data-label="Imgs">{{r.n_image_checks}}</td>
       <td class="n num" data-label="Cost">${{ '%.4f'|format(r.cost_usd or 0) }}</td>
+      {# From `started_at` and `finished_at`, which were both already recorded
+         and neither of which was ever shown. A row with no finish stamp is
+         either in flight or a process that was killed: it has no duration
+         either way, so it says so rather than printing a zero. #}
+      <td class="n num {{ 'zero' if not r.took }}" data-label="Took"
+        >{{ r.took or 'unfinished' }}</td>
       {% if r.error %}<td class="errtext span2" data-label="Error">{{r.error}}</td>
       {% elif r.warning %}<td class="warntext span2" data-label="Warning">{{r.warning}}</td>
       {% else %}<td class="span2 zero empty-note" data-label="Note">&mdash;</td>{% endif %}
     </tr>
     {% else %}
-    <tr><td colspan="12" class="nostack">
+    <tr><td colspan="13" class="nostack">
       <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
         <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
         <b>No runs yet</b>

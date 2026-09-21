@@ -56,6 +56,30 @@ def test_a_price_drop_renders_struck_through():
     assert "-100%" in price
 
 
+def test_a_contradicted_zero_is_never_announced_as_free():
+    """The price box said $0 and the description asked for money. FREE, in a
+    channel named for free things, is the one thing the card must not say --
+    and the flag reached the database and did not come back out, so every
+    consumer here was handed a listing that looked ordinarily free."""
+    e = build_embed(make_listing(price=0), make_score(price_unclear=True),
+                    "http://d")
+    price = next(f for f in e["fields"] if f["name"] == "Price")["value"]
+    assert "price unclear" in price
+    assert "FREE" not in price
+
+
+def test_a_drop_onto_a_contradicted_zero_does_not_say_free_either(rig):
+    """The drop alert writes its own price line, because the whole line is
+    already bolded -- which is exactly how a second copy of a rule goes stale."""
+    store, hunt, n, sent = rig
+    listing = make_listing(price=0, previous=50000)
+    _register(store, hunt, listing)
+    n.notify_price_drop(hunt, listing, make_score(price_unclear=True), 50000)
+    content = sent[-1][1]["content"]
+    assert "price unclear" in content
+    assert "FREE" not in content
+
+
 def test_the_photo_is_attached():
     assert build_embed(make_listing(), make_score(), "http://d")["image"]["url"] == "p.jpg"
     assert "image" not in build_embed(make_listing(images=()), make_score(), "http://d")

@@ -78,10 +78,21 @@ def route(score: Score, hunt: Hunt, listing: Listing) -> str | None:
     ten things in that bin were priced, and every one came from a want hunt.
     The sweep is free-only by construction, so this makes the bin's name true.
     A want hunt's non-matches stay `scored` and remain findable in /skipped.
+
+    `price_unclear` closes the free bin, and ONLY the free bin. That bin means
+    "worth grabbing for nothing", and a $0 the seller contradicted in the words
+    is not a price at all -- there is no figure to weigh the trip against. It
+    stays `scored` and shows on /skipped saying so, where the score the model
+    gave it (judged as if the thing really were free) keeps it above the floor.
+    The decision is here rather than in the rubric because the model writes that
+    flag, and the thing that writes a flag is not the thing that should be
+    trusted to act on it. A wanted thing is untouched: a bookshelf whose seller
+    takes offers is still the bookshelf you asked for.
     """
     if score.match in ("yes", "unknown"):
         return "wanted" if score.deal_score >= hunt.min_deal_score else None
     if (hunt.kind == "sweep"
+            and not score.price_unclear
             and bool(score.worth_grabbing)
             and score.deal_score >= hunt.free_find_min_score
             and _is_a_bargain(score, listing)):

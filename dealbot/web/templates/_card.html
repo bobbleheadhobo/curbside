@@ -20,9 +20,16 @@
    recomputed -- so a change to how a free or priced listing reads needed both
    files, and got one. `was` is the caller's, because the card and the detail
    page derive the old price differently. #}
-{% macro price(price_cents, was) %}
+{% macro price(price_cents, was, unclear=false) %}
 {%- set dropped = was is not none and price_cents is not none and price_cents < was -%}
-{% if dropped %}
+{# The seller typed $0 and then asked for money in the description. Rendering
+   that as FREE in green is the one thing the free bin must not do, so the
+   price says what is actually known and the chip says who said so. #}
+{% if unclear %}
+          <span class="now unclear">price unclear</span>
+          <span class="chip flag"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>
+            <span>seller wants offers</span></span>
+        {% elif dropped %}
           <span class="now num {{ 'free' if price_cents == 0 }}">{{ _money(price_cents) }}</span>
           <span class="strike num">{{ _money(was) }}</span>
           <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>
@@ -32,7 +39,7 @@
         {% else %}<span class="now num">{{ _money(price_cents) }}</span>{% endif %}
 {%- endmacro %}
 
-{% macro card(i, back, actions=['saved','dismissed'], show_status=false, block=false) %}
+{% macro card(i, back, actions=['saved','dismissed'], show_status=false, block=false, grab=false) %}
 {% set was = i.previous_price_cents if i.previous_price_cents is not none
              else (i.priced_at_cents if i.priced_at_cents is not none
                    and i.price_cents is not none
@@ -40,7 +47,15 @@
 {% set dropped = was is not none and i.price_cents is not none and i.price_cents < was %}
 {% set motivated = (i.age_days or 0) >= 14 and ((i.price_moves or 0) >= 1 or was is not none) %}
 {% set has_why = i.reasoning or i.requirements or i.unknowns or i.red_flags %}
-<article class="card" data-hunt="{{i.hunt_id}}" data-listing="{{i.id}}"
+{# Off the market. `sold` is the source saying so; `removed` is the weaker
+   claim -- the page stopped resolving -- so it never says "sold". #}
+{% set got = i.grabbed_at is not none %}
+{# `mark_grabbed` stamps `sold_at` too, so `gone` has to EXCLUDE it or a thing
+   in your hallway is greyed out and struck through exactly like one somebody
+   else bought. Same fact, opposite news. #}
+{% set gone = i.sold_at is not none and not got %}
+{% set gone_word = 'sold' if i.sold_reason == 'sold' else 'gone' %}
+<article class="card{{ ' gone' if gone }}{{ ' got' if got }}" data-hunt="{{i.hunt_id}}" data-listing="{{i.id}}"
          data-status="{{i.status}}" data-title="{{i.title}}">
   <div class="card-main">
     {# The card opens the DETAIL page; the title opens the marketplace. Two
@@ -59,6 +74,11 @@
       <img class="shot" src="/thumb/{{i.id}}" alt="" loading="lazy" decoding="async"
            onerror="this.hidden=true">
       {% endif %}
+      {# Across the photograph, which is where the eye lands first. It was a
+         grey chip the size of "photos checked", four chips along, and a thing
+         that has sold is not one more attribute of it. #}
+      {% if gone %}<span class="soldmark">{{ gone_word }}</span>
+      {% elif got %}<span class="soldmark got">yours</span>{% endif %}
     </div>
     <div class="info">
       {# Straight out to the seller's page, in a new tab: on a phone this is
@@ -68,7 +88,19 @@
       <h2><a class="out" href="{{i.url}}" target="_blank" rel="noopener"
              >{{i.title}}<svg class="i" aria-hidden="true"><use href="#i-open"/></svg></a></h2>
 
-      <p class="price">{{ price(i.price_cents, was) }}</p>
+      <p class="price">{{ price(i.price_cents, was, i.price_unclear) }}</p>
+
+      {# What you paid: the only figure on this card that is not a claim. NULL
+         and 0 are different answers and must read differently -- 0 is free,
+         none means you did not write it down, so neither renders as the other.
+
+         No date here. The mark across the photograph already says this one is
+         yours, and `when` is per-request context that an imported macro does
+         not receive; the date is on the listing page, which has it. #}
+      {% if got and i.paid_cents is not none %}
+      <p class="grabbed">{{ 'Free.' if i.paid_cents == 0
+        else 'Paid $' ~ '{:,.0f}'.format(i.paid_cents/100) ~ '.' }}</p>
+      {% endif %}
 
       <p class="where">
         {% if i.distance_mi is not none %}
@@ -84,7 +116,7 @@
 
       {% set no_words = not (i.description or '').strip() %}
       {% if i.matched_want or i.images_checked or motivated or (i.age_days or 0) >= 21
-            or (i.price_moves or 0) >= 2 or i.red_flags or i.sold_at or i.filter_reason
+            or (i.price_moves or 0) >= 2 or i.red_flags or i.filter_reason
             or no_words %}
       <p class="tags">
         {% if i.matched_want %}
@@ -93,9 +125,15 @@
             {{i.matched_want}}</span>
         {% endif %}
         {# Old and repriced = a seller who wants it gone. The single signal no
-           keyword filter can express, and we had the data for it all along. #}
+           keyword filter can express, and we had the data for it all along.
+
+           NO down arrow. The price line directly above already states the drop
+           and by how much; an arrow here says the same thing again, a few
+           millimetres away, without the figure. Same redundancy the "N price
+           drops" chip is guarded against two lines below. The word is the
+           chip. #}
         {% if motivated %}
-          <span class="chip drop"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg>motivated seller</span>
+          <span class="chip drop">motivated seller</span>
         {% elif (i.age_days or 0) >= 21 %}
           <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>sitting {{i.age_days}}d</span>
         {% endif %}
@@ -110,10 +148,6 @@
           <span class="chip unk"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>no description</span>{% endif %}
         {% for f in i.red_flags %}
           <span class="chip flag"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></span>{% endfor %}
-        {# Confirmed off the market by the re-check pass. `removed` is the weaker
-           claim -- the page stopped resolving -- so it does not say "sold". #}
-        {% if i.sold_at %}
-          <span class="chip"><svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>{{i.sold_reason or 'gone'}}</span>{% endif %}
         {% if i.filter_reason %}<span class="chip">{{i.filter_reason}}</span>{% endif %}
       </p>
       {% endif %}
@@ -164,6 +198,31 @@
   {% endif %}
 
   <div class="actions">
+    {# FIRST, where Save sits on every other card. The row is read left to
+       right as keep-then-reject, and the swipe gestures are documented as
+       matching the order the buttons sit in. #}
+    {% if grab and not got %}
+    {# Reveals a row rather than acting, because the figure is the point. A
+       tap that recorded the asking price would quietly file a haggled $180 as
+       $250, and a calibration point that lies is worse than none. #}
+    <button type="button" class="grabtoggle" aria-expanded="false">
+      <svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Grabbed it</button>
+    {% elif grab and got %}
+    {# The recovery path, and the ONLY action offered on something you own.
+       Dismiss must not appear here: dismissed titles become negative examples
+       in that hunt's next prompt, so dismissing a thing you liked enough to
+       drive out and buy teaches the exact opposite of what happened. Undo in
+       the toast covers the mistake you notice at once; this covers the one you
+       notice a week later. #}
+    <form class="inline" method="post" action="/grabbed">
+      <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
+      <input type="hidden" name="listing_id" value="{{i.id}}">
+      <input type="hidden" name="undo" value="1">
+      <input type="hidden" name="back" value="{{back}}">
+      <button title="Put it back in the saved list and forget the price">
+        <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Not mine</button>
+    </form>
+    {% endif %}
     {% for s in actions %}
     <form class="inline" method="post" action="/triage">
       <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
@@ -191,6 +250,21 @@
       <svg class="i" aria-hidden="true"><use href="#i-gone"/></svg></button>
     {% endif %}
   </div>
+  {% if grab and not got %}
+  <div class="grabrow" hidden>
+    <b>What did you pay?</b>
+    <form class="grabform" method="post" action="/grabbed">
+      <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
+      <input type="hidden" name="listing_id" value="{{i.id}}">
+      <input type="hidden" name="back" value="{{back}}">
+      <label class="lbl" for="paid-{{i.id}}">Paid</label>
+      <input type="text" inputmode="decimal" id="paid-{{i.id}}" name="paid"
+             autocomplete="off"
+             value="{% if i.price_cents is not none %}{{ '%g'|format(i.price_cents/100) }}{% endif %}">
+      <button class="primary">Grabbed it</button>
+    </form>
+  </div>
+  {% endif %}
   {% if block %}
   <div class="blockrow" hidden>
     <b>Never show me things like this</b>

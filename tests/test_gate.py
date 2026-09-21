@@ -34,7 +34,7 @@ def test_excluded_keyword_rejected(hunt):
 
 
 def test_triaged_listing_is_never_reconsidered(hunt):
-    for status in ("saved", "dismissed", "contacted"):
+    for status in ("saved", "dismissed", "grabbed"):
         gr = _gate(hunt, [make_listing()], statuses={"fixture:1": status})
         assert gr.rejected == [("fixture:1", "triaged")], status
 

@@ -57,6 +57,11 @@ scorer:
   claude_bin: /home/joey/.local/bin/claude
   timeout_seconds: 180
   batch_size: 20
+  # A STARTING value, like the waking hours: it is edited from /settings and
+  # lives in the database from then on. Per hunt per run, and 0 means never
+  # look. The real gate is not this number -- an image pass is only bought for
+  # a listing that would already reach a bin on its text score -- so raising it
+  # buys looks only when a single batch is full of good things at once.
   max_image_checks: 10
   # Photos per image pass, ~260 tokens each at 512px. The first N in the
   # seller's own order. Two was a hedge against the hero shot being a room
@@ -93,8 +98,15 @@ recheck:
   # one on the free sweep. This asks the source outright whether the things in
   # your bins are still for sale. One detail fetch per listing per interval,
   # no model call, so it costs requests and no quota.
+  # Two speeds. Saved and contacted are the things you might be about to drive
+  # to, and there are only ever a handful, so they are asked about on every
+  # pass. `wanted` and `free_find` are candidates you have not decided on and
+  # the half that grows to dozens -- at 15 minutes those would be a few hundred
+  # item-page fetches a day at a site that throttles silently, to learn
+  # something `mark_gone` already half-answers for free.
   enabled: true
   every_hours: 6           # per listing, not per run
+  saved_every_hours: 0.25  # saved + contacted: every pass
   max_per_run: 10          # keeps it inside the source request budget
 
 discord:

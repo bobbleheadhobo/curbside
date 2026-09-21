@@ -87,7 +87,10 @@ def _requirement_lines(score: Score) -> str:
 
 def build_embed(listing: Listing, score: Score, dashboard_url: str) -> dict:
     """One listing as a Discord embed."""
-    price = _money(listing.price_cents)
+    # A $0 the seller contradicted in the description is not a price. `_money`
+    # itself is left alone: it also renders the OLD price in a drop alert,
+    # which is a real figure whatever the new one turns out to be.
+    price = "price unclear" if score.price_unclear else _money(listing.price_cents)
     if (listing.previous_price_cents is not None
             and listing.price_cents is not None
             and listing.previous_price_cents > listing.price_cents):
@@ -213,7 +216,11 @@ class DiscordNotifier:
         drop = 100 - (listing.price_cents / was_cents * 100) if was_cents else 0
         embed["title"] = f"\u2193 {int(round(drop))}% \u00b7 {embed.get('title', listing.title)}"
         embed["color"] = 0x0F7040                       # the good-news green
-        now = "FREE" if not listing.price_cents else _money(listing.price_cents)
+        # Spelled out rather than `_money`, which bolds: the whole line is
+        # already inside asterisks.
+        now = ("price unclear" if score.price_unclear
+               else "FREE" if not listing.price_cents
+               else _money(listing.price_cents))
         payload = {
             "content": f"**{_money(was_cents)} \u2192 {now}** on something you saved",
             "embeds": [embed],

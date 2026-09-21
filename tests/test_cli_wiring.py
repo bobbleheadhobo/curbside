@@ -178,3 +178,65 @@ def test_the_request_budget_is_reset_once_per_pass_not_once_per_hunt(tmp_path,
                           "due": False})()
     assert cli.cmd_once(args) == 0
     assert resets["n"] == 1
+
+
+def test_a_plan_hold_stops_the_judging_and_nothing_else(tmp_path, monkeypatch):
+    """The re-check asks the source outright whether something you saved has
+    sold or changed price. It is requests and no model call, so a quota hold
+    must not touch it -- a bot that stops telling you a saved listing sold is
+    the opposite of thrifty, since that is the pass you act on.
+
+    The hold itself is exercised for real here: the scorer is the live one and
+    the reading in `settings` is what stops it, so nothing is invoked and
+    nothing is spent."""
+    import shutil
+    import time
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from dealbot import cli
+    from dealbot.config import load as load_cfg
+    from dealbot.recheck import RecheckResult
+    from dealbot.scoring.claude_code import RESET_7D, UTIL_7D, UTIL_AT
+    from dealbot.sources.fixture import FixtureSource
+
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load_cfg(tmp_path / "config.yaml")
+    store = Store(cfg.db_path)
+    store.set_setting(UTIL_7D, "0.92")                  # over the 90% ceiling
+    store.set_setting(RESET_7D, str(time.time() + 21 * 3600))
+    store.set_setting(UTIL_AT, datetime.now(timezone.utc).isoformat(
+        timespec="seconds"))
+    store.close()
+
+    ran = {"recheck": 0, "price_drops": 0}
+
+    def counting_recheck(*a, **kw):
+        ran["recheck"] += 1
+        return RecheckResult(n_checked=3)
+
+    def counting_announce(*a, **kw):
+        ran["price_drops"] += 1
+        return 0
+
+    monkeypatch.setattr(cli, "recheck", counting_recheck)
+    monkeypatch.setattr(cli, "announce_price_drops", counting_announce)
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(cli, "_build_sources", lambda c: [
+        ("fixture", FixtureSource(c.location, root / "fixtures/listings"))])
+
+    args = type("A", (), {"config": str(tmp_path / "config.yaml"), "hunt": None,
+                          "dry_run": False, "no_score": False, "no_images": True,
+                          "due": False})()
+    assert cli.cmd_once(args) == 0
+
+    store = Store(cfg.db_path)
+    warnings = [r["warning"] for r in
+                store.conn.execute("SELECT warning FROM runs")]
+    spent = store.conn.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0) c FROM runs").fetchone()["c"]
+    store.close()
+    assert any(w and "standing aside" in w for w in warnings), warnings
+    assert spent == 0                       # the hold cost nothing to observe
+    assert ran["recheck"] == 1              # and the sold/price pass still ran
+    assert ran["price_drops"] == 1          # as did the price-drop alert

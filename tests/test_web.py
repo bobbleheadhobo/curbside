@@ -86,6 +86,77 @@ def test_saved_and_near_miss_views_show_the_right_rows(tmp_path):
     assert "item x:1" not in near    # saved, not a near miss
 
 
+def _saved_listing(cfg, lid="x:sold", price_cents=12000, **sold):
+    """One saved listing, optionally marked off the market."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    l = Listing(id=lid, source="x", source_id=lid.split(":")[-1],
+                title="Standing Desk", description="d",
+                price_cents=price_cents, currency="USD", url="u",
+                images=("https://img.example/a.jpg",))
+    s.upsert_listing(l)
+    s.mark_matches(hunt.id, [l])
+    s.set_status(hunt.id, lid, "saved")
+    # The bin views join scores, so an unjudged listing is in no bin at all.
+    s.save_score(Score(listing_id=lid, hunt_id=hunt.id, model="m",
+                       scored_at=datetime.now(timezone.utc), match="yes",
+                       deal_score=8.0, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=True, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r"),
+                 priced_at_cents=price_cents)
+    if sold:
+        s.mark_sold(lid, sold["reason"])
+    s.close()
+    return lid
+
+
+def test_something_that_sold_says_so_where_it_cannot_be_missed(tmp_path):
+    """REPORTED: a saved desk had sold and the only sign was a grey chip the
+    size of "photos checked", four chips along a row of attributes. It is the
+    answer to the only question the card is being asked, so it goes across the
+    photograph and the price it no longer has is struck out."""
+    client, cfg = _client(tmp_path)
+    _saved_listing(cfg, reason="sold")
+
+    body = client.get("/saved").text
+    assert '<article class="card gone"' in body
+    assert '<span class="soldmark">sold</span>' in body
+    # ... and the count above the list does not offer it as something to do.
+    assert "<b>0</b> to act on" in body
+    assert "<b>1</b> gone" in body
+
+
+def test_a_listing_that_only_stopped_resolving_does_not_claim_it_sold(tmp_path):
+    """`removed` is the weaker claim: the page went away, which is usually a
+    sale and is sometimes a deletion. The badge must not overstate it."""
+    client, cfg = _client(tmp_path)
+    _saved_listing(cfg, reason="removed")
+
+    body = client.get("/saved").text
+    assert '<span class="soldmark">gone</span>' in body
+    assert '<span class="soldmark">sold</span>' not in body
+
+
+def test_the_detail_page_says_it_before_anything_you_could_act_on(tmp_path):
+    """It said it nowhere at all: you could open a saved listing that had sold
+    and read its price, its distance and its score without being told."""
+    client, cfg = _client(tmp_path)
+    lid = _saved_listing(cfg, reason="sold")
+
+    body = client.get(f"/listing/{lid}").text
+    assert "gonebanner" in body
+    head, rest = body.split("gonebanner", 1)
+    assert "<b>Sold.</b>" in rest
+    assert '<p class="price gone"' in rest      # the banner comes first
+    assert 'class="price"' not in head
+
+    removed = _saved_listing(cfg, lid="x:vanished", reason="removed")
+    assert "No longer listed." in client.get(f"/listing/{removed}").text
+
+
 def test_thumb_falls_back_to_the_source_url(tmp_path):
     """Until a local copy exists, the original still works -- for about four
     days, in Facebook's case."""
@@ -528,6 +599,13 @@ def _row(mins_ago=5, error=None, warning=None):
             "error": error, "warning": warning, "mins": mins_ago}
 
 
+def _act(scored=0, in_flight=False, runs=4):
+    """What `Store.run_activity` hands the pill: whether a pass is in flight,
+    and what the last hour judged."""
+    return {"runs": runs, "scored": scored, "in_flight": in_flight,
+            "now": None}
+
+
 def _hunts(n=3):
     return [type("H", (), {"id": f"h{i}", "name": f"h{i}"})() for i in range(n)]
 
@@ -552,32 +630,74 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     hunts = _hunts()
 
     # every hunt off beats everything, including a stale error and the clock
-    assert health(_row(error="boom"), hunts, hunts, _sched(open_=False)
+    assert health(_row(error="boom"), hunts, hunts, _sched(open_=False), _act()
                   )["label"] == "Paused"
     # a failing fetch beats a partial pause
-    assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched()
+    assert health(_row(error="HTTPError"), hunts[:1], hunts, _sched(), _act()
                   )["label"] == "Fetch failing"
     # a quota pause is not a failing fetch: the fetch worked. The LABEL says
     # the state only. A reason cut off mid-word in a phone's top bar is worse
     # than no reason: it reads as broken rather than terse. The reason is in
     # `detail`, and stated in full on the page the pill links to.
     pause = health(_row(warning="scoring skipped: daily spend ceiling reached"),
-                   [], hunts, _sched())
+                   [], hunts, _sched(), _act())
     assert pause["label"] == "Judging paused"
     assert "daily spend ceiling reached" in pause["detail"]
     # some hunts off beats the clock
-    assert health(_row(), hunts[:2], hunts, _sched(open_=False)
+    assert health(_row(), hunts[:2], hunts, _sched(open_=False), _act()
                   )["label"] == "2 hunts off"
-    assert health(_row(), hunts[:1], hunts, _sched())["label"] == "1 hunt off"
+    assert health(_row(), hunts[:1], hunts, _sched(), _act()
+                  )["label"] == "1 hunt off"
     # nothing else to say, so the clock
-    assert health(_row(), [], hunts, _sched(open_=False)
+    assert health(_row(), [], hunts, _sched(open_=False), _act()
                   )["label"] == "Asleep till 12pm"
     # a pause is announced before there has ever been a run
-    assert health(None, hunts, hunts, _sched())["label"] == "Paused"
-    assert health(None, [], hunts, _sched())["label"] == "No runs yet"
-    # and the ordinary case
-    assert health(_row(mins_ago=3), [], hunts, _sched())["label"] == "3m ago"
-    assert health(_row(mins_ago=200), [], hunts, _sched())["label"].startswith("Quiet")
+    assert health(None, hunts, hunts, _sched(), _act())["label"] == "Paused"
+    assert health(None, [], hunts, _sched(), _act())["label"] == "No runs yet"
+    # and the ordinary case: the clock, and no claim about what it is doing
+    assert health(_row(mins_ago=3), [], hunts, _sched(), _act(scored=6)
+                  )["label"] == "3m ago"
+    assert health(_row(mins_ago=200), [], hunts, _sched(), _act()
+                  )["label"].startswith("Quiet")
+
+
+def test_the_pill_only_claims_activity_while_a_pass_is_in_flight():
+    """It says something is happening when something IS happening, and shows
+    the clock the rest of the time.
+
+    "Judged · 15m" and "Collecting · 15m" were both tried and both described a
+    bot sitting still waiting for the timer: a state word beside a growing
+    number reads as work in progress. What it has judged is a fact about the
+    last hour rather than a state, so it belongs in the detail and on /runs.
+    """
+    from dealbot.web.app import health
+    hunts = _hunts()
+
+    live = health(_row(mins_ago=0), [], hunts, _sched(),
+                  _act(scored=3, in_flight=True))
+    assert live["label"] == "Looking now"
+    assert live["state"] == "ok"
+
+    # Waiting for the next tick. Judging something twelve minutes ago is not
+    # something it is doing now, so the label says only when it last ran.
+    waiting = health(_row(mins_ago=12), [], hunts, _sched(), _act(scored=3))
+    assert waiting["label"] == "12m ago"
+    assert "3 listings judged in the last hour" in waiting["detail"]
+
+    # Fetching fine, judging nothing. Still just the clock, and the detail
+    # says so rather than the pill going amber over a quiet hour.
+    idle = health(_row(mins_ago=2), [], hunts, _sched(), _act(scored=0))
+    assert idle["label"] == "2m ago"
+    assert idle["state"] == "ok"
+    assert "Nothing new to judge" in idle["detail"]
+
+    # One listing, not "1 listings".
+    one = health(_row(mins_ago=5), [], hunts, _sched(), _act(scored=1))
+    assert "1 listing judged" in one["detail"]
+
+    # It never outranks a real problem: a fetch that died still wins.
+    assert health(_row(error="boom"), [], hunts, _sched(),
+                  _act(scored=9, in_flight=True))["label"] == "Fetch failing"
 
 
 def test_a_listing_with_no_words_wears_an_amber_badge(tmp_path):
@@ -663,7 +783,7 @@ def test_the_bin_queries_are_built_from_a_clause_not_from_each_other():
     from dealbot.web.app import NEAR_MISS_SQL, ONE_BIN, QUEUE_SQL, SAVED_SQL
 
     assert "WHERE m.status = ?" in QUEUE_SQL
-    assert "WHERE m.status IN ('saved', 'contacted')" in SAVED_SQL
+    assert "WHERE m.status IN ('saved', 'grabbed')" in SAVED_SQL
     assert "WHERE m.status = 'scored'" in NEAR_MISS_SQL
 
     assert ONE_BIN in QUEUE_SQL and ONE_BIN in SAVED_SQL
@@ -795,22 +915,241 @@ def test_no_health_label_is_too_long_for_the_top_bar():
     from dealbot.web.app import health
     hunts = _hunts()
     cases = [
-        (_row(error="boom"), hunts, hunts, _sched(open_=False)),
-        (_row(error="HTTPError"), hunts[:1], hunts, _sched()),
+        (_row(error="boom"), hunts, hunts, _sched(open_=False), _act()),
+        (_row(error="HTTPError"), hunts[:1], hunts, _sched(), _act()),
         (_row(warning="scoring skipped: 5-hour plan window at 72% "
-                      "(ceiling 70%) -- standing aside"), [], hunts, _sched()),
-        (_row(), hunts[:2], hunts, _sched(open_=False)),
-        (_row(), hunts[:1], hunts, _sched()),
-        (_row(), [], hunts, _sched(open_=False)),
-        (None, hunts, hunts, _sched()),
-        (None, [], hunts, _sched()),
-        (_row(mins_ago=3), [], hunts, _sched()),
-        (_row(mins_ago=200), [], hunts, _sched()),
-        (_row(mins_ago=4000), [], hunts, _sched()),
+                      "(ceiling 70%) -- standing aside"), [], hunts, _sched(),
+         _act()),
+        (_row(), hunts[:2], hunts, _sched(open_=False), _act()),
+        (_row(), hunts[:1], hunts, _sched(), _act()),
+        (_row(), [], hunts, _sched(open_=False), _act()),
+        (None, hunts, hunts, _sched(), _act()),
+        (None, [], hunts, _sched(), _act()),
+        (_row(mins_ago=3), [], hunts, _sched(), _act()),
+        (_row(mins_ago=200), [], hunts, _sched(), _act()),
+        (_row(mins_ago=4000), [], hunts, _sched(), _act()),
+        (_row(mins_ago=3), [], hunts, _sched(), _act(scored=5)),
+        (_row(mins_ago=0), [], hunts, _sched(), _act(in_flight=True)),
     ]
     for args in cases:
         label = health(*args)["label"]
         assert len(label) <= 19, f"{label!r} is {len(label)} characters"
+
+
+def _judged(cfg, lid, title, hunt_id, source, score, model="sonnet"):
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    s = Store(cfg.db_path)
+    l = Listing(id=lid, source=source, source_id=lid.split(":")[-1], title=title,
+                description="d", price_cents=1000, currency="USD", url="u")
+    s.upsert_listing(l)
+    s.mark_matches(hunt_id, [l])
+    s.save_score(Score(listing_id=lid, hunt_id=hunt_id, model=model,
+                       scored_at=datetime.now(timezone.utc), match="no",
+                       deal_score=score, est_value_cents=None, condition=None,
+                       matched_want=None, worth_grabbing=False, unknowns=(),
+                       requirements=(), red_flags=(), reasoning="r"),
+                 priced_at_cents=1000)
+    s.close()
+
+
+def _judging_panel(client):
+    page = client.get("/runs").text
+    return page[page.index('id="judging"'):page.index("<th>Started<")]
+
+
+def _priced_as_free(cfg, lid="facebook:9", status="scored", price_unclear=1,
+                    hunt_id=None):
+    """A listing marked $0 whose description asks for money.
+
+    Scored as the rubric asks -- as if the thing really WERE free, because a
+    listing scored down for being unclear falls under the /skipped floor too,
+    and correct-and-invisible is not correct. The flag is what holds it back,
+    not the number.
+    """
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    s = Store(cfg.db_path)
+    hunt_id = hunt_id or next(h.id for h in cfg.hunts if h.kind == "sweep")
+    l = Listing(id=lid, source="facebook", source_id=lid.split(":")[-1],
+                title="Sockets and wrenches",
+                description="Send me offers please over 50 wrenches",
+                price_cents=0, currency="USD", url="u", city="Albuquerque",
+                distance_mi=4.0, images=("https://img.example/a.jpg",))
+    s.upsert_listing(l)
+    s.mark_matches(hunt_id, [l])
+    score = Score(listing_id=lid, hunt_id=hunt_id, model="sonnet",
+                  scored_at=datetime.now(timezone.utc), match="no",
+                  deal_score=7.0, est_value_cents=8000, condition=None,
+                  matched_want=None, worth_grabbing=True, unknowns=(),
+                  requirements=(),
+                  red_flags=("Listed as free but the description asks for "
+                             "offers",),
+                  reasoning="an auction mislabelled as free",
+                  price_unclear=bool(price_unclear))
+    s.save_score(score, priced_at_cents=0)
+    s.set_status(hunt_id, lid, status)
+    s.close()
+    return lid
+
+
+def test_the_detail_page_says_which_marketplace_it_came_from(tmp_path):
+    """It said "seller unknown" instead, on every listing ever collected --
+    neither adapter parses a seller, and Facebook omits one from 93% of the
+    payloads it sends us. The source is a fact we always have, and it is the
+    one this page was missing: two listings from two sites read identically."""
+    client, cfg = _client(tmp_path)
+    lid = _priced_as_free(cfg)
+    page = client.get(f"/listing/{lid}").text
+    assert "Facebook" in page
+    assert "seller unknown" not in page
+
+
+def test_a_zero_price_the_seller_contradicted_survives_a_round_trip(tmp_path):
+    """The fourth edit is the one that gets forgotten. `price_unclear` has to
+    reach the database AND come back: the column was written and `row_to_score`
+    did not read it, so everything outside the web SQL -- the Discord card most
+    of all -- was handed a listing that looked ordinarily free."""
+    from dealbot.db import Store
+    _, cfg = _client(tmp_path)
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    lid = _priced_as_free(cfg, status="free_find", hunt_id=hunt.id)
+    s = Store(cfg.db_path)
+    row = s.conn.execute(
+        "SELECT price_unclear FROM scores WHERE listing_id=?", (lid,)).fetchone()
+    assert row["price_unclear"] == 1
+    # ...and back out again, which is the half that was missing.
+    _, score = s.pending_notifications(hunt.id)[0]
+    assert score.price_unclear is True
+
+
+def test_a_fake_free_listing_does_not_reach_the_page_about_free_things(tmp_path):
+    """REPORTED: "Sockets and wrenches", $0, "Send me offers please over 50
+    wrenches", sitting in the free bin as a free find.
+
+    A price nobody knows is not a price, so there is nothing to weigh the trip
+    against and this is not a free find. It leaves no trace on the page either,
+    not even folded away: the group that used to carry them filtered no bin
+    status, so a listing that reached the bin anyway rendered TWICE."""
+    client, cfg = _client(tmp_path)
+    _priced_as_free(cfg)
+    page = client.get("/free").text
+    assert "Sockets and wrenches" not in page
+    assert 'id="notfree"' not in page
+
+
+def test_a_fake_free_listing_lands_on_skipped_saying_the_price_is_not_settled(
+        tmp_path):
+    """Correct and invisible is not correct. It is scored as if it really were
+    free, which keeps it above the floor here, and the card says plainly that
+    the price is not settled -- FREE in green over it is the one thing that
+    must not print."""
+    client, cfg = _client(tmp_path)
+    _priced_as_free(cfg)
+    page = client.get("/skipped").text
+    assert "Sockets and wrenches" in page
+    assert "price unclear" in page
+    assert "seller wants offers" in page                # the chip
+    assert '<span class="now free">free</span>' not in page
+
+
+def test_dismissing_a_fake_free_listing_takes_it_off_that_list_too(tmp_path):
+    """It is a listing like any other: dismissed means gone, everywhere."""
+    client, cfg = _client(tmp_path)
+    _priced_as_free(cfg, status="dismissed")
+    assert "Sockets and wrenches" not in client.get("/skipped").text
+
+
+def test_an_ordinary_free_find_still_reaches_the_free_bin(tmp_path):
+    """The guard. Only the contradicted $0 is held back; a listing that really
+    is free is a free find like any other."""
+    client, cfg = _client(tmp_path)
+    _priced_as_free(cfg, lid="facebook:10", status="free_find", price_unclear=0)
+    page = client.get("/free").text
+    assert "Sockets and wrenches" in page
+    assert "price unclear" not in page
+
+
+def test_the_page_the_pill_links_to_says_what_it_is_judging(tmp_path):
+    """The pill has room for "Judging" and a clock. Tapping it should finish
+    the sentence: which listings, from which hunt, at which site."""
+    client, cfg = _client(tmp_path)
+    _judged(cfg, "facebook:1", "Wooden bookshelf", "want:bookshelf",
+            "facebook", 8.0)
+
+    panel = _judging_panel(client)
+    assert "Wooden bookshelf" in panel
+    assert "bookshelf" in panel and "facebook" in panel      # what and where
+    assert "8.0" in panel
+    assert '/listing/facebook:1?back=/runs' in panel         # and openable
+
+
+def test_a_first_pass_drop_is_not_shown_as_a_verdict_of_zero(tmp_path):
+    """The cheap batched pass reads every listing and writes what it let go as
+    a score of 0.0 with a `:triage` model. Those rows count towards the number
+    the pill states, so they belong on this list -- but 0.0 in a score badge
+    reads as "judged, and worthless", which is not what happened."""
+    client, cfg = _client(tmp_path)
+    _judged(cfg, "craigslist:2", "Vintage footstool", "want:stacked-ottoman",
+            "craigslist", 0.0, model="claude_code:triage")
+
+    panel = _judging_panel(client)
+    assert "Vintage footstool" in panel
+    assert "first pass" in panel
+    assert "0.0" not in panel
+
+
+def test_a_pass_in_flight_says_which_hunt_and_which_site(tmp_path):
+    """"Looking now" in the pill, and the rest of it here. The row is bounded
+    by the same hour the pill uses, so a process killed mid-pass stops being
+    reported as live rather than saying it forever."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.start_run(type("H", (), {"id": "sweep:free-nearby"})(), "facebook")
+    s.close()
+
+    panel = _judging_panel(client)
+    assert "Running now." in panel
+    assert "free-nearby" in panel and "facebook" in panel
+
+
+def test_how_long_a_run_took_is_derived_from_the_stamps_it_already_keeps():
+    """`started_at` and `finished_at` were both recorded from the first day
+    and neither was ever shown. A `duration` column would be a third copy of
+    a fact those two state between them, free to disagree with them."""
+    from dealbot.web.app import took
+    assert took("2026-09-16T10:00:00+00:00", "2026-09-16T10:00:42+00:00") == "42s"
+    assert took("2026-09-16T10:00:00+00:00", "2026-09-16T10:01:05+00:00") == "1m 05s"
+    assert took("2026-09-16T10:00:00+00:00", "2026-09-16T12:03:05+00:00") == "2h 03m"
+    # Nothing honest to say: still running, killed mid-pass, or unparseable.
+    assert took("2026-09-16T10:00:00+00:00", None) is None
+    assert took(None, None) is None
+    assert took("whenever", "2026-09-16T10:00:00+00:00") is None
+    assert took("2026-09-16T10:00:42+00:00", "2026-09-16T10:00:00+00:00") is None
+
+
+def test_the_runs_page_shows_how_long_each_run_took(tmp_path):
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    done = s.start_run(hunt, "x")
+    s.finish_run(done)
+    s.conn.execute("UPDATE runs SET started_at=?, finished_at=? WHERE id=?",
+                   ("2026-09-16T10:00:00+00:00",
+                    "2026-09-16T10:01:05+00:00", done))
+    s.start_run(hunt, "y")                    # begun, never finished
+    s.close()
+
+    page = client.get("/runs").text
+    assert ">Took<" in page
+    assert "1m 05s" in page
+    # A run with no finish stamp has no duration. It says so rather than
+    # printing a zero, which would read as an instant pass.
+    assert "unfinished" in page
 
 
 def test_the_runs_page_agrees_with_the_pill(tmp_path):
@@ -1215,6 +1554,28 @@ def test_today_breaks_down_where_the_money_went(tmp_path):
     assert "facebook" in body and "craigslist" in body
 
 
+def test_the_last_seven_days_are_listed_day_by_day(tmp_path):
+    """The bars answer "is today normal". They cannot answer "what did
+    Tuesday cost", which is the question you have the moment one looks tall."""
+    import re
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    _spend_today(s, cfg, "want:tv-stand", "facebook", 1.23, n_scored=9)
+
+    page = client.get("/stats").text
+    # Its own panel: stacked under the bars it made the spend panel long
+    # enough to push Today off the screen.
+    body = page[page.index("<h2>Last 7 days</h2>"):page.index("<h2>Today</h2>")]
+    # Seven rows whatever the history: a fixed week, silent days included.
+    assert len(re.findall(r'data-label="Day"', body)) == 7
+    assert "$1.23" in body
+    # A day with no run is a GAP, not a zero -- the same rule the bars are
+    # drawn by, because a day off and a day that found nothing differ.
+    assert len(re.findall(r'data-label="Spent"\s*>&mdash;', body)) == 6
+    assert "today" in body
+
+
 def test_today_ignores_yesterday_evening(tmp_path):
     """The boundary this page and the spend ceiling share is the USER's
     midnight. UTC's is 6pm in Albuquerque, so an evening's spend used to show
@@ -1236,9 +1597,33 @@ def test_today_ignores_yesterday_evening(tmp_path):
     assert "$7.77" in page, "and it still counts towards all time"
 
 
-def test_the_dearest_listing_today_is_findable(tmp_path):
+def test_the_stage_split_says_first_pass_not_triage(tmp_path):
+    """"Triage" is what the code calls it. It is not a word the interface gets
+    to use: it appeared once as the listing page's heading, was not recognised,
+    and came back here as a stage label. `/triage` and `scores.model` keep it;
+    the page says what happens instead.
+
+    The three are listed in the order the money is spent, which is what "by
+    stage" claims -- "First pass" sitting last read as a contradiction."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    _spend_today(Store(cfg.db_path), cfg, "sweep:free-nearby", "craigslist",
+                 0.75, n_scored=4)
+
+    page = client.get("/stats").text
+    assert "First pass" in page
+    assert "Triage" not in page and "triage" not in page
+    assert page.index("First pass") < page.index("Appraisal") < \
+        page.index("Photo checks")
+
+
+def test_the_listing_that_cost_the_most_today_is_findable(tmp_path):
     """An image pass runs about 15x a text appraisal, so one photo-checked
-    junk post can eat an afternoon. It should be one glance away."""
+    junk post can eat an afternoon. It should be one glance away.
+
+    The heading says "Cost the most". It said "Dearest judged", which is
+    British for the same thing on a page of dollar figures, where it reads as
+    a price floor rather than a cost ranking."""
     from datetime import timedelta
     from dealbot.db import Store
     from dealbot.models import Listing, Score
@@ -1265,6 +1650,7 @@ def test_the_dearest_listing_today_is_findable(tmp_path):
     assert [r["listing_id"] for r in rows] == ["x:2", "x:1"], "dearest first"
 
     page = client.get("/stats").text
+    assert "<h3>Cost the most</h3>" in page
     assert "Free junk metal removal" in page
     assert "$0.052" in page
     assert "Appraisal only" in page, "the figure is a floor and must say so"
@@ -1339,10 +1725,10 @@ def test_a_before_score_from_another_hunt_is_not_borrowed():
     assert v["before"] is None
 
 
-def test_an_unlooked_at_listing_says_so_on_its_page(tmp_path):
-    """The state that used to be silent, and the one worth knowing: the model
-    could not settle it without seeing the photos and the image budget said
-    no."""
+def _asked_and_not_looked(tmp_path, deal_score: float):
+    """A listing the model said it could not settle without seeing the photos,
+    and never did. `deal_score` decides which side of the hunt's bar it lands
+    on, which is what decides WHY the photos were never bought."""
     from datetime import datetime, timezone
     from dealbot.db import Store
     from dealbot.models import Listing, Score
@@ -1354,18 +1740,46 @@ def test_an_unlooked_at_listing_says_so_on_its_page(tmp_path):
     s.upsert_listing(l); s.mark_matches(hunt.id, [l])
     s.save_score(Score(listing_id="x:1", hunt_id=hunt.id, model="m",
                        scored_at=datetime.now(timezone.utc), match="unknown",
-                       deal_score=6.0, est_value_cents=None, condition=None,
-                       matched_want=None, worth_grabbing=True, unknowns=(),
-                       requirements=(), red_flags=(), reasoning="r",
+                       deal_score=deal_score, est_value_cents=None,
+                       condition=None, matched_want=None, worth_grabbing=True,
+                       unknowns=(), requirements=(), red_flags=(), reasoning="r",
                        needs_images=True,
                        image_question="Is it at least 70 inches wide?"),
                  priced_at_cents=0)
+    return client.get("/listing/x:1").text, hunt
 
-    page = client.get("/listing/x:1").text
+
+def test_an_unlooked_at_listing_says_so_on_its_page(tmp_path):
+    """The state that used to be silent: the model could not settle it without
+    seeing the photos, and never got to."""
+    page, _ = _asked_and_not_looked(tmp_path, 9.0)
     assert "Photos not checked" in page
-    assert "image budget ran out" in page
     assert "Is it at least 70 inches wide?" in page, \
         "the question the photos were meant to answer is worth reading"
+
+
+def test_the_budget_is_only_blamed_when_the_budget_was_the_reason(tmp_path):
+    """The page blamed `max_image_checks` for every unbought image pass. It is
+    the reason for very few of them: photographs are only bought for a listing
+    that would already reach a bin on its text score, so one scoring under the
+    bar is turned down by `route` long before the budget is consulted -- 162 of
+    169 unmet requests in the live data, i.e. the sentence was wrong on 96% of
+    the listings carrying it, while naming the one number a reader might go and
+    raise in response.
+
+    The two cases differ ONLY in the score, which is the point: nothing about
+    the listing or the request changed."""
+    over, hunt = _asked_and_not_looked(tmp_path, hunt_bar := 9.0)
+    assert hunt.min_deal_score <= hunt_bar
+    assert "image budget ran out" in over
+
+    second = tmp_path / "b"; second.mkdir()
+    under, _ = _asked_and_not_looked(second, 1.0)
+    assert "not headed for a bin on its text score" in under, (
+        "and NOT 'it scored too low' -- a want hunt declines a non-match "
+        "whatever it scored, so the sentence has to name the test, not one "
+        "of the several things that can fail it")
+    assert "image budget" not in under
 
 
 # --- timestamps, in the reader's clock ------------------------------------
@@ -1442,3 +1856,607 @@ def test_a_listing_with_no_posted_date_says_so(tmp_path):
                 description=None, price_cents=0, currency="USD", url="u")
     s.upsert_listing(l); s.mark_matches(cfg.hunts[0].id, [l])
     assert "listing date unknown" in client.get("/listing/x:2").text
+
+
+# --- plan usage on /runs ---------------------------------------------------
+# The pill says "Judging paused" and links here, so this is where the plan's
+# own numbers have to be. They arrive only in Claude Code's event stream, and
+# only when something is judged, so every one of these is a memory with an
+# expiry date -- which is the thing these tests are about.
+
+def _window(used, ceiling=0.70, resets_in=3600, expired=False, stale=False,
+            now=None):
+    import time
+    from dealbot.scoring.claude_code import PlanUsage, PlanWindow
+    now = time.time() if now is None else now
+    return PlanUsage((PlanWindow(label="5-hour", used=used, ceiling=ceiling,
+                                 resets_at=now + resets_in, expired=expired,
+                                 stale=stale),), None, stale)
+
+
+def test_a_spent_window_cannot_overflow_its_own_track():
+    """The wire really does report 1.01 once a window is spent, and the percent
+    is written straight into a CSS width."""
+    import time
+    from dealbot.web.app import plan_usage_view
+    now = time.time()
+    w = plan_usage_view(_window(1.01, now=now), now)["windows"][0]
+    assert w["pct"] == 100 and w["over"] and w["ceiling_pct"] == 70
+    assert w["resets_in"] == "in 1h 0m"
+
+
+def test_an_expired_reading_draws_no_bar():
+    """The window it measured has rolled, so a bar would assert a fact about a
+    window that no longer exists."""
+    import time
+    from dealbot.web.app import plan_usage_view
+    now = time.time()
+    w = plan_usage_view(_window(0.99, resets_in=-60, expired=True, now=now),
+                        now)["windows"][0]
+    assert w["pct"] is None and w["over"] is False and w["resets_in"] == ""
+
+
+def test_a_countdown_longer_than_a_day_is_said_in_days():
+    """The seven-day window is routinely more than a day out, and "in 114h 9m"
+    is correct and unreadable."""
+    from dealbot.web.app import ago_words, until_words
+    assert until_words(4 * 86400 + 18 * 3600) == "in 4d 18h"
+    assert until_words(-5) == "" and until_words(None) == ""
+    assert ago_words(0) == "just now" and ago_words(90) == "1h ago"
+
+
+def _record_reading(cfg, five="0.42", seven=None, minutes_ago=0, ahead=3600,
+                    dated=True):
+    import time
+    from datetime import datetime, timedelta, timezone
+    from dealbot.db import Store
+    from dealbot.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
+                                             UTIL_7D, UTIL_AT)
+    s = Store(cfg.db_path)
+    s.set_setting(UTIL_5H, five)
+    if dated:
+        s.set_setting(RESET_5H, str(time.time() + ahead))
+    if seven is not None:
+        s.set_setting(UTIL_7D, seven)
+        s.set_setting(RESET_7D, str(time.time() + 4 * 86400))
+    s.set_setting(UTIL_AT, (datetime.now(timezone.utc)
+                            - timedelta(minutes=minutes_ago)
+                            ).isoformat(timespec="seconds"))
+    return s
+
+
+def test_runs_shows_how_much_of_the_plan_is_gone(tmp_path):
+    """Asked for directly: when judging is paused, how much has been used."""
+    client, cfg = _client(tmp_path)
+    _record_reading(cfg, five="0.42", seven="0.86")
+    page = client.get("/runs").text
+    assert "5-hour window" in page and "42%" in page
+    assert "7-day window" in page and "86%" in page
+    assert "Stands aside at 70%" in page       # the mark, next to the number
+
+
+def test_a_window_over_the_mark_says_that_is_why_judging_stopped(tmp_path):
+    client, cfg = _client(tmp_path)
+    _record_reading(cfg, five="0.82")
+    assert "so judging stands aside" in client.get("/runs").text
+
+
+def test_an_undated_reading_too_old_to_enforce_says_so(tmp_path):
+    """A stale number that named no reset gates nothing -- enforcing one is
+    self-sealing. A page showing 82% over a bot that is judging away would read
+    as broken."""
+    client, cfg = _client(tmp_path)
+    _record_reading(cfg, five="0.82", minutes_ago=180, dated=False)
+    page = client.get("/runs").text
+    assert "Too old to enforce" in page
+    assert "so judging stands aside" not in page
+
+
+def test_an_old_reading_that_named_its_reset_is_still_the_reason(tmp_path):
+    """The lie in the other direction. This one IS enforcing -- the window it
+    named has not rolled yet -- so the page must not offer it as history."""
+    client, cfg = _client(tmp_path)
+    _record_reading(cfg, five="0.82", minutes_ago=180)
+    page = client.get("/runs").text
+    assert "so judging stands aside" in page
+    assert "Held until the window resets" in page
+    assert "Too old to enforce" not in page
+
+
+def test_with_nothing_read_yet_the_panel_teaches_instead_of_lying(tmp_path):
+    """Claude Code reports the windows only while judging, so a database that
+    has never judged has no reading -- which is not zero."""
+    client, _ = _client(tmp_path)
+    page = client.get("/runs").text
+    assert "No reading yet" in page and "0%" not in page
+
+
+# --- recording what you grabbed --------------------------------------------
+
+
+def _saved_card(tmp_path, price_cents=25000):
+    """A saved listing with a score, ready to be grabbed off /saved."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    l = Listing(id="fb:7", source="facebook", source_id="7",
+                title="Mid century walnut bookshelf", description="solid",
+                price_cents=price_cents, currency="USD", url="u")
+    s.upsert_listing(l)
+    s.mark_matches("h", [l])
+    s.set_status("h", l.id, "saved")
+    s.save_score(Score(listing_id=l.id, hunt_id="h", model="m",
+                       scored_at=datetime.now(timezone.utc), match="yes",
+                       deal_score=8.0, est_value_cents=40000, condition=None,
+                       matched_want="bookshelf", worth_grabbing=True,
+                       unknowns=(), requirements=(), red_flags=(),
+                       reasoning="r"), priced_at_cents=price_cents)
+    return client, s, l
+
+
+def test_the_saved_page_offers_the_price_before_recording_it(tmp_path):
+    """A tap that filed the asking price would record a haggled $180 as $250,
+    and a calibration point that lies is worse than none. So the button reveals
+    a field pre-filled with the asking price rather than acting on it."""
+    client, _, _ = _saved_card(tmp_path)
+    body = client.get("/saved").text
+    assert "Grabbed it" in body
+    assert 'class="grabtoggle"' in body
+    assert 'action="/grabbed"' in body
+    assert 'value="250"' in body, "the asking price is the sensible default"
+
+
+def test_grabbing_it_records_what_you_paid_and_leaves_the_other_bins(tmp_path):
+    client, store, l = _saved_card(tmp_path)
+    store.mark_matches("sweep", [l])
+    store.set_status("sweep", l.id, "free_find")
+
+    r = client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                      "paid": "180"}, follow_redirects=False)
+    assert r.status_code == 303
+
+    row = store.conn.execute(
+        "SELECT grabbed_at, paid_cents FROM listings WHERE id=?",
+        (l.id,)).fetchone()
+    assert row["paid_cents"] == 18000 and row["grabbed_at"] is not None
+    assert store.statuses("h")[l.id] == "grabbed"
+    assert store.statuses("sweep")[l.id] == "gone"
+
+    body = client.get("/saved?show=grabbed").text
+    assert "Paid $180" in body
+    assert "1</b> grabbed" in body, "counted apart from things still to act on"
+    assert "Grabbed it" not in body, "no second offer on a thing you already own"
+
+
+def test_a_dollar_sign_and_a_comma_are_not_a_typo(tmp_path):
+    """It is typed on a phone, and "$1,350" is how a person writes money."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "$1,350"})
+    assert store.conn.execute(
+        "SELECT paid_cents FROM listings WHERE id=?", (l.id,)
+    ).fetchone()["paid_cents"] == 135000
+
+
+def test_an_unrecorded_price_is_stored_as_nothing_not_as_free(tmp_path):
+    """Blank and 0 are different answers, and the page must not render one as
+    the other: free is most of what this bot finds, and "I did not note it" is
+    not a data point at all. An unparseable figure is treated as blank rather
+    than raised on -- a typo must not cost the record of the purchase."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "banana"})
+    assert store.conn.execute(
+        "SELECT paid_cents, grabbed_at FROM listings WHERE id=?", (l.id,)
+    ).fetchone()["paid_cents"] is None
+
+    body = client.get("/saved?show=grabbed").text
+    # The card's own figure line, not the word anywhere on the page -- the site
+    # description says "Free and underpriced things".
+    assert 'class="grabbed"' not in body
+    assert "1</b> grabbed" in body, "still recorded, just without a figure"
+
+
+def test_free_is_recorded_as_free(tmp_path):
+    client, store, l = _saved_card(tmp_path, price_cents=0)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "0"})
+    assert store.conn.execute(
+        "SELECT paid_cents FROM listings WHERE id=?", (l.id,)
+    ).fetchone()["paid_cents"] == 0
+    assert "Free." in client.get("/saved?show=grabbed").text
+
+
+def test_undo_withdraws_the_purchase(tmp_path):
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    r = client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                      "undo": "1"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert store.statuses("h")[l.id] == "saved"
+    assert store.conn.execute(
+        "SELECT paid_cents FROM listings WHERE id=?", (l.id,)
+    ).fetchone()["paid_cents"] is None
+    assert "Grabbed it" in client.get("/saved").text
+
+
+def test_the_listing_page_does_not_call_your_own_bookshelf_unlisted(tmp_path):
+    """`mark_grabbed` stamps `sold_at` too, so the sold banner would claim a
+    thing in your house is no longer available. The grabbed state is checked
+    first, and this is the one page with room for the date."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    body = client.get(f"/listing/{l.id}").text
+    assert "Yours." in body and "Paid $180" in body
+    assert "No longer listed" not in body and "Sold." not in body
+
+
+def test_grabbing_something_that_is_not_there_says_so(tmp_path):
+    """Same reason `/triage` checks: the card is already folding away and the
+    toast is about to claim it worked."""
+    client, _, _ = _saved_card(tmp_path)
+    assert client.post("/grabbed", data={"hunt_id": "h", "listing_id": "nope",
+                                         "paid": "1"}).status_code == 404
+
+
+def test_stats_checks_the_model_against_what_you_paid(tmp_path):
+    """The only falsification in the database. Every judged listing carries an
+    estimated value and nothing else can ever check one."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    body = client.get("/stats").text
+    assert "Grabbed" in body
+    assert "$400" in body and "$180" in body
+
+
+def test_the_bot_never_messaged_a_seller_so_nothing_says_contacted():
+    """`contacted` meant "I messaged the seller". It was never offered in the
+    interface, was used zero times in the life of the bot, and sat in a dozen
+    status lists that all had to keep agreeing about it -- while contradicting
+    the read-only boundary, since this tool does not message anyone. Removed
+    alongside `grabbed` so the number of statuses stayed where it was.
+
+    In the spirit of `tests/test_docs.py`: the cheapest way to stop a retired
+    concept creeping back is to fail if its name reappears in the CODE. The docs
+    still name it, deliberately -- this project records what it rejected and why,
+    and "a status a dozen places maintained for months while holding zero rows"
+    is worth keeping written down. Only `dealbot/` must be clean."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    out = subprocess.run(["grep", "-rn", "contacted", "dealbot"],
+                         cwd=root, capture_output=True, text=True).stdout
+    assert not out.strip(), f"`contacted` is back in the code:\n{out}"
+
+
+def test_a_labelled_action_that_is_not_a_form_still_shares_the_row():
+    """REPORTED: the Grabbed it button overlapped Dismiss on /saved.
+
+    `.actions` is a flex row. `.actions button` sets `width:100%`, which the
+    triage buttons survive because their wrapper carries `flex:1 1 0` -- the
+    basis is the form's, not the button's. `.grabtoggle` is a bare button with
+    no wrapper, so that `width:100%` became its OWN flex basis: it claimed the
+    whole row, the Dismiss form shrank to zero, and a `white-space:nowrap`
+    label spilled out of a zero-width box on top of it.
+
+    `.blocktoggle` never hit this because it is a fixed-width icon square with
+    `flex:none`. Any future labelled control in this row needs the rule too.
+    """
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    assert ".actions .grabtoggle{flex:1 1 0;min-width:0}" in css, (
+        "a bare button in .actions must declare its own flex basis, or it "
+        "inherits width:100% as one and starves everything beside it")
+
+
+def test_saved_opens_on_the_things_still_to_decide(tmp_path):
+    """Things you own accumulate; things to act on do not. Within a few months
+    an undivided page would be mostly archive, and a thing already in your
+    hallway is not a thing to decide about -- so the default list is the one
+    with work in it, and the other is one tap away."""
+    client, store, l = _saved_card(tmp_path)
+    assert "grabbed" not in client.get("/saved").text.split("<h1>")[1][:400]
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+
+    default = client.get("/saved").text
+    assert "Mid century walnut bookshelf" not in default
+    assert "Nothing saved yet" in default, "the work list is empty now"
+    assert 'href="/saved?show=grabbed"' in default, "and the other tab is offered"
+
+    other = client.get("/saved?show=grabbed").text
+    assert "Mid century walnut bookshelf" in other
+
+
+def test_the_tabs_only_appear_once_there_is_a_second_list(tmp_path):
+    """A lone tab on a page that is usually three cards long is furniture."""
+    client, _, _ = _saved_card(tmp_path)
+    assert "filterchips" not in client.get("/saved").text
+
+
+def test_something_you_own_does_not_look_like_something_you_lost(tmp_path):
+    """REPORTED: a grabbed card was greyed out and its price struck through,
+    which is the styling for a listing somebody else bought.
+
+    `mark_grabbed` stamps `sold_at`, so the card's `gone` flag picked it up.
+    Same fact, opposite news: the market did not take this one away from you.
+    """
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    body = client.get("/saved?show=grabbed").text
+
+    assert 'class="card got"' in body
+    assert "card gone" not in body, "greyed out and struck through"
+    assert 'class="soldmark got">yours' in body
+
+
+def test_a_thing_you_bought_is_never_offered_as_a_bad_example(tmp_path):
+    """Dismissed titles become negative examples in that hunt's next prompt.
+    Offering Dismiss on something you liked enough to drive out and buy would
+    teach the hunt the exact opposite of what happened, so the grabbed list
+    offers one action and it is the recovery one."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    body = client.get("/saved?show=grabbed").text
+
+    assert "Dismiss" not in body
+    assert "Not mine" in body
+    assert 'name="undo" value="1"' in body
+
+
+def test_not_mine_puts_it_back_a_week_later(tmp_path):
+    """Undo in the toast covers the mistake you notice at once. This covers the
+    one you notice after the page has been reloaded."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180"})
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "undo": "1", "back": "/saved?show=grabbed"})
+
+    assert store.statuses("h")[l.id] == "saved"
+    assert "Mid century walnut bookshelf" in client.get("/saved").text
+    assert "filterchips" not in client.get("/saved").text, "no empty second tab"
+
+
+def test_the_motivated_chip_does_not_repeat_the_price_line(tmp_path):
+    """REPORTED from a saved card: a green "motivated seller" chip carrying a
+    down arrow, directly under a price line that already showed the drop and by
+    how much. The arrow restated it a few millimetres away and without the
+    figure, which is the same redundancy the "N price drops" chip is already
+    guarded against. The word is the chip."""
+    from pathlib import Path
+    card = (Path(__file__).resolve().parents[1]
+            / "dealbot/web/templates/_card.html").read_text()
+    motivated = card.split("{% if motivated %}")[1].split("{% elif")[0]
+    assert "motivated seller" in motivated
+    assert "i-down" not in motivated, "the price line above already says this"
+
+
+def test_a_flag_does_not_wear_the_colour_of_uncertainty():
+    """Amber means "we do not know" here -- `unknowns`, an unverified match, an
+    unanswered photo request. A flag is not missing information: it is
+    something the model noticed AGAINST the listing. They were sharing a
+    colour, so two different statements read as one.
+
+    Flags are red again, but the fill is what had made red shout. A soft ground
+    on the chip and a bare rule in the list say "counts against it" without
+    claiming danger, which is right for a set whose commonest member is "Only
+    one photo"."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    chip = css.split(".chip.flag{")[1].split("}")[0]
+    assert "var(--bad-soft)" in chip and "var(--bad)" in chip
+
+    item = css.split(".flags li{")[1].split("}")[0]
+    assert "var(--bad)" in item and "border-left" in item
+    assert "background" not in item, "a note inside a panel is not a banner"
+
+    # And uncertainty keeps amber, so the two stay distinguishable.
+    unknowns = css.split(".unknowns{")[1].split("}")[0]
+    assert "var(--warn)" in unknowns and "--bad" not in unknowns
+
+
+def test_the_listing_page_colours_its_flags_too(tmp_path):
+    """REPORTED, with a screenshot: flags were amber chips on the card and
+    plain grey text in the score table you land on after tapping it. That table
+    cell was the only model output on the page with no treatment at all, sitting
+    directly above `unknowns` on its amber panel.
+
+    Also fixes a second thing the comma join hid: several flags became one
+    run-on sentence, and a flag can itself contain a comma -- "Description
+    claims 'Ethan Allen Country French Bergere' but then says the set is 'from
+    JC Penny's', contradictory" is one flag that reads as two."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    l = Listing(id="x:5", source="x", source_id="5", title="A tv stand",
+                description=None, price_cents=15000, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches("h", [l])
+    s.save_score(Score(listing_id="x:5", hunt_id="h", model="m",
+                       scored_at=datetime.now(timezone.utc), match="unknown",
+                       deal_score=5.0, est_value_cents=None, condition=None,
+                       matched_want="tv-stand", worth_grabbing=True,
+                       unknowns=("Width of the stand",), requirements=(),
+                       red_flags=("Generic one-line description",
+                                  "Only one photo"),
+                       reasoning="r"), priced_at_cents=15000)
+
+    body = client.get("/listing/x:5").text
+    block = body.split('class="judgement-why"')[1].split("</ul>")[0]
+    assert '<ul class="flags">' in block, "styled like the card, not plain text"
+    assert block.count("<li>") == 2, "one item per flag, not a comma-joined run"
+    assert "i-alert" in block
+
+    # And the same on an earlier pass, which keeps its own flags.
+    s.save_score(Score(listing_id="x:5", hunt_id="h", model="sonnet+images",
+                       scored_at=datetime.now(timezone.utc), match="yes",
+                       deal_score=6.0, est_value_cents=None, condition=None,
+                       matched_want="tv-stand", worth_grabbing=True,
+                       unknowns=(), requirements=(),
+                       red_flags=("Only one photo",), reasoning="r2",
+                       images_checked=True), priced_at_cents=15000)
+    earlier = client.get("/listing/x:5").text.split('class="pass"')[1]
+    assert '<ul class="flags">' in earlier
+
+
+def _scored_listing(tmp_path, *scores):
+    """A listing on the detail page carrying the scores given."""
+    from datetime import datetime, timezone, timedelta
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    l = Listing(id="x:6", source="x", source_id="6", title="A tv stand",
+                description=None, price_cents=15000, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches("want:tv-stand", [l])
+    now = datetime.now(timezone.utc)
+    for n, (model, score, checked) in enumerate(scores):
+        s.save_score(Score(listing_id=l.id, hunt_id="want:tv-stand",
+                           model=model, scored_at=now + timedelta(minutes=n),
+                           match="unknown", deal_score=score,
+                           est_value_cents=None, condition=None,
+                           matched_want="tv-stand", worth_grabbing=True,
+                           unknowns=("Width of the stand",), requirements=(),
+                           red_flags=(), reasoning=f"because {model}",
+                           images_checked=checked), priced_at_cents=15000)
+    return client.get("/listing/x:6").text
+
+
+def test_the_judgement_comes_before_the_paperwork(tmp_path):
+    """The Scores panel was a `table.responsive`, which on a phone stacks into
+    one labelled row per column: When, Hunt, Model, Score, Want, Flags,
+    Reasoning. That put a timestamp as the largest text in the panel and the
+    judgement last, behind four fields of metadata -- two of which said the
+    same thing, since a want hunt's id IS `want:` plus its name.
+
+    So the score and the sentence lead, and the rest is one quiet line."""
+    body = _scored_listing(tmp_path, ("sonnet", 5.0, False))
+    panel = body.split("<h2>Scores</h2>")[1]
+
+    assert 'class="judgement-top"' in panel
+    assert panel.index("judgement-facts") < panel.index("because sonnet"), \
+        "the facts are a header above the sentence, not a footnote below it"
+    assert panel.index("5.0") < panel.index("because sonnet"), \
+        "and the score leads"
+    assert 's-mid' in panel, "the score keeps the colour it has on the card"
+
+
+def test_history_appears_only_when_there_is_some(tmp_path):
+    """87% of listings carry exactly one score, and there is no history to show
+    for those. The 13% with a second pass are the case worth drawing: what the
+    photographs changed."""
+    one = _scored_listing(tmp_path, ("sonnet", 5.0, False))
+    panel = one.split("<h2>Scores</h2>")[1].split("<h2>")[0]
+    assert 'class="pass"' not in panel
+    assert "Earlier passes" not in panel
+
+    second = tmp_path / "b"; second.mkdir()
+    two = _scored_listing(second, ("sonnet", 5.0, False),
+                          ("sonnet+images", 7.0, True))
+    panel = two.split("<h2>Scores</h2>")[1].split("<h2>")[0]
+    assert "Earlier passes" in panel
+    assert panel.index("judgement-top") < panel.index('class="pass"')
+
+
+def test_the_history_never_repeats_the_judgement(tmp_path):
+    """REPORTED with a screenshot: the table's first row WAS the verdict above
+    it -- same score, hunt, model, timestamp and sentence -- so the older row
+    beneath it read as the page contradicting itself rather than as history.
+
+    Only `scores[1:]` is drawn, so what is shown is what came before."""
+    two = _scored_listing(tmp_path, ("sonnet", 5.0, False),
+                          ("sonnet+images", 7.0, True))
+    panel = two.split("<h2>Scores</h2>")[1].split("<h2>")[0]
+
+    assert panel.count("because sonnet+images") == 1, "the latest, stated once"
+    history = panel.split("Earlier passes")[1]
+    assert "because sonnet+images" not in history
+    assert "because sonnet<" in history or "because sonnet " in history \
+        or "because sonnet</p>" in history
+
+    assert "<table" not in panel, (
+        "two rows sharing three of four columns is not a table, and it stacked "
+        "into HUNT / MODEL / SCORE / FLAGS labels on a phone")
+
+
+def test_one_filled_block_per_panel(tmp_path):
+    """REPORTED with a screenshot: six amber things in the Scores panel, three
+    of them filled boxes stacked in a row -- the photo banner, the flags and
+    the unknowns. When everything is emphasised nothing is.
+
+    The banner keeps its fill because it is a state of the whole panel. The two
+    inside it became left rules: same colour coding, no shouting."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    for sel in (".flags li{", ".unknowns{"):
+        block = css.split(sel)[1].split("}")[0]
+        assert "border-left" in block, sel
+        assert "background" not in block, f"{sel} is filled again"
+    banner = css.split(".state-line.photostate.asked{")[1].split("}")[0]
+    assert "background" in banner, "the panel's own state still reads as one"
+
+
+def test_the_listing_page_does_not_borrow_a_class_that_is_already_positioned():
+    """REPORTED with a screenshot: the whole Scores panel rendered on top of the
+    listing's photographs.
+
+    `app.js` stamps `<div class="verdict">` into a card as it folds away, and
+    that class is `position:absolute; inset:0; z-index:2`. Its rule sits later
+    in app.css than the panel's, so it won, and a block of prose became an
+    overlay. One stylesheet is one namespace across every page, and a name that
+    reads as generic ("verdict", "panel", "row") is the kind most likely to be
+    taken already."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    page = (root / "dealbot/web/templates/listing.html").read_text()
+    assert 'class="verdict"' not in page
+
+    css = (root / "dealbot/web/static/app.css").read_text()
+    badge = css.split(".verdict{")[1].split("}")[0]
+    assert "position:absolute" in badge, (
+        "if the badge is no longer absolute this test has lost its point, "
+        "but the name is still shared: pick a different one anyway")
+
+
+def test_a_deleted_want_can_still_explain_itself(tmp_path):
+    """A want is archived rather than dropped and everything it matched stays
+    readable -- but its hunt leaves `cfg.hunts`, so `route` had nothing to
+    re-decide against and the photo line fell back to "did not get one", the
+    least useful of its three answers. That hit 254 of 1,378 listings here,
+    every one judged by `want:tv-stand` before it was deleted."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score, Want
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.seed_wants((Want(name="bookcase", description="a bookcase",
+                       max_price_cents=10000, queries=("bookcase",)),))
+    l = Listing(id="x:9", source="x", source_id="9", title="A bookcase",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches("want:bookcase", [l])
+    s.save_score(Score(listing_id=l.id, hunt_id="want:bookcase", model="m",
+                       scored_at=datetime.now(timezone.utc), match="unknown",
+                       deal_score=1.0, est_value_cents=None, condition=None,
+                       matched_want="bookcase", worth_grabbing=True,
+                       unknowns=(), requirements=(), red_flags=(),
+                       reasoning="r", needs_images=True,
+                       image_question="how wide?"), priced_at_cents=0)
+    s.archive_want("bookcase")
+
+    body = client.get("/listing/x:9").text
+    assert "not headed for a bin on its text score" in body
+    assert "did not get one" not in body, (
+        "the hunt is archived, not gone: it can still be asked")

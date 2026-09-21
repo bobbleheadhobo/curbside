@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 439 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 521 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -119,12 +119,17 @@ failure mode that matters most. Never add a test that hits the network.
 ## The dashboard owns some of the config now
 
 Three things used to require an ssh session and a service restart, and are set
-from `/settings` instead:
+from the dashboard instead:
 
 * **the waking hours** — outside them a timer tick does *nothing*
 * **each hunt's cadence** — `settings` rows keyed `hunt_interval:<hunt_id>`
 * **the wants themselves** — a `wants` table, which `config.yaml` **seeds once**
 * **the blocked words** — `hunt_exclude:<id>`, also seeded once
+
+The first, second and fourth live on `/settings`. The wants are edited on `/`,
+in a panel folded away above the cards, because that page is the list's output
+and a gear reads as configuration. `app.MANAGE_URL` is the one place that link
+is written; every save and every Cancel goes back to it.
 
 Each seed is **per name / per hunt**, not one global flag: something added to
 `config.yaml` later still arrives. It cannot resurrect a deletion, because
@@ -343,6 +348,19 @@ query that filters on a new column means adding its index too.
   that, every candidate tied on the `datetime.min` fallback, and a stable sort
   quietly handed the slots to feed order. Use `pipeline.freshness`, which falls
   back to `first_seen` off the `UpsertResult`.
+* **A plan reading is only as good as the window it describes.** `resetsAt`
+  exists at two levels and they are not the same instant: the top-level one
+  belongs to whichever window tripped the threshold, each window's own sits in
+  `unifiedWindows.<name>.resetsAt`. Both are stored, so a reading can be retired
+  when its window rolls instead of standing the bot aside from one that has
+  already refilled -- and, the other way round, a reading that names its own
+  expiry HOLDS until then rather than buying a fresh one. The staleness rule is
+  for undated readings only. Blind re-asking cost $0.57 in six hours: a 7-day
+  window at 92% with 21 hours left on it let a pass through every 31 minutes,
+  each one a triage call plus an appraisal or two, to re-learn a number that
+  cannot change until the window rolls. `read_plan_usage` is the one place both
+  rules live, and it is what `/runs` draws: a gate and a display free to disagree
+  about what 72% means is how a page starts lying about why nothing is judged.
 * `claude -p` needs `--verbose` with `stream-json` or there is no stream at all,
   and `< /dev/null` or it stalls ~3s per launch.
 * Plan quota is readable *only* from `rate_limit_event` records in the stream.

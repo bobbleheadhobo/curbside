@@ -22,8 +22,10 @@
  */
 (function () {
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var ICON = {saved: "i-saved", dismissed: "i-x", blocked: "i-gone"};
-  var LABEL = {saved: "Saved", dismissed: "Dismissed", blocked: "Blocked"};
+  var ICON = {saved: "i-saved", dismissed: "i-x", blocked: "i-gone",
+              grabbed: "i-check"};
+  var LABEL = {saved: "Saved", dismissed: "Dismissed", blocked: "Blocked",
+               grabbed: "Grabbed"};
   var live;
 
   function post(url, data) {
@@ -73,6 +75,11 @@
     announce(text);
     return close;
   }
+
+  // The pill editors at the foot of this file live in their own closure and
+  // need to say "that did not work" the same way everything else does. One
+  // bar, one implementation, rather than a second one that looks nearly right.
+  window.curbside = {toast: toast};
 
   /* Swipe the toast away.
    *
@@ -225,6 +232,22 @@
    *
    * data-inplace takes an optional selector; default is the closest panel.
    */
+  /* Which <details> inside a region are open right now.
+   *
+   * The server renders the wants panel folded, because that is right on a
+   * fresh load -- so swapping in a fresh copy of it would fold away the panel
+   * you were working in the moment you restored a want from it. The open state
+   * belongs to this session, not to the markup.
+   */
+  function openIds(root) {
+    var ids = [];
+    if (root.tagName === "DETAILS" && root.open && root.id) ids.push(root.id);
+    Array.prototype.forEach.call(
+      root.querySelectorAll("details[open][id]"),
+      function (d) { ids.push(d.id); });
+    return ids;
+  }
+
   function refresh(sel) {
     return fetch(location.href, {credentials: "same-origin"})
       .then(function (r) { return r.text(); })
@@ -232,7 +255,13 @@
         var doc = new DOMParser().parseFromString(html, "text/html");
         [sel, ".health"].forEach(function (s) {
           var fresh = doc.querySelector(s), cur = document.querySelector(s);
-          if (fresh && cur) cur.replaceWith(fresh);
+          if (!fresh || !cur) return;
+          var open = openIds(cur);
+          cur.replaceWith(fresh);
+          open.forEach(function (id) {
+            var d = document.getElementById(id);
+            if (d) d.open = true;
+          });
         });
       });
   }
@@ -281,6 +310,27 @@
    * and is picked up on arrival. With this script absent the form posts and
    * the 303 does the same journey without it.
    */
+  /* Recording a purchase. Same fold-and-toast shape as `act`, with two
+     differences that matter: the figure travels with it, and Undo is a
+     different endpoint. /triage could not undo this -- the listing is stamped
+     grabbed and sold, and restoring the status alone would leave a thing you
+     do not own marked as bought and quietly excluded from every re-check. */
+  function grab(form, card) {
+    var data = new FormData(form);
+    var restore = leave(card, "grabbed");
+    post("/grabbed", data).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      toast("Grabbed.", "Undo", function () {
+        post("/grabbed", {hunt_id: data.get("hunt_id"),
+                          listing_id: data.get("listing_id"),
+                          undo: "1"}).then(restore);
+      });
+    }).catch(function () {
+      restore();
+      toast("That did not save. Still connected?", null, null, true);
+    });
+  }
+
   /* Hand an undo across a navigation. Used by both things that decide on a
      page with no card to fold: triage on the detail page, and blocking a word
      from it. `term` is set only by the second, and undoing that has to unblock
@@ -315,8 +365,7 @@
      detail page opens on ANY listing -- `filtered`, `new`, `gone` -- and
      offering to restore a status the endpoint rejects is an Undo button that
      answers 400. Offer nothing rather than something that does not work. */
-  var UNDOABLE = ["saved", "dismissed", "contacted", "wanted", "free_find",
-                  "scored"];
+  var UNDOABLE = ["saved", "dismissed", "wanted", "free_find", "scored"];
 
   /* The other half: offer it once, on the page we landed on. */
   function undoFromLastPage() {
@@ -380,6 +429,21 @@
       if (kind !== "saved" && kind !== "dismissed") return;
       ev.preventDefault();
       act(form, card, kind);
+      return;
+    }
+
+    /* Its own branch, not `act()`: this one carries a figure, and its undo
+       posts to /grabbed rather than /triage because a withdrawn purchase has
+       stamps to clear as well as a status to put back.
+
+       "Not mine" posts here too and is deliberately NOT intercepted: it moves
+       the listing to the other tab, so a plain form post and the 303 that
+       follows land you on a page that is already correct. Folding the card and
+       toasting "Grabbed." would be the opposite of what just happened. */
+    if (form.getAttribute("action") === "/grabbed"
+        && !form.querySelector("[name=undo]")) {
+      ev.preventDefault();
+      grab(form, card);
     }
   });
 
@@ -457,6 +521,23 @@
   }
 
   document.addEventListener("click", function (ev) {
+    /* Checked before the block handler: both live in a card's action row, and
+       this one needs no block context at all. */
+    var g = ev.target.closest && ev.target.closest(".grabtoggle");
+    if (g) {
+      ev.preventDefault();
+      var gcard = g.closest("article.card");
+      var grow = gcard && gcard.querySelector(".grabrow");
+      if (!grow) return;
+      var gopen = grow.hidden;
+      grow.hidden = !gopen;
+      g.setAttribute("aria-expanded", gopen ? "true" : "false");
+      if (gopen) {
+        var money = grow.querySelector("input[name=paid]");
+        if (money) { money.focus(); money.select(); }
+      }
+      return;
+    }
     var t = ev.target.closest && ev.target.closest(".blocktoggle, .chips button");
     if (!t) return;
     var ctx = blockCtx(t);
@@ -655,108 +736,169 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-/* Search terms as pills.
+/* Search terms and requirements as pills.
  *
  * Each term is a whole separate search, and a textarea of lines does not say
  * that -- "tv stand media console" typed on one line is one bad search that
- * finds nothing, and looks identical to two good ones.
+ * finds nothing, and looks identical to two good ones. A requirement is the
+ * same shape of thing: a short list you add to and take from one at a time,
+ * each one answered separately by the model.
  *
  * The <textarea> stays the field that posts, hidden, and is rewritten from the
- * pills on every change. With this file missing you get the textarea, one term
- * per line, and everything still works -- including "Suggest terms", which is a
- * real submit button and needs no script at all.
+ * pills on every change. With this file missing you get the textarea, one item
+ * per line, and everything still works -- including "Suggest terms", which is
+ * a real submit button and needs no script at all.
  */
 (function () {
-  var ta = document.getElementById("f-queries");
-  if (!ta) return;
+  var toast = (window.curbside && window.curbside.toast) || function () {};
 
-  var label = document.querySelector('label[for="f-queries"]');
-  var wrap = document.createElement("div");
-  wrap.className = "termedit";
-  var pills = document.createElement("div");
-  pills.className = "terms";
-  var input = document.createElement("input");
-  input.type = "text";
-  input.id = "f-queries-add";
-  input.autocapitalize = "none";
-  input.setAttribute("enterkeyhint", "enter");
-  input.placeholder = "tv stand";
-  wrap.appendChild(pills);
-  wrap.appendChild(input);
-  ta.parentNode.insertBefore(wrap, ta.nextSibling);
-  ta.hidden = true;
-  // The label pointed at the textarea, which is now hidden: move it to the
-  // control that actually takes the typing, or tapping the label does nothing.
-  if (label) label.setAttribute("for", input.id);
+  function pills(id, opts) {
+    var ta = document.getElementById(id);
+    if (!ta) return null;
 
-  function terms() {
-    return ta.value.split("\n").map(function (t) { return t.trim(); })
-             .filter(function (t) { return t.length; });
-  }
+    var label = document.querySelector('label[for="' + id + '"]');
+    var wrap = document.createElement("div");
+    wrap.className = "termedit" + (opts.wide ? " wide" : "");
+    var box = document.createElement("div");
+    box.className = "terms";
+    var input = document.createElement("input");
+    input.type = "text";
+    input.id = id + "-add";
+    input.autocapitalize = "none";
+    input.setAttribute("enterkeyhint", "enter");
+    input.placeholder = opts.placeholder;
+    wrap.appendChild(box);
+    wrap.appendChild(input);
+    ta.parentNode.insertBefore(wrap, ta.nextSibling);
+    ta.hidden = true;
+    // The label pointed at the textarea, which is now hidden: move it to the
+    // control that actually takes the typing, or tapping the label does
+    // nothing.
+    if (label) label.setAttribute("for", input.id);
 
-  function write(list) {
-    ta.value = list.join("\n");
-    render();
-  }
-
-  function render() {
-    pills.textContent = "";
-    terms().forEach(function (term, i) {
-      var pill = document.createElement("span");
-      pill.className = "term";
-      pill.appendChild(document.createTextNode(term));
-      var x = document.createElement("button");
-      x.type = "button";                     // never submits the form
-      x.setAttribute("aria-label", "Remove " + term);
-      x.textContent = "×";
-      x.addEventListener("click", function () {
-        var list = terms();
-        list.splice(i, 1);
-        write(list);
-        input.focus();
-      });
-      pill.appendChild(x);
-      pills.appendChild(pill);
-    });
-    pills.hidden = !pills.childElementCount;
-  }
-
-  function commit() {
-    var term = input.value.trim();
-    if (!term) return;
-    var list = terms();
-    // Case-insensitive, like the server's own cleanup: two spellings of one
-    // search are two identical requests per tick, forever.
-    var dupe = list.some(function (t) {
-      return t.toLowerCase() === term.toLowerCase();
-    });
-    if (!dupe) list.push(term);
-    input.value = "";
-    write(list);
-  }
-
-  input.addEventListener("keydown", function (ev) {
-    if (ev.key === "Enter" || ev.key === ",") {
-      // Enter here means "that is one term", NOT "submit the form" -- which is
-      // what it would otherwise do, saving a half-filled want.
-      ev.preventDefault();
-      commit();
-      return;
+    function items() {
+      return ta.value.split("\n").map(function (t) { return t.trim(); })
+               .filter(function (t) { return t.length; });
     }
-    if (ev.key === "Backspace" && !input.value && terms().length) {
-      ev.preventDefault();
-      var list = terms();
-      input.value = list.pop();             // back into the box to edit, not gone
+
+    function write(list) {
+      ta.value = list.join("\n");
+      render();
+    }
+
+    function render() {
+      box.textContent = "";
+      items().forEach(function (term, i) {
+        var pill = document.createElement("span");
+        pill.className = "term";
+        pill.appendChild(document.createTextNode(term));
+        var x = document.createElement("button");
+        x.type = "button";                     // never submits the form
+        x.setAttribute("aria-label", "Remove " + term);
+        x.textContent = "×";
+        x.addEventListener("click", function () {
+          var list = items();
+          list.splice(i, 1);
+          write(list);
+          input.focus();
+        });
+        pill.appendChild(x);
+        box.appendChild(pill);
+      });
+      box.hidden = !box.childElementCount;
+    }
+
+    function commit() {
+      var term = input.value.trim();
+      if (!term) return;
+      var list = items();
+      // Case-insensitive, like the server's own cleanup: two spellings of one
+      // search are two identical requests per tick, forever.
+      var dupe = list.some(function (t) {
+        return t.toLowerCase() === term.toLowerCase();
+      });
+      if (!dupe) list.push(term);
+      input.value = "";
       write(list);
     }
+
+    input.addEventListener("keydown", function (ev) {
+      // A comma ends a search term. It does NOT end a requirement: those are
+      // sentences -- "at least 70 inches wide, any colour" is one fact, and
+      // splitting it would file half a thought as a rule of its own.
+      if (ev.key === "Enter" || (ev.key === "," && opts.comma)) {
+        // Enter here means "that is one of them", NOT "submit the form" --
+        // which is what it would otherwise do, saving a half-filled want.
+        ev.preventDefault();
+        commit();
+        return;
+      }
+      if (ev.key === "Backspace" && !input.value && items().length) {
+        ev.preventDefault();
+        var list = items();
+        input.value = list.pop();           // back into the box to edit, not gone
+        write(list);
+      }
+    });
+
+    // One typed and left sitting in the box is one you meant to add.
+    input.addEventListener("blur", commit);
+    // Guarded: a null form here would throw and take the whole editor with it,
+    // leaving a hidden textarea and no way to type at all.
+    var form = input.form || ta.form;
+    if (form) form.addEventListener("submit", commit);
+
+    render();
+    return {commit: commit, write: write, input: input, form: form};
+  }
+
+  var queries = pills("f-queries", {placeholder: "tv stand", comma: true});
+  pills("f-requires", {placeholder: "at least 70 inches wide", wide: true});
+
+  /* "Suggest terms" without leaving the page.
+   *
+   * It is a round trip through the server either way -- the drafting and the
+   * merge both live there -- but as a plain submit it re-rendered the form and
+   * dropped you at the top of it, having scrolled past the description you had
+   * just written. Same post, answered as JSON, and only the pills change.
+   *
+   * With this script absent the button is still a submit and still works.
+   */
+  var btn = queries && queries.form
+    && queries.form.querySelector("button.suggest");
+  if (!btn) return;
+
+  btn.addEventListener("click", function (ev) {
+    ev.preventDefault();
+    if (btn.disabled) return;
+    queries.commit();                  // a term still in the box counts
+    var body = new URLSearchParams(new FormData(queries.form));
+    body.set("action", "suggest");
+    var was = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = "Drafting…";
+    fetch(queries.form.getAttribute("action"), {
+      method: "POST", credentials: "same-origin",
+      headers: {"X-Requested-With": "fetch"}, body: body
+    }).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function (res) {
+      if (!res || !res.ok) {
+        toast((res && res.error) || "Could not draft search terms just now.",
+              null, null, true);
+        return;
+      }
+      // The server merged them with what was already there, in order, so the
+      // whole list comes back and the pills are rewritten from it.
+      queries.write(res.queries);
+      queries.input.focus();
+    }).catch(function () {
+      toast("Could not draft search terms just now. Still connected?",
+            null, null, true);
+    }).then(function () {
+      btn.disabled = false;
+      btn.innerHTML = was;
+    });
   });
-
-  // A term typed and left sitting in the box is one you meant to add.
-  input.addEventListener("blur", commit);
-  // Guarded: a null form here would throw and take the whole editor with it,
-  // leaving a hidden textarea and no way to type at all.
-  var form = input.form || ta.form;
-  if (form) form.addEventListener("submit", commit);
-
-  render();
 })();

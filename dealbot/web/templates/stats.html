@@ -53,6 +53,34 @@
   </p>
 </div>
 
+{# Its own panel. The bars answer "is today normal"; this answers "what did
+   Tuesday cost", which is a different question asked at a different moment,
+   and stacking the two made the first panel long enough to push Today off the
+   screen. #}
+<div class="panel" style="margin-bottom:18px">
+  <h2>Last 7 days</h2>
+  <div class="wrap"><table class="responsive">
+    <thead><tr><th>Day</th><th class="n">Spent</th><th class="n">Judged</th>
+      <th class="n">Runs</th></tr></thead>
+    <tbody>
+    {% for d in week_days %}
+    <tr>
+      <td class="lead" data-label="Day">{{ d.label }}{% if d.today %}
+        <small>today</small>{% endif %}</td>
+      {# A day with no run is a gap, not a zero: a day off and a day that found
+         nothing are different facts. Same rule the bars are drawn by. #}
+      <td class="n num {{ 'zero' if not d.usd }}" data-label="Spent"
+        >{% if d.usd is none %}&mdash;{% else %}${{ '%.2f'|format(d.usd) }}{% endif %}</td>
+      <td class="n num {{ 'zero' if not d.scored }}" data-label="Judged"
+        >{% if d.usd is none %}&mdash;{% else %}{{ d.scored or 0 }}{% endif %}</td>
+      <td class="n num {{ 'zero' if not d.runs }}" data-label="Runs"
+        >{% if d.usd is none %}&mdash;{% else %}{{ d.runs }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
 <div class="panel" style="margin-bottom:18px">
   <h2>Today</h2>
   {# What the figure above it actually went on. Same shape as the all-time
@@ -78,11 +106,15 @@
   <div class="splits">
     <div class="split">
       <h3>By stage</h3>
+      {# In the order the money is spent, which is what "by stage" says. The
+         cheap batch that sifts a page of listings used to be called "triage",
+         a word the user did not recognise -- the same reason the listing page
+         says "Your call". #}
       <dl>
+        <dt>First pass <small>(derived)</small></dt>
+        <dd class="num">${{ '%.2f'|format(today.stages.other) }}</dd>
         <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(today.stages.appraisal) }}</dd>
         <dt>Photo checks</dt><dd class="num">${{ '%.2f'|format(today.stages.images) }}</dd>
-        <dt>Triage <small>(derived)</small></dt>
-        <dd class="num">${{ '%.2f'|format(today.stages.other) }}</dd>
       </dl>
     </div>
     <div class="split">
@@ -94,7 +126,10 @@
       </dl>
     </div>
     <div class="split">
-      <h3>Dearest judged</h3>
+      {# "Dearest judged" was British for "cost the most" on a page of dollar
+         figures, where it read as a price floor or as a superlative about
+         affection. Say the thing. #}
+      <h3>Cost the most</h3>
       {% if today.dearest %}
       <ol class="dearest">
         {% for d in today.dearest %}
@@ -106,9 +141,9 @@
         </li>
         {% endfor %}
       </ol>
-      {# Appraisal only: triage is billed per batch and written to its score
-         row as 0, so these are a floor rather than the whole cost. #}
-      <p class="hint">Appraisal only. Triage is billed per batch.</p>
+      {# Appraisal only: the first pass is billed per batch and written to its
+         score row as 0, so these are a floor rather than the whole cost. #}
+      <p class="hint">Appraisal only. The first pass is billed per batch.</p>
       {% else %}
       <p class="hint">Nothing judged yet.</p>
       {% endif %}
@@ -174,12 +209,13 @@
     <div class="split">
       <h3>By stage</h3>
       <dl>
+        {# Derived, and labelled so: it is what the runs cost that no score
+           row claimed. The first pass is saved with a zero cost on its
+           score, so this remainder is what it actually came to. #}
+        <dt>First pass <small>(derived)</small></dt>
+        <dd class="num">${{ '%.2f'|format(stages.other) }}</dd>
         <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(stages.appraisal) }}</dd>
         <dt>Photo checks</dt><dd class="num">${{ '%.2f'|format(stages.images) }}</dd>
-        {# Derived, and labelled so: it is what the runs cost that no score
-           row claimed. Triage is saved with a zero cost on its score. #}
-        <dt>Triage <small>(derived)</small></dt>
-        <dd class="num">${{ '%.2f'|format(stages.other) }}</dd>
       </dl>
     </div>
     <div class="split">
@@ -208,7 +244,7 @@
 </div>
 
 <div class="panel">
-  <h2>Fetched to saved</h2>
+  <h2>Fetched to grabbed</h2>
   {# The gate's leverage, in one row. A scraper that has stopped returning
      anything or a gate that has stopped holding both show up here first. #}
   <div class="funnel">
@@ -217,7 +253,8 @@
         ('Past the gate', funnel.candidates, 'worth paying for'),
         ('Judged', funnel.scored, 'cost money'),
         ('Reached a bin', funnel.binned, 'shown to you'),
-        ('Saved', funnel.saved, 'you kept')] %}
+        ('Saved', funnel.saved, 'you kept'),
+        ('Grabbed', funnel.grabbed, 'you own')] %}
     <div class="step">
       <b class="num">{{ '{:,}'.format(n) }}</b>
       <span>{{label}}</span>
@@ -226,6 +263,18 @@
     {% if not loop.last %}<div class="arrow" aria-hidden="true">&rsaquo;</div>{% endif %}
     {% endfor %}
   </div>
+  {# The only check on the bot's central claim. Every judged listing carries an
+     estimated value and nothing else in the database can falsify one, so this
+     line is the whole reason a purchase is recorded at all. #}
+  {% if calibration.n %}
+  <p class="panel-note">
+    On {{ calibration.n }} thing{{ '' if calibration.n == 1 else 's' }} you
+    grabbed, the model guessed
+    <b>${{ '{:,.0f}'.format(calibration.est / 100) }}</b> of value and you paid
+    <b>{{ 'nothing' if not calibration.paid
+          else '$' ~ '{:,.0f}'.format(calibration.paid / 100) }}</b>.
+  </p>
+  {% endif %}
   <p class="panel-note">
     {% if funnel.fetched %}
     The gate judged {{ '%.1f'|format(funnel.scored / funnel.fetched * 100) }}%

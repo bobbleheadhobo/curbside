@@ -1,12 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Settings &middot; Curbside{% endblock %}
 {% block content %}
-{% set live = wants|rejectattr('stored.archived')|list %}
-{% set gone = wants|selectattr('stored.archived')|list %}
 <div class="pagehead">
   <h1>Settings</h1>
   <p class="stats">
-    <i><b>{{ live|length }}</b> want{{ '' if live|length == 1 else 's' }}</i>
+    <i><b>{{ n_wants }}</b> want{{ '' if n_wants == 1 else 's' }}</i>
     {% set nblocked = sweeps|sum(attribute='terms'|length) if false else
         (sweeps|map(attribute='terms')|map('length')|sum) %}
     {% if nblocked %}<i><b>{{ nblocked }}</b> blocked</i>{% endif %}
@@ -17,6 +15,12 @@
     <a class="btn tostats" href="/stats"
       ><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg>
       Stats and spend</a>
+    {# The wants themselves are edited on the page they produce. This is a
+       signpost to where they went, not a second copy of the list: two places
+       to edit one list is how the two come to disagree. #}
+    <a class="btn" href="{{ manage_url }}"
+      ><svg class="i" aria-hidden="true"><use href="#i-wants"/></svg>
+      Your wants</a>
   </p>
 </div>
 
@@ -105,6 +109,17 @@
         {%- if tuning.backlog %} {{ tuning.backlog }} are queued now.{% endif %}</p>
     </div>
     <div class="field">
+      <label class="lbl" for="t-img">Photos to look at each run</label>
+      <input type="text" inputmode="numeric" id="t-img" name="max_image_checks"
+             value="{{ tuning.max_image_checks }}">
+      <p class="hint">When the words are not enough the model asks to see the
+        pictures. That costs about twice a judgement, so only listings already
+        headed for a bin get a look, up to {{ tuning.max_image_checks }} per
+        hunt per run at {{ tuning.images_per_check }} photos each.
+        {%- if tuning.looked %} {{ tuning.looked }} have had one.{% endif %}
+        Set it to 0 to never look.</p>
+    </div>
+    <div class="field">
       <label class="lbl" for="t-radius">How far you will drive, in miles</label>
       <input type="text" inputmode="decimal" id="t-radius" name="radius_miles"
              value="{{ '%g'|format(tuning.radius_miles) }}">
@@ -174,58 +189,7 @@
 </div>
 {% endif %}
 
-<div class="panel">
-  <h2>Wants</h2>
-  {% for r in live %}
-  <div class="wantrow {{ 'off' if r.paused }}">
-    <a class="grow" href="/wants/{{ r.w.name }}">
-      <b>{{ r.w.name }}</b>
-      <small>
-        {%- if r.w.max_price_cents == 0 %}Free ones only
-        {%- else %}Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}{% endif %}
-        {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,
-              r.hunt.interval_minutes ~ ' min')|lower }}
-        {#- No terms, so no hunt of its own: the free sweep is all that sees it.
-            The form will not create one of these any more, but config.yaml can
-            still seed one, and older wants predate the rule. #}
-        {%- else %} &middot; no search terms{% endif %}
-        {%- if r.matched %} &middot; {{ r.matched }} matched{% endif %}
-        {%- if r.paused %} &middot; paused{% endif %}
-      </small>
-    </a>
-    <svg class="i go" aria-hidden="true"><use href="#i-open"/></svg>
-  </div>
-  {% else %}
-  <div style="padding:16px 15px;color:var(--dim);font-size:13.5px">
-    Nothing on the list. The free sweep still runs and still finds things.
-  </div>
-  {% endfor %}
-  <div class="formactions">
-    <a class="btn primary" href="/wants/new">
-      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add a want</a>
-  </div>
-  <p class="settings-note">New wants only see listings found <b>from now
-    on</b>.</p>
-</div>
-
-{% if gone %}
-<div class="panel" style="margin-top:18px">
-  <h2>Removed</h2>
-  {% for r in gone %}
-  <div class="wantrow off">
-    <a class="grow" href="/hunt/{{ r.hunt_id }}">
-      <b>{{ r.w.name }}</b>
-      <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
-        still readable.</small>
-    </a>
-    <form method="post" action="/wants/archive" data-inplace="main"
-            data-toast="Restored.">
-      <input type="hidden" name="name" value="{{ r.w.name }}">
-      <input type="hidden" name="restore" value="1">
-      <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>
-    </form>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+{# The wants list itself lives on /, in the panel the front page folds away
+   above the cards. It was here, which put the list one gear and one scroll
+   away from the page it is the output of. #}
 {% endblock %}

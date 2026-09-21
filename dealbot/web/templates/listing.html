@@ -5,16 +5,45 @@
   <h1>{{listing.title}}</h1>
 </div>
 
+{# Off the market, stated before anything you could act on. This page said it
+   nowhere at all: you could open a saved listing that had sold and read its
+   price, its distance and its score without ever being told. #}
+{# A grabbed listing is stamped sold as well, so this has to be checked first
+   or the page tells you your own bookshelf is no longer listed. This is the one
+   place the date belongs: the card has no room and no `when`. #}
+{% if listing.grabbed_at %}
+<div class="gotbanner">
+  <svg class="i" aria-hidden="true"><use href="#i-check"/></svg>
+  <span><b>Yours.</b> Grabbed {{ when(listing.grabbed_at) }}.
+    {%- if listing.paid_cents == 0 %} Free.
+    {%- elif listing.paid_cents is not none %} Paid ${{ '{:,.0f}'.format(listing.paid_cents/100) }}.
+    {%- endif %}</span>
+</div>
+{% elif listing.sold_at %}
+<div class="gonebanner">
+  <svg class="i" aria-hidden="true"><use href="#i-gone"/></svg>
+  <span><b>{{ 'Sold.' if listing.sold_reason == 'sold' else 'No longer listed.' }}</b>
+    Checked {{ when(listing.sold_at) }}.</span>
+</div>
+{% endif %}
+
 {% from "_card.html" import price %}
-<p class="price" style="margin:0 0 12px">
-  {{ price(listing.price_cents, listing.previous_price_cents) }}
+<p class="price{{ ' gone' if listing.sold_at and not listing.grabbed_at }}" style="margin:0 0 12px">
+  {{ price(listing.price_cents, listing.previous_price_cents, price_unclear) }}
 </p>
 
 <p class="detail-meta">
   {% if listing.distance_mi is not none %}
   <span class="num">{{ '%.0f'|format(listing.distance_mi) }} mi</span>{% endif %}
   <span>{{listing.city or 'unknown city'}}</span>
-  <span>seller {{listing.seller_name or 'unknown'}}</span>
+  {# WHICH marketplace, which this page said nowhere -- a Facebook listing
+     and a Craigslist one rendered identically, and it changes what the Open
+     button opens and how you would contact anyone. It replaces "seller
+     unknown", which was unknown on every listing ever collected: neither
+     adapter parses a seller, and Facebook omits one from 93% of the payloads
+     it sends us anyway. A field that always says the same thing is furniture,
+     not information. #}
+  <span>{{ listing.source|title }}</span>
   {# When the SELLER posted it, which this page never said. The card carries a
      relative age ("listed 12d ago"); the exact date only ever existed in the
      database. Facebook states it on every listing, Craigslist only on the
@@ -36,11 +65,14 @@
 <div class="section">
   <h2>Scores</h2>
   <div class="panel">
-    {# Whether the model looked at the photographs, in all THREE states. It
-       used to be a chip that appeared when it had, so "judged on the text
-       alone" and "asked for a look and never got one" were the same blank
-       space. The second is not a non-event: it means the image budget ran
-       out on a listing the model said it could not settle without seeing. #}
+    {# Whether the model looked at the photographs. It used to be a chip that
+       appeared when it had, so "judged on the text alone" and "asked for a
+       look and never got one" were the same blank space. Then the second got a
+       sentence blaming the image budget, which was wrong nearly every time:
+       photographs are only bought for a listing already headed for a bin, so
+       a low-scoring one that asked to be seen was turned down long before the
+       budget was consulted. `photos.binned` is which, and none means neither
+       claim is safe to make. #}
     {% if photos %}
     <div class="state-line photostate {{ 'asked' if photos.asked }}">
       {% if photos.checked %}
@@ -53,8 +85,16 @@
           {%- endif %}</span>
       {% elif photos.asked %}
         <svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
-        <span><b>Photos not checked.</b> The model asked for a look and the
-          image budget ran out.</span>
+        <span><b>Photos not checked.</b>
+          {#- One phrase per line: Jinja keeps the newline and the indent, so a
+              wrapped sentence renders with whitespace inside it. #}
+          {%- if photos.binned is none %}
+            The model asked for a look and did not get one.
+          {%- elif photos.binned %}
+            The model asked for a look and the image budget ran out.
+          {%- else %}
+            The model asked for a look. It was not headed for a bin on its text score, so no photographs were bought.
+          {%- endif %}</span>
       {% else %}
         <svg class="i" aria-hidden="true"><use href="#i-noimg"/></svg>
         <span><b>Judged on the text alone.</b></span>
@@ -64,25 +104,57 @@
     <p class="photoq">{{ photos.question }}</p>
     {% endif %}
     {% endif %}
-    <div class="wrap"><table class="responsive">
-    <thead><tr><th>When</th><th>Hunt</th><th>Model</th><th class="n">Score</th>
-      <th>Want</th><th>Flags</th><th>Reasoning</th></tr></thead>
-    <tbody>
-    {% for s in scores %}
-    <tr><td class="lead num" data-label="When">{{ when(s.scored_at) }}</td>
-      <td data-label="Hunt">{{s.hunt_id}}</td><td data-label="Model">{{s.model}}</td>
-      <td class="n num" data-label="Score">{{ '%.1f'|format(s.deal_score) }}</td>
-      <td data-label="Want">{{s.matched_want or '—'}}</td>
-      <td class="wide" data-label="Flags">{{ s.red_flags|join(', ') or '—' }}</td>
-      <td class="span2 reason" data-label="Reasoning"
-          style="white-space:normal;min-width:280px">{{s.reasoning}}</td></tr>
-    {% else %}
-    <tr><td colspan="7" style="color:var(--dim)">Not scored yet.</td></tr>
-    {% endfor %}
-    </tbody></table></div>
     {% set latest = scores[0] if scores else none %}
-    {% if latest and (latest.unknowns or latest.requirements) %}
-    <div class="whybody" style="padding:13px 15px;border-top:1px solid var(--line-soft)">
+    {# THE VERDICT, first and in prose. This was a `table.responsive`, which on
+       a phone stacks into one labelled row per column: date, hunt, model,
+       score, want, flags, reasoning -- almost exactly inverted by importance,
+       with a timestamp as the largest text in the panel and the judgement
+       last. It was also a ONE-ROW table on 87% of listings, and a table is for
+       comparing things.
+
+       So: prose for a verdict, a table for a comparison. The table survives
+       below, only when there is a second score to compare against -- which is
+       what the image pass produces, and the only case where reading across
+       columns tells you anything.
+
+       The facts sit in the HEADER rather than a footnote. They were demoted to
+       one grey line and that lost something real: which hunt judged this, on
+       what, and when is the context the sentence below is read in. #}
+    {% if latest %}
+    {# `judgement`, not `verdict`: app.js stamps a `.verdict` badge into a card
+       when it folds away, and that class is absolutely positioned. #}
+    <div class="judgement">
+      <div class="judgement-top">
+        <p class="score {{ 's-hi' if latest.deal_score>=7 else ('s-mid' if latest.deal_score>=5 else 's-lo') }}">
+          <b class="num">{{ '%.1f'|format(latest.deal_score) }}</b><span class="num">/10</span></p>
+        <div class="judgement-id">
+          {% if latest.matched_want %}
+          <p class="tags"><span class="chip {{'unk' if latest.match=='unknown' else 'want'}}">
+            {% if latest.match=='unknown' %}<svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
+            {% else %}<svg class="i" aria-hidden="true"><use href="#i-check"/></svg>{% endif %}
+            {{latest.matched_want}}</span></p>
+          {% endif %}
+          <p class="judgement-facts">{{latest.hunt_id}} &middot; {{latest.model}}
+            &middot; {{ when(latest.scored_at) }}</p>
+        </div>
+      </div>
+
+      {# Full width. It was squeezed into the column beside the score, which is
+         the card's layout -- there the sentence confirms the photo and the
+         price, here it is the thing you came to read. #}
+      {% if latest.reasoning %}<p class="judgement-why">{{latest.reasoning}}</p>{% endif %}
+
+      {# A RULE, not a filled box. Three stacked fills -- the photo banner, the
+         flags and the unknowns -- were the whole of the mess: six amber things
+         in one panel, so none of them read as emphasis. The banner keeps its
+         fill because it is a state of the page; these are notes within it. #}
+      {% if latest.red_flags %}
+      <ul class="flags">
+        {% for f in latest.red_flags %}
+        <li><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
       {% if latest.unknowns %}
       <p class="unknowns"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
         <span><b>Needs checking:</b> {{ latest.unknowns|join('; ') }}</span></p>
@@ -99,9 +171,41 @@
         {% endfor %}
       </ul>
       {% endif %}
-      {# the photos chip lived here, below the table and the requirements. It
-         says less than the line at the top of this panel and said it later. #}
     </div>
+    {% else %}
+    <p class="judgement-none">Not scored yet.</p>
+    {% endif %}
+
+    {# What came BEFORE, and only that. This was a table whose first row was the
+       verdict above repeated in full -- same score, hunt, model, timestamp and
+       sentence -- so the older row beneath it read as a contradiction rather
+       than as history. It also stacked into HUNT / MODEL / SCORE / FLAGS
+       labels on a phone for two rows that shared three of those four values.
+
+       Same shape as the judgement, quieter: what it scored, what judged it,
+       and what it said. `scores[1:]` is every earlier pass, which is usually
+       the text pass that preceded an image pass and occasionally another hunt
+       asking a different question. #}
+    {% if scores|length > 1 %}
+    <p class="judgement-morelabel">Earlier passes</p>
+    {% for s in scores[1:] %}
+    <div class="pass">
+      <div class="pass-top">
+        <p class="score {{ 's-hi' if s.deal_score>=7 else ('s-mid' if s.deal_score>=5 else 's-lo') }}">
+          <b class="num">{{ '%.1f'|format(s.deal_score) }}</b><span class="num">/10</span></p>
+        <p class="judgement-facts">{{s.hunt_id}} &middot; {{s.model}}
+          &middot; {{ when(s.scored_at) }}</p>
+      </div>
+      {% if s.red_flags %}
+      <ul class="flags">
+        {% for f in s.red_flags %}
+        <li><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if s.reasoning %}<p class="pass-why">{{s.reasoning}}</p>{% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
   </div>
 </div>

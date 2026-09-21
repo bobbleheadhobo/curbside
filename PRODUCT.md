@@ -92,12 +92,17 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   Android home screen. The worker caches photos and icons and **never a page** —
   half of what this finds is gone within the hour.
 - **Read-only toward the world.** No messaging sellers, no offers, no
-  posting. Triage is the only mutation: POST `/triage` with `hunt_id`,
-  `listing_id`, `status` in saved/dismissed/contacted/wanted/free_find,
-  optional `note`, and `back`. **The UI offers only Save and Dismiss.**
-  Confirmed 2026-09-09: the user does not want to track whether they messaged
-  a seller, so `contacted` is never offered, though the pipeline still honours
-  it as an already-triaged state.
+  posting. Triage writes `hunt_matches.status`: POST `/triage` with `hunt_id`,
+  `listing_id`, `status` in saved/dismissed/wanted/free_find, optional `note`,
+  and `back`. Confirmed 2026-09-09: the user does not want to track whether
+  they messaged a seller, and the `contacted` status that existed for it was
+  removed on 2026-09-20 having never held a single row.
+- **What you actually paid is recorded**, added 2026-09-20. POST `/grabbed`
+  stamps `listings.grabbed_at` and `paid_cents` and marks the match `grabbed`.
+  It is the only ground truth in the database: every judged listing carries an
+  estimated value and nothing else can check one. The button confirms the figure
+  rather than assuming the asking price, because a haggled purchase filed at the
+  asking price is a calibration point that lies.
 - **A price drop on something in a bin is announced**, added 2026-09-11. The
   baseline is the price you were last told, so each real drop announces once.
 - **Collected-but-never-judged is visible on `/runs`.** Every individual run

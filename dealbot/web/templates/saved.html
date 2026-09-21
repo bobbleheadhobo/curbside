@@ -1,19 +1,51 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
 {% block title %}Saved &middot; Curbside{% endblock %}
 {% block content %}
+{# A grabbed listing is stamped sold too, so it would be counted twice. What is
+   left here is the things that went off the market without you. #}
+{% set sold = items|selectattr('sold_at')|rejectattr('grabbed_at')|list|length %}
 <div class="pagehead">
   <h1>Saved</h1>
+  {% if showing == 'grabbed' %}
   <p class="stats">
-    <i><b>{{total}}</b> to act on</i>
+    <i class="ok"><b>{{ n_got }}</b> grabbed</i>
+    {% if paid %}<i><b>${{ '{:,.0f}'.format(paid / 100) }}</b> paid</i>{% endif %}
+  </p>
+  <p>Things you went and got.</p>
+  {% else %}
+  <p class="stats">
+    <i><b>{{ total - sold }}</b> to act on</i>
+    {# Saved things are kept when they sell, deliberately. Counted apart, so
+       "3 to act on" is three you can still drive to. #}
+    {% if sold %}<i class="hi"><b>{{ sold }}</b> gone</i>{% endif %}
   </p>
   <p>Things you decided to act on. Nothing leaves except by being dismissed.</p>
+  {% endif %}
 </div>
+
+{# Only once there is a second list to switch to. A lone tab on a page that is
+   usually three cards long is furniture. #}
+{% if n_got %}
+<div class="filterchips">
+  <a class="chip" href="/saved"{% if showing != 'grabbed' %} aria-current="true"{% endif %}>to act on
+    <span class="num">{{ n_act }}</span></a>
+  <a class="chip" href="/saved?show=grabbed"{% if showing == 'grabbed' %} aria-current="true"{% endif %}>grabbed
+    <span class="num">{{ n_got }}</span></a>
+</div>
+{% endif %}
+
 <div class="stack">
-{% for i in items %}{{ card(i, '/saved', ['dismissed']) }}{% else %}
+{% for i in items %}{{ card(i, back, [] if showing == 'grabbed' else ['dismissed'],
+                             grab=true) }}{% else %}
 <div class="empty">
   <svg class="i" aria-hidden="true"><use href="#i-saved"/></svg>
+  {% if showing == 'grabbed' %}
+  <b>Nothing grabbed yet</b>
+  <p>Hit <b>Grabbed it</b> on something you went and collected.</p>
+  {% else %}
   <b>Nothing saved yet</b>
   <p>Hit <b>Save</b> in <a href="/">wants</a> or <a href="/free">free finds</a>.</p>
+  {% endif %}
 </div>
 {% endfor %}
 </div>

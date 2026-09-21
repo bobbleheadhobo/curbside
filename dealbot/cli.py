@@ -184,6 +184,7 @@ def cmd_once(args) -> int:
     # listing, so most ticks it does nothing. It costs requests and no quota.
     if cfg.recheck.enabled and not args.dry_run:
         rc = recheck(store, sources, every_hours=cfg.recheck.every_hours,
+                     saved_every_hours=cfg.recheck.saved_every_hours,
                      max_per_run=cfg.recheck.max_per_run)
         if rc.n_checked or rc.error:
             print(f"{'recheck':24} {'':11} checked={rc.n_checked} "
@@ -210,6 +211,8 @@ def cmd_recheck(args) -> int:
     _reset_budgets(sources)
     rc = recheck(store, sources,
                  every_hours=0.0 if args.all else cfg.recheck.every_hours,
+                 saved_every_hours=(0.0 if args.all
+                                    else cfg.recheck.saved_every_hours),
                  max_per_run=args.limit or cfg.recheck.max_per_run)
     print(f"checked {rc.n_checked}: {rc.n_sold} sold, {rc.n_removed} removed, "
           f"{rc.n_listed} still listed")
@@ -281,7 +284,7 @@ def cmd_prune_thumbs(args) -> int:
     thumbs = ThumbnailStore(cfg.db_path.parent / "thumbs")
     keep = {r["listing_id"] for r in store.conn.execute(
         """SELECT listing_id FROM hunt_matches WHERE status IN
-           ('wanted','free_find','saved','contacted')""")}
+           ('wanted','free_find','saved','grabbed')""")}
     before = thumbs.disk_usage_mb()
     removed = thumbs.prune(keep)
     print(f"kept {len(keep)}, removed {removed} "

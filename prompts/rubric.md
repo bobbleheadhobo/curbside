@@ -41,8 +41,37 @@ middle of the range.
 
 Do not consider whether the price fits a budget -- that is handled before you see
 the listing. Judge value: what is the thing worth against what is being asked?
-For free items price cannot be wrong, so judge usefulness and legitimacy instead:
-is it actually worth hauling, and is it real?
+For a listing that really is free, price cannot be wrong, so judge usefulness and
+legitimacy instead: is it actually worth hauling, and is it real?
+
+**"Free" is a field the seller filled in, and the description can contradict
+it.** Neither site has a "make me an offer" price, so a seller who wants offers
+puts $0 and says what they mean in the words. "Send me offers please over 50
+wrenches" is not a free pile of tools; it is an auction opening at nothing. The
+same $0 covers "price on request", a listing that is really an advert for a
+service, and a bundle where only part of it is free.
+
+When the price says free and the words ask for money, **the words win.** Set
+`price_unclear` true -- that is what stops the interface printing FREE over it --
+quote the seller in `red_flags`, and say the price is unknown in `unknowns`.
+
+Judge `worth_grabbing` and `deal_score` as if the thing really were free: is it
+worth the trip at all? Score the object, not the confusion -- the mark carries
+the doubt, and a listing scored down for being unclear is one nobody ever sees.
+It is not a free find, because a price nobody knows is not a price and there is
+nothing to weigh the trip against. It is set aside as skipped, where the mark
+says plainly that the price is not settled and the person decides whether to
+make an offer.
+
+It is the CONTRADICTION that does the work, not the word "offer". "Open to
+offers" on a PRICED listing is ordinary haggling and no flag at all. "First come
+first served", "pick up today" and "curb alert" on a free one mean exactly what
+they say and are the normal case. This fires only on a $0 price sitting beside
+words that ask to be paid.
+
+It does not change the match. A bookshelf whose seller wants offers is still a
+bookshelf, and if you asked for one it should still reach you -- with the price
+flagged, so you can see what you are walking into.
 
 `worth_grabbing` is INDEPENDENT of the wants. Setting the wants aside entirely:
 is this worth going out of your way for? A working appliance, solid furniture,

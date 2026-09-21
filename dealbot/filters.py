@@ -26,7 +26,9 @@ from .models import Candidate, GateResult, Hunt, Listing, Location, UpsertResult
 # re-judging. Below this it is noise -- sellers nudge prices constantly.
 PRICE_DROP_THRESHOLD = 0.15
 
-TRIAGED = ("saved", "dismissed", "contacted")
+# A decision you made, which is never re-judged. `grabbed` is the strongest
+# case of it: the thing is in the user's house.
+TRIAGED = ("saved", "dismissed", "grabbed")
 
 # Post-enrichment rejections that cannot come untrue. A listing does not grow a
 # photograph and it does not get younger, so re-deciding either one costs a

@@ -20,6 +20,10 @@ against recorded streams. Every rule here was measured, not assumed:
   * Rate-limit state is camelCase and lives in its own event type, never in
     `result`. Newest wins for a snapshot; "ever used overage" is sticky, because
     a run can cross into overage mid-flight and end back inside the plan window.
+  * `resetsAt` exists at two levels and they mean different things. The
+    top-level one belongs to whichever window tripped the threshold; each
+    window's own sits in `unifiedWindows.<name>.resetsAt`. Reading the top one
+    as the five-hour window's expiry dates a reading against the wrong clock.
 """
 from __future__ import annotations
 
@@ -48,6 +52,12 @@ class StreamFacts:
     resets_at: int | None = None
     five_hour_utilization: float | None = None
     seven_day_utilization: float | None = None
+    # Each window's OWN reset instant, which is not the top-level `resetsAt`:
+    # that one belongs to whichever window tripped the threshold. A reading is
+    # only as trustworthy as the expiry it came with, so the two are stored
+    # apart and a number is aged against its own window.
+    five_hour_resets_at: int | None = None
+    seven_day_resets_at: int | None = None
     ever_used_overage: bool = False
     overage_status: str | None = None
     saw_result: bool = False            # distinguishes "no telemetry" from "never ran"
@@ -101,10 +111,23 @@ def extract(events: Iterable[dict[str, Any]]) -> StreamFacts:
             if info.get("isUsingOverage"):
                 facts.ever_used_overage = True          # sticky, never cleared
             windows = info.get("unifiedWindows") or {}
-            if (w := windows.get("five_hour")):
-                facts.five_hour_utilization = w.get("utilization")
-            if (w := windows.get("seven_day")):
-                facts.seven_day_utilization = w.get("utilization")
+            # A reading is a PAIR -- the number, and the instant it expires --
+            # so the reset is only taken WITH a number to go with it. The
+            # utilisation used to be read on its own, so an event carrying a
+            # fresh `resetsAt` and no figure left the PREVIOUS window's number
+            # standing against the NEW window's expiry. A dated reading is held
+            # until its own reset, so nothing could then retire it: judging
+            # stood aside for a full window on a number that had already
+            # refilled. An event with no figure now leaves the last complete
+            # reading alone, to expire on its own clock.
+            if (w := windows.get("five_hour")) and w.get("utilization") is not None:
+                facts.five_hour_utilization = w["utilization"]
+                facts.five_hour_resets_at = w.get("resetsAt",
+                                                  facts.five_hour_resets_at)
+            if (w := windows.get("seven_day")) and w.get("utilization") is not None:
+                facts.seven_day_utilization = w["utilization"]
+                facts.seven_day_resets_at = w.get("resetsAt",
+                                                  facts.seven_day_resets_at)
 
         elif etype == "result":
             facts.saw_result = True

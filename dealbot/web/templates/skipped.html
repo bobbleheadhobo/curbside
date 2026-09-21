@@ -5,6 +5,10 @@
 {# The rescuable ones. Everything else here the model actually judged and turned
    down; these it could not confirm, and a glance at the photos settles them. #}
 {% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
+{# Marked free, and the seller asked for money in the words. They are here
+   rather than in the free bin because a price nobody knows cannot be weighed
+   against the trip -- so the page that holds them says how many. #}
+{% set unclear = items|selectattr('price_unclear')|list|length %}
 <div class="pagehead">
   <h1>Skipped</h1>
   <p class="stats">
@@ -15,6 +19,8 @@
       <i class="hi"><b>{{unsure}}</b> unverified</i>{% endif %}
     {% if close %}
       <i><b>{{close}}</b> scored 6+</i>{% endif %}
+    {% if unclear %}
+      <i class="hi"><b>{{unclear}}</b> price unclear</i>{% endif %}
     {% if truncated %}
       <i>showing top {{items|length}}</i>{% endif %}
   </p>

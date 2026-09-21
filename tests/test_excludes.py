@@ -317,6 +317,7 @@ def test_every_in_place_form_posts_to_one_of_those(tmp_path):
 
 @pytest.mark.parametrize("template,route", [
     ("settings.html", "/settings"),
+    ("wants.html", "/"),
     ("runs.html", "/runs"),
     ("listing.html", None),
     ("want_form.html", "/wants/tv-stand"),

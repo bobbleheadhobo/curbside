@@ -121,6 +121,9 @@ class RecheckConfig:
     requests against sources that throttle, hence the pacing."""
     enabled: bool = True
     every_hours: float = 6.0        # per listing, not per run
+    # The list you curated, asked about on every pass. It is short, and it is
+    # the one where "sold" is worth knowing within the quarter hour.
+    saved_every_hours: float = 0.25
     max_per_run: int = 10
 
 
@@ -445,6 +448,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     recheck = RecheckConfig(
         enabled=bool(rc.get("enabled", True)),
         every_hours=float(rc.get("every_hours", 6.0)),
+        saved_every_hours=float(rc.get("saved_every_hours", 0.25)),
         max_per_run=int(rc.get("max_per_run", 10)),
     )
 

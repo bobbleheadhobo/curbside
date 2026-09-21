@@ -103,6 +103,39 @@ CASES = [
           reasoning="Exactly the thing. Photos confirm colour and tier count."),
      "saved"),
 
+    # Saved, and then it sold. Saved things are kept when they go, so this is
+    # the one state a designer meets weeks after everything else on the page.
+    (dict(lid="demo:7", title="Electric sit-stand desk, 60in", price=0,
+          sold="sold"),
+     dict(deal_score=8.5, match="no", matched_want=None, worth_grabbing=True,
+          reasoning="A working sit-stand desk for nothing is worth the drive."),
+     "saved"),
+
+    # And the end of the story: one you went and got. /saved counts it apart
+    # from both the things still to act on and the ones that sold without you,
+    # and it is the only row on the page carrying a figure that is not a guess.
+    # Priced at $250 and grabbed for $180, so /stats has an estimate to check
+    # itself against and the difference is visible rather than flattering.
+    (dict(lid="demo:9", title="Walnut media console, 72in", price=25000),
+     dict(matched_want="tv-stand", deal_score=8.0, est_value_cents=40000,
+          reasoning="Solid walnut at the width you need. Worth the drive."),
+     "grabbed"),
+
+    # $0 in the price box, money asked for in the words. Scored as if it really
+    # were free -- a box of wrenches IS worth the drive -- and kept out of the
+    # free bin anyway, because a price nobody knows is not a price. Scored high
+    # and binned nowhere is exactly the state /skipped exists to show.
+    (dict(lid="demo:8", title="Sockets and wrenches", price=0,
+          description="Send me offers please over 50 wrenches"),
+     dict(hunt_id="sweep:free-nearby", deal_score=7.0, match="no",
+          matched_want=None, worth_grabbing=True, price_unclear=True,
+          est_value_cents=8000,
+          red_flags=("Listed as free, but the description asks for offers",),
+          unknowns=("what the seller actually wants for it",),
+          reasoning="Worth the drive if it really is free, and it may well not "
+                    "be -- the description asks for offers."),
+     "scored"),
+
     (dict(lid="demo:6", title="Entertainment center, 44 inches", price=4000),
      dict(deal_score=5.0, match="no", matched_want=None, worth_grabbing=False,
           requirements=({"req": "at least 70 inches wide", "met": "no",
@@ -132,13 +165,23 @@ def build(cfg: Config, path: str | Path) -> Store:
         lid = listing_kw.pop("lid")
         title = listing_kw.pop("title")
         price = listing_kw.pop("price")
+        sold = listing_kw.pop("sold", None)
         listing = _listing(lid, title, price, **listing_kw)
         store.upsert_listing(listing)
         hunt_id = score_kw.pop("hunt_id", tv)
         store.mark_matches(hunt_id, [listing])
         store.save_score(_score(lid, hunt_id, **score_kw),
                          priced_at_cents=listing.previous_price_cents)
-        store.set_status(hunt_id, lid, status)
+        if status == "grabbed":
+            # Through `mark_grabbed`, not `set_status`: it also stamps the
+            # listing and clears it out of the other bins, and a demo database
+            # that skipped that would show a state the live one cannot reach.
+            store.set_status(hunt_id, lid, "saved")
+            store.mark_grabbed(hunt_id, lid, 18000)
+        else:
+            store.set_status(hunt_id, lid, status)
+        if sold:
+            store.mark_sold(lid, sold)
         # A price history that spans weeks, not one instant. Two observations
         # sharing a timestamp draw a sparkline that says nothing.
         if listing.previous_price_cents:

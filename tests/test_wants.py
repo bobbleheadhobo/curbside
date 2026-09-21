@@ -65,7 +65,7 @@ def test_a_want_added_on_the_web_becomes_a_hunt(app):
         "name": "Patio Umbrella", "description": "a big one",
         "max_price": "80", "queries": "patio umbrella\nmarket umbrella",
         "requires": "at least 9 feet", "interval": "120"})
-    assert r.status_code == 200                        # followed to /settings
+    assert r.status_code == 200                  # followed to the wants list
 
     live = with_store(cfg, store)
     hunt = next(h for h in live.hunts if h.id == "want:patio-umbrella")
@@ -166,12 +166,42 @@ def test_one_want_can_be_paused_without_touching_the_others(app):
     assert store.disabled_hunts() == {"want:tv-stand"}
 
 
-def test_the_settings_page_survives_a_want_the_file_never_knew(app):
+def test_the_wants_page_survives_a_want_the_file_never_knew(app):
     client, _, _ = app
     client.post("/wants/save", data={"name": "lamp", "description": "d",
                                      "max_price": "20", "queries": "lamp"})
-    body = client.get("/settings").text
+    body = client.get("/").text
     assert "lamp" in body
+
+
+def test_saving_a_want_lands_on_the_list_it_changed(app):
+    """It used to land at the top of /settings, with the row you had just
+    edited somewhere below the fold, past the hours and the limits."""
+    client, _, _ = app
+    r = client.post("/wants/save", follow_redirects=False,
+                    data={"name": "lamp", "description": "d",
+                          "max_price": "20", "queries": "lamp"})
+    assert r.status_code == 303
+    assert r.headers["location"] == "/?manage=1#manage"
+    # ... and asking for it that way renders the panel already open.
+    assert '<details class="panel manage" id="manage" open>' in client.get(
+        "/?manage=1").text
+    assert ' open>' not in client.get("/").text        # closed on a plain load
+
+
+def test_the_wants_are_managed_on_the_wants_page_not_in_settings(app):
+    """One list, one place to edit it. Settings keeps a signpost, because that
+    is where it used to be."""
+    client, _, _ = app
+    client.post("/wants/save", data={"name": "lamp", "description": "d",
+                                     "max_price": "20", "queries": "lamp"})
+    front = client.get("/").text
+    assert 'id="manage"' in front
+    assert '/wants/lamp' in front and 'href="/wants/new"' in front
+
+    settings = client.get("/settings").text
+    assert 'href="/wants/lamp"' not in settings
+    assert 'href="/?manage=1#manage"' in settings
 
 
 def test_a_want_with_no_terms_says_so_rather_than_looking_normal(app):
@@ -182,14 +212,14 @@ def test_a_want_with_no_terms_says_so_rather_than_looking_normal(app):
     from dealbot.models import Want
     client, _, store = app
     store.save_want(Want("lamp", "d", 2000, queries=()))
-    assert "no search terms" in client.get("/settings").text
+    assert "no search terms" in client.get("/").text
 
 
 def test_a_free_only_want_does_not_say_up_to_0(app):
     from dealbot.models import Want
     client, _, store = app
     store.save_want(Want("kayak", "d", 0, queries=("kayak",)))
-    body = client.get("/settings").text
+    body = client.get("/").text
     assert "Free ones only" in body
     assert "Up to $0" not in body
 
@@ -228,21 +258,33 @@ def test_seeding_never_overwrites_an_edited_want(tmp_path):
     assert store.get_want("lamp").want.description == "edited on the phone"
 
 
-def test_the_four_tuning_levers_reach_the_hunts(app):
+def test_every_tuning_lever_reaches_the_hunts(app):
     """The wants bar especially: /skipped exists so the threshold can be judged
     rather than guessed at, and until now there was no way to act on what you
     learned there without an ssh session."""
     client, cfg, store = app
     client.post("/settings/tuning", data={
         "min_deal_score": "6.5", "free_find_min_score": "4",
-        "max_results": "12", "radius_miles": "45"})
+        "max_results": "12", "radius_miles": "45", "max_image_checks": "3"})
     live = with_store(cfg, store)
     assert live.defaults.min_deal_score == 6.5
     assert live.location.radius_miles == 45
+    assert live.scorer.max_image_checks == 3
     for hunt in live.hunts:
         assert hunt.min_deal_score == 6.5
         assert hunt.free_find_min_score == 4
         assert hunt.max_results == 12
+
+
+def test_an_image_budget_of_zero_means_never_look(app):
+    """Zero is a legal answer here, unlike the batch cap, which clamps to 1: a
+    hunt that judges nothing has been turned off and there is a pause switch
+    for that, while an image pass is an extra on top of a judgement that
+    happens either way. Someone who never wants to spend on photographs must be
+    able to say so from the phone rather than by editing config.yaml."""
+    client, cfg, store = app
+    client.post("/settings/tuning", data={"max_image_checks": "0"})
+    assert with_store(cfg, store).scorer.max_image_checks == 0
 
 
 def test_a_lever_cannot_be_set_somewhere_silly(app):
@@ -270,6 +312,7 @@ def test_each_limit_says_what_it_does_and_what_it_costs(app):
     for label in ("Show a want scoring at least",
                   "Show a free find scoring at least",
                   "Listings to send to the model each run",
+                  "Photos to look at each run",
                   "How far you will drive"):
         assert label in body, label
     assert "config.yaml" in body          # and says what is deliberately not here
@@ -374,6 +417,50 @@ def test_suggesting_adds_to_typed_terms_rather_than_replacing_them(tmp_path):
     box = re.search(r'<textarea id="f-queries"[^>]*>(.*?)</textarea>', r.text, re.S)
     # what was there, kept and first; what was drafted, appended; no duplicate
     assert box.group(1).split("\n") == ["tv stand", "credenza", "media console"]
+
+
+def test_the_suggest_button_answers_a_fetch_without_navigating(tmp_path):
+    """Pressing it used to re-render the whole form and drop you at the top of
+    it, having scrolled past the description you had just written. Same post,
+    answered as JSON, and only the pills change.
+
+    The merge stays on the server so both answers produce the same list in the
+    same order."""
+    client, _, store = _app_with(tmp_path, _FakeScorer(("media console",
+                                                        "tv stand")))
+    r = client.post("/wants/save", headers={"X-Requested-With": "fetch"},
+                    data={"name": "bookcase", "description": "a wide bookcase",
+                          "max_price": "250", "queries": "tv stand\ncredenza",
+                          "action": "suggest"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True,
+                        "queries": ["tv stand", "credenza", "media console"]}
+    assert store.get_want("bookcase") is None          # still unsaved
+
+
+@pytest.mark.parametrize("data,fragment", [
+    ({"name": "bookcase", "description": " "}, "looking for"),
+    ({"name": "", "description": "a wide bookcase"}, "short name"),
+])
+def test_a_fetch_that_cannot_draft_gets_a_sentence_not_a_page(tmp_path, data,
+                                                              fragment):
+    """Every way this can answer has a JSON twin, or the script downloads a
+    400-page worth of HTML, fails to parse it and says nothing useful."""
+    client, _, _ = _app_with(tmp_path, _FakeScorer())
+    r = client.post("/wants/save", headers={"X-Requested-With": "fetch"},
+                    data={**data, "max_price": "250", "queries": "",
+                          "action": "suggest"})
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and fragment in r.json()["error"]
+
+
+def test_a_failed_draft_over_fetch_says_so_too(tmp_path):
+    client, _, _ = _app_with(tmp_path, _FakeScorer(boom=RuntimeError("busy")))
+    r = client.post("/wants/save", headers={"X-Requested-With": "fetch"},
+                    data={"name": "kayak", "description": "a kayak",
+                          "max_price": "300", "queries": "",
+                          "action": "suggest"})
+    assert r.json()["ok"] is False and "Could not draft" in r.json()["error"]
 
 
 def test_suggesting_keeps_the_cadence_you_just_chose(tmp_path):

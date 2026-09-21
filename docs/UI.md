@@ -28,8 +28,10 @@ weeks to encounter naturally:
 | `$120 → free` | the "now FREE" treatment |
 | an **unverified** match | amber, requirement `?` marks, "worth checking" |
 | requirement evidence | the ✅/❌/❓ block, which can run to five lines |
-| red flags | warning chips |
+| red flags | caution chips, amber |
 | something already **saved** | `/saved` is empty in production |
+| something that **sold** | the band across the photo, the struck price |
+| **$0 with a price the seller contradicted** | "price unclear", and the group on `/free` |
 | a 30-day-old listing | the "sitting 30d" and motivated-seller chips |
 
 Re-run `seed-demo` any time; it rebuilds from scratch.
@@ -50,7 +52,7 @@ dealbot/web/
   templates/
     base.html       shell, nav, all CSS, the icon sprite, the paused banner
     _card.html      the listing card macro — used by four views
-    wants.html      /        matches for the wants list
+    wants.html      /        matches, and the wants list itself
     free.html       /free    worth grabbing anyway
     saved.html      /saved   what you decided to act on
     skipped.html    /skipped judged, then passed over (/near redirects here)
@@ -59,7 +61,7 @@ dealbot/web/
     error.html      404 / 400 / 500, in the normal shell
     runs.html       /runs    the Searching panel, every fetch attempt, the hunts
     stats.html      /stats   what it costs and what each hunt found for it
-    settings.html   /settings  waking hours, sweep cadence, the wants list
+    settings.html   /settings  waking hours, sweep cadence, limits, blocked words
     want_form.html  /wants/new and /wants/<name>  add or edit one want
   static/
     app.css         ALL the CSS. Two themes, one file, no build step
@@ -79,8 +81,11 @@ forced dark) and a test asserts it; a light-only hue silently outranks the dark
 `body` rule on specificity, so a half-built colour looks fine until dusk.
 
 **Say "your call", not "triage".** The word appeared once, as the heading on
-the listing page, and the user did not recognise it. `/triage` stays as the
-endpoint and the internal noun.
+the listing page, and the user did not recognise it. It came back on `/stats`
+as a stage label and got the same reaction, so the cheap batched sift is
+**"First pass"** there. `/triage` stays as the endpoint, `scores.model` keeps
+`"<model>:triage"`, and the internal noun is unchanged — this is what the
+interface calls it, not what the code calls it. `tests/test_web.py` pins it.
 
 **One listing, one bin.** `ONE_BIN` in `app.py` is appended to every bin query
 *and* to the counts behind them. Keep those two together: the counts drifting
@@ -135,19 +140,28 @@ never meant. The route, the template, the nav label and the icon all changed;
 lands.
 
 **Triage buttons must name a real status.** `/triage` accepts exactly
-`saved` / `dismissed` / `contacted` / `wanted` / `free_find`. The listing page
+`saved` / `dismissed` / `wanted` / `free_find`. The listing page
 used to offer a **Surface** button posting `surfaced`, which is not on that
 list, so it posted, redirected and changed nothing. If you add a button here,
 add the status to the endpoint in the same change. The panel carries a
 `.triage-help` line explaining what each button does, Dismiss in particular,
 because it teaches the hunt and that is not guessable from the word.
 
-**The UI offers Save and Dismiss only.** `contacted` is no longer surfaced
-anywhere: the user does not want to track whether they messaged a seller. The
-status still exists and is still accepted, because `filters.TRIAGED` and
-`recheck.KEEP_STATUS` both treat it as "already
-triaged, do not spend money judging this again", and `SAVED_SQL` still matches
-it so any row already carrying it stays visible. Do not add the button back.
+**The UI offers Save, Dismiss and Grabbed it.** There was a fourth status,
+`contacted`, meaning "I messaged the seller". The user did not want the bot
+tracking that, so it was never offered — and a dozen status lists went on
+agreeing about it for months while it held zero rows, in a tool whose stated
+boundary is that it messages nobody. It was removed when `grabbed` arrived, so
+the number of statuses stayed where it was. Do not add it back.
+
+**`grabbed` is not a `/triage` status.** It carries a figure and it clears the
+listing out of every other hunt's bin, so it has its own endpoint: POST
+`/grabbed` with `hunt_id`, `listing_id`, `paid` (dollars, blank allowed) and
+`undo`. The button reveals a pre-filled price field rather than acting on the
+first tap, and **that is deliberate**: recording the asking price for a haggled
+$180 purchase puts a calibration point into the database that lies, which is
+worse than having none. A blank figure stores NULL, which is a third answer
+again — 0 means free, and free is most of what this bot finds.
 
 **Stranger-written text must never overflow.** `body` sets
 `overflow-wrap:anywhere`. Titles, descriptions, red flags and want names all
@@ -264,6 +278,9 @@ SQL. The ones the card actually reads:
 | `unknowns` `requirements` `red_flags` | decoded lists; `requirements` is `[{req, met, evidence}]` |
 | `images_checked` | whether the model looked at photos |
 | `status` `filter_reason` | `filter_reason` only on hunt views |
+| `price_unclear` | the seller put $0 and asked for money in the words; the price renders as "price unclear" and never as FREE, and `route` keeps the listing out of the free bin, so it surfaces on `/skipped` |
+| `grabbed_at` / `paid_cents` | you went and got it. The card marks the photograph **yours** and states what you paid; the listing page adds the date. **NULL, 0 and a figure are three different answers** and none may render as another: 0 is free, NULL is "I did not note it down" and prints nothing at all. A forgotten figure shown as free would be a lie in the one table that can check the model |
+| `sold_at` `sold_reason` | off the market. `sold` is the source saying so, `removed` only the page no longer resolving, so the badge says *gone* for the second |
 
 Use `/thumb/{id}` for images, never `images[0]` directly — the route serves a
 cached local copy and falls back to the source URL. Facebook's URLs expire after
@@ -435,14 +452,30 @@ positive, so **"judged on the text alone" and "asked for a look and never got
 one" were the same blank space** — which is how a reader concludes the site
 does not say at all.
 
-They are not the same thing. 207 of the collected scores have `needs_images`
-set and `images_checked` clear: the model saying it could not settle the
-listing without seeing the photographs, and `max_image_checks` saying no. That
-state is amber on the page, because it is a caution about how much the
+They are not the same thing. 169 of the collected scores have `needs_images`
+set, `images_checked` clear, and no later pass that looked: the model saying it
+could not settle the listing without seeing the photographs, and not getting
+to. That state is amber on the page, because it is a caution about how much the
 judgement rests on rather than a fault.
 
-`photo_verdict` in `app.py` computes the three, and the line sits at the TOP of
-the Scores panel rather than under the table.
+**And "did not get to" has two causes, which the page blamed as one.** The
+sentence read "the image budget ran out", true of 7 of those 169. The other 162
+were never offered a photograph: stage 5b buys them only for a listing `route`
+would ALREADY bin on its text score, so they are turned down long before
+`max_image_checks` is consulted. The replacement sentence names that test
+rather than a reason it can fail -- "it scored too low" would be wrong for a
+want hunt, which declines a non-match whatever it scored. Naming the budget there was not just
+wrong, it named the one number a reader might go and raise in response — and
+that number is now on `/settings`, so they can.
+
+`headed_for_a_bin` in `app.py` is the separator, and it **calls** `route`
+rather than re-deriving it, rebuilding the `Score` and `Listing` through
+`Store.row_to_score` / `row_to_listing` (public for this reason). Re-deriving
+is the mistake `route`'s own docstring records. It returns `None` when it
+cannot say — a want deleted since — and the page then claims neither cause.
+
+`photo_verdict` in `app.py` computes the states, and the line sits at the TOP
+of the Scores panel rather than under the table.
 
 **Where it did look, show the score before.** Both rows are kept for exactly
 this reason — the text judgement stays next to the one that looked — and it
@@ -455,6 +488,41 @@ listing can be judged by several and their scores answer different questions.
 photographs to answer ("Does the media console appear at least 70 inches wide,
 or is there any reference like a TV"), and on a listing nobody looked at, that
 question is the exact thing a person can settle in two seconds.
+
+## The plan reading on /runs is a memory, and it says so
+
+The pill reads "Judging paused" and links to `/runs`, so `/runs` is where the
+plan's own numbers belong: two bars under the Judging switch, one per window,
+each with the mark the bot stands aside at.
+
+**Nothing on that panel is live.** Claude Code reports a window only inside the
+event stream of a call, so the numbers refresh when a listing is judged and at
+no other time. After a quiet night the reading can be hours old, so the panel
+dates it ("Read 3h ago") rather than implying it is current.
+
+**A reading dies two ways, and both are drawn.** Past its own window's
+`resetsAt` the window has rolled, so there is no bar at all, just "Reset since
+this reading" -- drawing one would assert a fact about a window that no longer
+exists. Older than `utilization_stale_minutes` AND carrying no reset instant, it
+enforces nothing, and the note says so: a page showing 82% over a bot that is
+judging away reads as broken.
+
+**An old reading that named its reset is still the reason, and the note must not
+disown it.** That one is enforcing until the instant it named, so the panel says
+"Held until the window resets, with no calls spent asking again" rather than
+offering it as history. This is the lie in the other direction, and it is the
+one the page would tell after a quiet night: the number is hours old and still
+exactly why nothing is being judged.
+
+**The panel draws what the gate enforced.** Both rules live in
+`scoring.claude_code.read_plan_usage`, which the scorer asks whether to stand
+aside and the dashboard asks what to draw. A display free to re-derive them is
+free to disagree, and the disagreement would show up as a page explaining a
+pause that is not happening.
+
+**The percent is clamped to 0-100 because it is a CSS width.** The wire really
+does report `1.01` once a window is spent, and an unclamped fill runs out of
+its own track.
 
 ## /stats has no tab, on purpose
 
@@ -476,8 +544,9 @@ totalled $17.10. The gap is the triage pass, which is written to its score row w
 `cost_usd = 0` and only ever counted at the run level, so summing score rows
 loses about a third of the money. `runs` also carries `hunt_id` and `source`,
 so every split on the page is attributable as well as complete. The one place
-the page shows the remainder — the "triage" figure under Where it goes — says
-`(derived)` next to it.
+the page shows the remainder — the "First pass" figure under Where it goes —
+says `(derived)` next to it. The three are listed in the order the money is
+spent (first pass, appraisal, photos), which is what "by stage" claims.
 
 **The stage split is classified on `scores.model`, whose spellings are set in
 two other files.** `"<model>:triage"` comes from `pipeline`, `"<model>+images"`
@@ -494,8 +563,10 @@ them, so every cost on the page would be multiplied by however many listings
 that hunt matched.
 
 **The Today panel answers the Spend panel.** The figure says how much, the
-panel says what on: per hunt, per stage, per source, and the dearest few
-listings judged. That last list is the one that catches a single odd listing
+panel says what on: per hunt, per stage, per source, and the few listings that
+cost the most ("Cost the most", which is what the heading now says: "Dearest
+judged" was British for it, on a page of dollar figures where it read as a
+price floor). That last list is the one that catches a single odd listing
 eating an afternoon, because an image pass runs about 15x a text appraisal.
 Its costs are **appraisal only** and the panel says so: triage is billed per
 batch and written to its score row as 0, so a per-listing figure is a floor.
@@ -525,7 +596,7 @@ casually, and do not assume the browser is trusted.
 
 **The triage contract**: POST `/triage` with `hunt_id`, `listing_id`, `status`,
 optional `note`, and `back`. Status must be one of `saved` / `dismissed` /
-`contacted` / `wanted` / `free_find`. **Dismissing is not cosmetic** — dismissed
+`wanted` / `free_find`. **Dismissing is not cosmetic** — dismissed
 titles become negative examples in that hunt's next prompt, so the button is
 part of how the bot learns.
 
@@ -565,16 +636,47 @@ reporting "Asleep till 12pm" over a bot with every hunt switched off.
 ```
 1  every hunt off   → "Paused"          nothing runs, so nothing else explains it
 2  last run errored → "Fetch failing"
+2b stood aside      → "Judging paused"  fetched fine; the plan quota said no
 3  some hunts off   → "2 hunts off"     indefinite; only you undo it
 4  no runs at all   → "No runs yet"
 5  outside hours    → "Asleep till 12pm"  self-resolving, so it yields to a pause
 6  just woken       → "Just woke"       the last run is as old as the night
 7  over an hour     → "Quiet 3h ago"
-8  otherwise        → "12m ago"
+8  a pass running   → "Looking now"     begun and not finished
+9  otherwise        → "12m ago"         waiting for the next tick
 ```
 
+**Only one state claims activity, and only while it is true.** "Looking now"
+means a run is in flight — begun and not finished — and nothing else does.
+Two other wordings were tried and both lied: "Judged · 12m" and
+"Collecting · 12m" described a bot sitting still waiting for the timer, and a
+state word beside a growing number reads as work in progress. A pass takes
+about 85 seconds and the timer fires every 15 minutes, so most of the time the
+honest answer is the clock.
+
+**What it judged is in the detail, not the label.** `Store.run_activity()`
+counts `n_scored` over the last hour in one aggregate — `runs(started_at)` is
+indexed for it, because the pill renders on every page — and the pill's
+`title` says "11 listings judged in the last hour" or "Nothing new to judge in
+the last hour". That is a fact about an hour, not a state, and the page the
+pill links to shows the listings themselves.
+
+`in_flight` is bounded by that same hour: a process killed mid-pass leaves
+`finished_at` NULL forever, and an unbounded check would read "Looking now"
+until somebody noticed.
+
 The `title` carries what the label could not, and the pill links to `/runs`,
-which is where the switch to undo any of it lives.
+which is where the switch to undo any of it lives — and, under those switches,
+**What it is judging**: the last dozen listings the model looked at, each with
+its hunt, its site and its verdict, plus a line naming the hunt and source of a
+pass that is in flight. The pill can say "Judging" and a clock and nothing
+else, so the rest of that sentence has to be one tap away.
+
+The list includes the **first-pass drops**, because `n_scored` does — leaving
+them out would put the page at odds with the number the pill states. They are
+scores of 0.0 with a `:triage` model, and they are shown as a drop rather than
+as a badge reading 0.0, which would say "judged, and worthless" about a
+listing the cheap pass simply let go.
 
 **`tests/test_web.py` asserts on markup.** The strikethrough treatment is
 found by the class name `strike`, the sweep switch by the words "pause
@@ -582,7 +684,7 @@ free-stuff searches", and the empty-view check by `"count num">0`. Rename
 those and the tests tell you.
 
 **`health()` is a pure function** taking the latest `runs` row, the paused
-hunts, all hunts and the schedule. It is out at module level so every branch of
+hunts, all hunts, the schedule and `Store.run_activity()`. It is out at module level so every branch of
 its precedence ladder is unit-testable — it has been wrong twice, and a ladder
 you can only exercise through HTTP is one nobody checks all of.
 

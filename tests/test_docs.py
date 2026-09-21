@@ -73,6 +73,24 @@ def test_no_doc_claims_something_is_unbuilt_when_it_is_built():
     assert "a dismissed title" in prompt
 
 
+def test_the_appraisal_asks_for_a_sentence_about_the_THING():
+    """REPORTED: nearly every free find's reasoning opened with "doesn't match
+    either want". The schema lists `match` first and the prose followed the
+    schema, so the one sentence a person reads spent its opening on a field
+    that is a chip on the same card -- and on an answer that is "no" for almost
+    everything in that bin, since a listing that DID match is routed to a
+    different one. Prose guidance, so it is deletable; this is the guard."""
+    from dealbot.scoring.base import APPRAISE_INSTRUCTION, TRIAGE_INSTRUCTION
+    low = APPRAISE_INSTRUCTION.lower()
+    assert "`reasoning`" in APPRAISE_INSTRUCTION, "lost what the sentence is FOR"
+    assert "do not open with whether it matched a want" in low, (
+        "lost the specific instruction; the general 'do not restate' did not "
+        "stop it on its own")
+    assert "no match" in TRIAGE_INSTRUCTION.lower(), (
+        "triage's `why` has eight words and was spending two of them the same "
+        "way")
+
+
 def test_the_test_count_in_claude_md_is_honest():
     """It is the number the next person will trust without running anything."""
     claimed = re.search(r"# (\d+) tests, all offline",
@@ -83,7 +101,10 @@ def test_the_test_count_in_claude_md_is_honest():
     # Within 10%: exact would fail on every single test added, which trains
     # people to edit the number without reading why it moved.
     n = int(claimed.group(1))
-    assert 250 <= n <= 450, f"CLAUDE.md claims {n} tests, which is far off"
+    # The band is a sanity guard, not the count: it catches a number nobody
+    # touched for a year, and gets widened when the suite genuinely grows past
+    # it rather than being treated as a ceiling on the suite.
+    assert 250 <= n <= 600, f"CLAUDE.md claims {n} tests, which is far off"
 
 
 def test_every_requesting_adapter_inherits_the_shared_throttle():
@@ -186,6 +207,41 @@ def test_every_tuned_number_lands_somewhere_real():
         assert target is not None, f"{key} lands on Config.{dest}, which is absent"
         fields = {f.name for f in dc.fields(target)}
         assert key in fields, f"Config.{dest} has no field {key!r}"
+
+
+def test_the_rubric_knows_a_zero_price_can_be_a_lie():
+    """REPORTED from the free bin: "Sockets and wrenches", price $0, whole
+    description "Send me offers please over 50 wrenches". The model called it
+    "Free sockets and wrenches", scored it 6.0 with `worth_grabbing` true, and
+    it landed in a bin named Free finds. The $0 is a field the seller filled
+    in; the words are what they meant.
+
+    The guard matters as much as the rule. "Open to offers" on a PRICED listing
+    is ordinary haggling, and a keyword rule on "offer" would flag it.
+
+    `prompts/rubric.md` only: the fallback carries what is safety-relevant, and
+    this one costs a message rather than money. See
+    `test_the_scam_guidance_is_in_both_rubrics` for the one that is.
+    """
+    from dealbot.scoring.base import load_rubric
+    text = load_rubric(ROOT / "prompts/rubric.md")
+    low = text.lower()
+    assert "contradict" in low, "lost the rule: the description can contradict $0"
+    assert "the words win" in low, "lost which one to believe"
+    assert "price_unclear` true" in text, (
+        "lost what to DO about it: the structured flag is what stops the card "
+        "printing FREE, and prose in red_flags cannot do that")
+    assert "worth the trip" in low, (
+        "lost the scope: the score describes the object, as if it really were "
+        "free. `route` is what keeps it out of the free bin -- a listing "
+        "scored DOWN for being unclear falls under the /skipped floor too, "
+        "which is being buried where it cannot be seen")
+    assert "ordinary haggling" in low, (
+        "lost the exception: 'open to offers' on a priced listing is haggling, "
+        "and flagging it would bury ordinary listings")
+    assert "does not change the match" in low, (
+        "lost the scope: a wanted thing whose seller takes offers must still "
+        "reach the wanted bin")
 
 
 def test_the_scam_guidance_is_in_both_rubrics():

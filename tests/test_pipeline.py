@@ -754,6 +754,42 @@ def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
     assert route(sc("no", 9.0, grab=False), hunt, free) is None
 
 
+def test_a_contradicted_zero_price_never_fills_the_free_bin(rig):
+    """REPORTED: "Sockets and wrenches", $0, "Send me offers please over 50
+    wrenches" -- an auction opening at nothing, sitting among the free finds.
+
+    The rubric asks for the score to describe the OBJECT, as if the thing
+    really were free, because a listing scored down for being unclear falls
+    under the /skipped floor as well and is never seen at all. So the score
+    cannot also be the thing that holds it back: `route` is. The model writes
+    the flag, and what writes a flag is not what should be trusted to act on
+    it.
+    """
+    from dealbot.pipeline import route
+    from dealbot.models import Score
+    from datetime import datetime, timezone
+    from conftest import make_listing
+    cfg, *_ = rig
+    sweep = next(h for h in cfg.hunts if h.name == "free-nearby")
+    want = next(h for h in cfg.hunts if h.kind == "want")
+    free = make_listing(price_cents=0)
+
+    def sc(hunt, match, unclear):
+        return Score(listing_id="x", hunt_id=hunt.id, model="m",
+                     scored_at=datetime.now(timezone.utc), match=match,
+                     deal_score=9.0, est_value_cents=8000, condition=None,
+                     matched_want=None, worth_grabbing=True, unknowns=(),
+                     requirements=(), red_flags=(), reasoning="",
+                     price_unclear=unclear)
+
+    assert route(sc(sweep, "no", False), sweep, free) == "free_find"
+    assert route(sc(sweep, "no", True), sweep, free) is None
+    # It closes the free bin and ONLY the free bin. A bookshelf whose seller
+    # takes offers is still the bookshelf you asked for, and the price being
+    # unsettled is exactly the kind of thing you would want to be told about.
+    assert route(sc(want, "yes", True), want, free) == "wanted"
+
+
 # --- what the model was already paid for must not be lost -------------------
 
 def test_an_interrupted_appraisal_still_routes_what_it_bought(rig):
@@ -1501,3 +1537,127 @@ def test_two_different_things_photographed_apart_are_not_merged(rig):
 
     r = run_hunt(store, hunt, Two(), scorer, notifiers, cfg.location)
     assert r.n_scored == 2, "two real listings were collapsed into one"
+
+
+# --- what you went and grabbed ---------------------------------------------
+#
+# The bot asserts a value on every listing it judges and nothing else in the
+# database can falsify one, so these columns are the only ground truth it will
+# ever have. Each test below pins one of the five places a new status has to be
+# taught about, because this is the change that keeps being made by half.
+
+
+def _grabbable(store, price_cents=25000, hunt_id="h"):
+    from dealbot.models import Listing
+    l = Listing(id="fb:9", source="facebook", source_id="9",
+                title="Mid century walnut bookshelf", description="solid",
+                price_cents=price_cents, currency="USD", url="u")
+    store.upsert_listing(l)
+    store.mark_matches(hunt_id, [l])
+    store.set_status(hunt_id, l.id, "saved")
+    return l
+
+
+def test_a_refresh_can_never_wipe_a_purchase(rig):
+    """`grabbed_at` and `paid_cents` are the USER's facts. Every other column on
+    `listings` is written by the scraper, and the standing bug in this codebase
+    is a thin index-only refresh overwriting enriched data -- so the guard here
+    is that `upsert_listing` does not know these two columns at all, rather than
+    a COALESCE someone has to remember."""
+    cfg, store, *_ = rig
+    l = _grabbable(store)
+    store.mark_grabbed("h", l.id, 18000)
+
+    store.upsert_listing(l)                       # seen again in the feed
+
+    row = store.conn.execute(
+        "SELECT grabbed_at, paid_cents FROM listings WHERE id=?", (l.id,)).fetchone()
+    assert row["grabbed_at"] is not None
+    assert row["paid_cents"] == 18000
+
+
+def test_mark_gone_never_retires_something_you_own(rig):
+    """A seller taking the post down is the NORMAL end of a listing you bought.
+    `saved` was already protected here for the same reason; a grabbed listing
+    has the stronger claim, since it is in the user's house."""
+    cfg, store, *_ = rig
+    l = _grabbable(store)
+    store.mark_grabbed("h", l.id, 0)
+
+    for _ in range(5):
+        store.mark_gone("h", "facebook", ["sentinel"])
+
+    assert store.statuses("h")[l.id] == "grabbed"
+
+
+def test_a_grabbed_listing_never_triggers_a_price_alert(rig):
+    """It is off the market and it is yours, so a "cheaper now" ping about it is
+    noise. `mark_grabbed` stamps `sold_at`, which `price_drops` already
+    excludes -- pinned because the fix lives in a different function from the
+    rule."""
+    cfg, store, *_ = rig
+    l = _grabbable(store, price_cents=25000)
+    from dealbot.models import Score
+    from datetime import datetime, timezone
+    store.save_score(Score(listing_id=l.id, hunt_id="h", model="m",
+                           scored_at=datetime.now(timezone.utc), match="yes",
+                           deal_score=8.0, est_value_cents=40000,
+                           condition=None, matched_want="bookshelf",
+                           worth_grabbing=True, unknowns=(), requirements=(),
+                           red_flags=(), reasoning="r"),
+                     priced_at_cents=25000)
+    store.mark_grabbed("h", l.id, 18000)
+    from dataclasses import replace
+    store.upsert_listing(replace(l, price_cents=9000))   # seller slashes it
+
+    assert store.price_drops() == []
+
+
+def test_undoing_a_grab_puts_everything_back(rig):
+    """A mis-tap on a phone must not leave a permanent purchase behind, so
+    unlike `mark_sold` this really does clear the stamps."""
+    cfg, store, *_ = rig
+    l = _grabbable(store)
+    store.mark_grabbed("h", l.id, 18000)
+    store.ungrab("h", l.id)
+
+    row = store.conn.execute(
+        "SELECT grabbed_at, paid_cents, sold_at, sold_reason, is_active "
+        "FROM listings WHERE id=?", (l.id,)).fetchone()
+    assert row["grabbed_at"] is None and row["paid_cents"] is None
+    assert row["sold_at"] is None and row["sold_reason"] is None
+    assert row["is_active"] == 1
+    assert store.statuses("h")[l.id] == "saved"
+
+
+def test_undoing_a_grab_does_not_un_sell_a_listing_that_really_sold(rig):
+    """The condition on `sold_reason` is the whole point. A listing the
+    re-check pass confirmed sold, that you then grabbed and un-grabbed, is
+    still sold -- and un-selling it would put it back in front of the notifier
+    and the re-check pass as though it were for sale."""
+    cfg, store, *_ = rig
+    l = _grabbable(store)
+    store.mark_sold(l.id, "sold")                 # the source said so first
+    store.mark_grabbed("h", l.id, 0)
+    store.ungrab("h", l.id)
+
+    row = store.conn.execute(
+        "SELECT sold_at, sold_reason FROM listings WHERE id=?", (l.id,)).fetchone()
+    assert row["sold_reason"] == "sold"
+    assert row["sold_at"] is not None
+
+
+def test_a_blank_price_is_not_free(rig):
+    """0 and NULL are different answers: 0 is free, which is most of what this
+    bot finds, and NULL is "I did not write it down". Recording a forgotten
+    figure as free would put a lie in the one table that exists to check what
+    the model claims a thing is worth -- and it would count in the calibration
+    average."""
+    cfg, store, *_ = rig
+    l = _grabbable(store)
+    store.mark_grabbed("h", l.id, None)
+
+    row = store.conn.execute(
+        "SELECT paid_cents FROM listings WHERE id=?", (l.id,)).fetchone()
+    assert row["paid_cents"] is None
+    assert store.calibration()["n"] == 0, "an unrecorded price is not a data point"

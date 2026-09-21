@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
 from pathlib import Path
 
@@ -24,12 +24,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import config as config_mod
 from .. import schedule as schedule_mod
-from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON,
-                                   PAUSE_UNTIL)
+from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL,
+                                   PlanUsage, read_plan_usage)
 from ..config import Config
 from ..db import Store
 from ..filters import matches_any
 from ..models import WANT_NAME_RE, Listing, Want, slugify_want
+from ..pipeline import route
 from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -60,7 +61,8 @@ SELECT m.hunt_id, m.status, l.*,
          WHERE listing_id = l.id) AS price_moves,
        s.deal_score, s.reasoning, s.red_flags,
        s.matched_want, s.est_value_cents, s.priced_at_cents, s.match,
-       s.unknowns, s.requirements, s.worth_grabbing, s.images_checked
+       s.unknowns, s.requirements, s.worth_grabbing, s.images_checked,
+       s.price_unclear
 FROM hunt_matches m
 JOIN listings l ON l.id = m.listing_id
 JOIN scores  s ON s.id = (SELECT MAX(id) FROM scores
@@ -77,7 +79,8 @@ SELECT m.hunt_id, m.status, m.filter_reason, l.*,
        (SELECT COUNT(DISTINCT price_cents) - 1 FROM price_observations
          WHERE listing_id = l.id) AS price_moves,
        s.deal_score, s.reasoning, s.red_flags, s.matched_want, s.priced_at_cents,
-       s.match, s.unknowns, s.requirements, s.worth_grabbing, s.images_checked
+       s.match, s.unknowns, s.requirements, s.worth_grabbing, s.images_checked,
+       s.price_unclear
 FROM hunt_matches m
 JOIN listings l ON l.id = m.listing_id
 LEFT JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
@@ -97,6 +100,14 @@ SELECT status, COUNT(*) AS n FROM hunt_matches WHERE hunt_id = ? GROUP BY status
 # Every rejection is recorded with its reason and none of it was visible. This
 # is the tuning view: "118 rejected on over_price" says your cap is too low far
 # faster than reading listings one at a time.
+# One row per want, not one query per want. This list moved onto `/` in the
+# same change, which turned its COUNT(*) into N queries on the busiest page in
+# the site -- paid on every load, panel unfolded or not.
+WANT_COUNTS_SQL = """
+SELECT hunt_id, COUNT(*) AS n FROM hunt_matches
+WHERE hunt_id IN (%s) GROUP BY hunt_id
+"""
+
 REJECT_REASONS_SQL = """
 SELECT filter_reason, COUNT(*) AS n FROM hunt_matches
 WHERE hunt_id = ? AND filter_reason IS NOT NULL
@@ -109,6 +120,12 @@ WHERE listing_id = ? ORDER BY id
 """
 
 PAGE_LIMIT = 200
+
+# Where "manage my wants" lives, in ONE place. It moved off /settings: the list
+# you edit is the list the front page is the result of, and reaching it through
+# a gear read as configuration. `manage=1` renders the panel open; the hash
+# scrolls to it, so a save lands on the list rather than at the top of a page.
+MANAGE_URL = "/?manage=1#manage"
 
 # One listing appears in exactly ONE bin.
 #
@@ -124,9 +141,9 @@ PAGE_LIMIT = 200
 ONE_BIN = """
   AND m.rowid = (SELECT x.rowid FROM hunt_matches x
                  WHERE x.listing_id = m.listing_id
-                   AND x.status IN ('saved','contacted','wanted','free_find')
-                 ORDER BY CASE x.status WHEN 'saved' THEN 0 WHEN 'contacted' THEN 0
-                                        WHEN 'wanted' THEN 1 ELSE 2 END,
+                   AND x.status IN ('saved','grabbed','wanted','free_find')
+                 ORDER BY CASE x.status WHEN 'grabbed' THEN 0 WHEN 'saved' THEN 1
+                                        WHEN 'wanted' THEN 2 ELSE 3 END,
                           x.hunt_id
                  LIMIT 1)
 """
@@ -135,13 +152,24 @@ QUEUE_SQL = _queue_sql("WHERE m.status = ?" + ONE_BIN)
 
 # Things you decided to act on. Clicking "saved" used to make a listing vanish:
 # it left the bin and was only findable by digging through a hunt view.
-SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'contacted')" + ONE_BIN)
+# `grabbed` sits here rather than on a page of its own: it is what a saved
+# thing BECOMES, this page already keeps a sold listing rather than dropping it,
+# and a fourth bin in the nav for something that happens a few times a month
+# would be a page you visit to confirm it is still empty.
+SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'grabbed')" + ONE_BIN)
 
 # The band just under the bar. `deal_score` is judged as if unknowns resolve
 # favourably, so a 6 means "even if it is what it looks like, it is mediocre" --
 # but you cannot calibrate a threshold you can never see over.
 # /skipped is not a bin -- it is the band under the bar -- so it keeps its own
 # rows and takes no ONE_BIN clause.
+#
+# It is also where a contradicted $0 lands. `pipeline.route` keeps a
+# `price_unclear` listing out of the free bin -- a price nobody knows is not a
+# price, so there is nothing to weigh the trip against -- and it stays `scored`,
+# which brings it here with the card saying "price unclear" over it. A folded
+# group on /free used to carry them instead: it rendered a second copy of any
+# that reached a bin anyway, and scanned `scores` unindexed on every load.
 NEAR_MISS_SQL = _queue_sql("WHERE m.status = 'scored' AND s.deal_score >= ?")
 
 
@@ -269,16 +297,80 @@ def standdown_reason(warning: str | None) -> str | None:
     return None
 
 
-def photo_verdict(scores: list[dict]) -> dict | None:
+def hunts_including_archived(cfg: Config, store: Store) -> dict:
+    """Every hunt, plus one rebuilt for each want that has been deleted.
+
+    A deleted want is archived rather than dropped and everything it matched
+    stays readable, but its hunt is gone from `cfg.hunts` -- so anything that
+    re-decides `route` for an old score had nothing to judge against. That is
+    not a rare corner: 254 of 1,378 listings here carry a newest score from
+    `want:tv-stand`, deleted weeks ago, and 66 of those could only be told the
+    photographs "did not get" looked at, which is the least useful of the three
+    answers the page can give.
+
+    Rebuilt by handing the archived wants back to `Config.hunts` rather than
+    constructing a `Hunt` here, so every threshold and per-want override
+    resolves exactly the way a live one's does. A want with no queries never
+    had its own hunt and still does not get one.
+    """
+    hunts = {h.id: h for h in cfg.hunts}
+    gone = [w.want for w in store.wants(include_archived=True)
+            if f"want:{w.want.name}" not in hunts]
+    if gone:
+        for h in replace(cfg, wants=tuple(gone)).hunts:
+            hunts.setdefault(h.id, h)
+    return hunts
+
+
+def headed_for_a_bin(store: Store, listing: dict, scores: list[dict],
+                     hunts: dict) -> bool | None:
+    """Whether the newest score would have put this listing in a bin.
+
+    TWO different things stop a requested image pass and the page used to blame
+    the budget for both. Stage 5b buys photographs only for a listing that
+    `route` would ALREADY bin on its text score, so one that scored poorly and
+    asked to be seen was declined by that test and never reached the budget at
+    all. In the live data that is 162 of the 169 unmet requests: the sentence
+    "the image budget ran out" was wrong on 96% of the listings it appeared on,
+    and it named the one number a reader might go and raise in response.
+
+    `route` is CALLED, not re-derived. Re-deriving it here is precisely the
+    mistake its own docstring records -- the rule was written twice once
+    before, and the copies agreed only as long as someone remembered.
+
+    `None` means cannot say, which after `hunts_including_archived` is rare:
+    a want that never had its own hunt, or rows that have since gone. The
+    template then claims nothing about why.
+    """
+    if not scores:
+        return None
+    hunt = hunts.get(scores[0]["hunt_id"])
+    if hunt is None:
+        return None
+    # Raw rows: `_rows` has already decoded the JSON columns that the Store
+    # converters decode, and handing them back a list would raise. Two indexed
+    # single-row reads on a page that renders one listing.
+    srow = store.conn.execute("SELECT * FROM scores WHERE id=?",
+                              (scores[0]["id"],)).fetchone()
+    lrow = store.conn.execute("SELECT * FROM listings WHERE id=?",
+                              (listing["id"],)).fetchone()
+    if srow is None or lrow is None:
+        return None
+    return route(store.row_to_score(srow), hunt,
+                 store.row_to_listing(lrow)) is not None
+
+
+def photo_verdict(scores: list[dict], binned: bool | None = None) -> dict | None:
     """Whether the model looked at the photographs, and what it got for it.
 
-    THREE states, and the interface only ever admitted to one. A chip appeared
-    when the photos had been checked and nothing appeared otherwise, so "judged
-    on the text alone" and "asked for a look and never got one" were the same
-    blank space. The second is not a non-event: 207 of the collected scores
-    have `needs_images` set and `images_checked` clear, which is the model
-    saying it could not decide without seeing them and the image budget
-    (`max_image_checks`) saying no.
+    FOUR states, and the interface once admitted to one. A chip appeared when
+    the photos had been checked and nothing appeared otherwise, so "judged on
+    the text alone" and "asked for a look and never got one" were the same
+    blank space. Then that second state was given a sentence which blamed the
+    image budget -- true seven times in the life of the bot, against 162
+    listings for which the real answer is that they were not going to be shown
+    to anyone, so no photograph was worth buying. `binned` separates them; see
+    `headed_for_a_bin`, and `None` there means neither claim is made.
 
     Where it did look, the score BEFORE is worth as much as the verdict. Both
     rows are kept for exactly this reason -- the text judgement stays next to
@@ -299,6 +391,7 @@ def photo_verdict(scores: list[dict]) -> dict | None:
     return {
         "checked": checked,
         "asked": bool(latest["needs_images"]) and not checked,
+        "binned": binned,
         "question": (latest["image_question"] or "").strip() or None,
         "before": prior["deal_score"] if checked and prior else None,
         "after": latest["deal_score"],
@@ -334,6 +427,110 @@ def local_stamp(raw, tz=None) -> str:
     return f"{local.day} {local:%b}, {h12}:{local.minute:02d}{suffix}"
 
 
+def took(started_at: str | None, finished_at: str | None) -> str | None:
+    """How long one run took, from the two stamps it already carries.
+
+    DERIVED, not stored. A `duration_secs` column would be a third copy of a
+    fact `started_at` and `finished_at` state between them, and the copies
+    would be free to disagree -- the same trap as the `runs` column whitelist
+    that went stale while looking correct.
+
+    `None` where there is nothing honest to say: a run still in flight and a
+    run whose process was killed mid-pass are the same row, both with no
+    finish stamp, and neither has a duration yet.
+    """
+    if not started_at or not finished_at:
+        return None
+    try:
+        secs = (datetime.fromisoformat(finished_at)
+                - datetime.fromisoformat(started_at)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    if secs < 0:
+        return None
+    if secs < 60:
+        return f"{secs:.0f}s"
+    mins, secs = divmod(int(secs), 60)
+    if mins < 60:
+        return f"{mins}m {secs:02d}s"
+    hours, mins = divmod(mins, 60)
+    return f"{hours}h {mins:02d}m"
+
+
+def until_words(seconds: float | None) -> str:
+    """A countdown to a reset, in the units a person would say it in.
+
+    Days matter: the seven-day window is routinely more than a day out, and
+    "in 114h 9m" is correct and unreadable. Empty once it has passed, because
+    a negative countdown reads as a broken page rather than a rolled window.
+    """
+    if not seconds or seconds <= 0:
+        return ""
+    days, rem = divmod(int(seconds), 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    if days:
+        return f"in {days}d {hours}h"
+    if hours:
+        return f"in {hours}h {mins}m"
+    return f"in {mins}m" if mins else "in under a minute"
+
+
+def ago_words(minutes: float | None) -> str:
+    """How old a reading is, phrased the way the health pill phrases it."""
+    if minutes is None:
+        return ""
+    mins = int(minutes)
+    if mins < 1:
+        return "just now"
+    if mins < 60:
+        return f"{mins}m ago"
+    if mins < 2880:
+        return f"{mins // 60}h ago"
+    return f"{mins // 1440}d ago"
+
+
+def plan_usage_view(usage: PlanUsage, now: float | None = None) -> dict:
+    """The plan windows, shaped for the meters on /runs.
+
+    Pure, and it decides nothing: `read_plan_usage` already settled which
+    windows count and which have expired, so this only turns fractions into
+    percents and instants into words. The pill sends you here to find out why
+    judging stopped, so what the page draws has to be what the gate enforced.
+
+    A percent is clamped to 0-100 because it is written straight into a CSS
+    width, and a reading of 1.01 -- which the wire really does carry once a
+    window is spent -- would push the fill out of its own track.
+    """
+    now = time.time() if now is None else now
+    windows = []
+    for w in usage.windows:
+        windows.append({
+            "label": w.label,
+            # An expired reading has no number to show: the window it measured
+            # has rolled, so drawing its bar would assert a fact about a window
+            # that no longer exists.
+            "pct": None if w.expired else max(0, min(100, int(round(w.used * 100)))),
+            "ceiling_pct": int(round(w.ceiling * 100)) if w.ceiling > 0 else None,
+            "over": w.over,
+            "expired": w.expired,
+            "resets_in": "" if w.expired else until_words((w.resets_at or 0) - now),
+        })
+    age = (now - usage.recorded_at.timestamp()) / 60 if usage.recorded_at else None
+    return {
+        "known": bool(windows), "windows": windows, "as_of": ago_words(age),
+        # Judging is standing aside on these numbers right now.
+        "holding": any(w["over"] for w in windows),
+        # The reading gates nothing: too old to trust, and it named no reset to
+        # date it by. Said out loud because a page showing 82% over a bot that
+        # is judging away reads as broken. An old reading that DID name a reset
+        # is not this: it is enforcing, and saying otherwise would be the lie
+        # in the other direction.
+        "unenforced": usage.stale and all(w.resets_at is None
+                                          for w in usage.windows),
+    }
+
+
 def _safe_back(back: str) -> str:
     """Where a triage button returns to, once we have checked it is here.
 
@@ -359,10 +556,11 @@ def _safe_back(back: str) -> str:
     return cleaned
 
 
-def health(row, paused, hunts, sched) -> dict:
+def health(row, paused, hunts, sched, activity) -> dict:
     """The state of the bot itself, on every page, in one pill.
 
-    Pure: `row` is the latest `runs` row (or None). It lives out here
+    Pure: `row` is the latest `runs` row (or None) and `activity` is
+    `Store.run_activity()`. It lives out here
     because the ORDER below has been wrong twice, and a precedence
     ladder that can only be exercised through HTTP is one nobody tests
     every branch of.
@@ -453,7 +651,24 @@ def health(row, paused, hunts, sched) -> dict:
                 "detail": f"{window}{detail}"}
     if mins > 60:
         return {"state": "warn", "label": f"Quiet {when}", "detail": detail}
-    return {"state": "ok", "label": when, "detail": detail}
+
+    # 6. Actually working, right now. This is the ONLY state that claims
+    #    activity, and it is true for as long as a pass is in flight.
+    if activity["in_flight"]:
+        return {"state": "ok", "label": "Looking now",
+                "detail": f"A pass is running right now. {detail}"}
+
+    # 7. Between ticks: the clock, and no claim about what it is doing.
+    #    "Judged · 15m" and "Collecting · 15m" both described a bot that was
+    #    sitting still waiting for the timer, and a state word next to a
+    #    growing number reads as work in progress. What it HAS judged is a
+    #    fact about the last hour, not a state, so it lives in the detail --
+    #    and in full on /runs, where the listings themselves are.
+    n = activity["scored"]
+    return {"state": "ok", "label": when,
+            "detail": (f"{n} listing{'' if n == 1 else 's'} judged in the "
+                       f"last hour. {detail}" if n else
+                       f"Nothing new to judge in the last hour. {detail}")}
 
 
 def create_app(base_cfg: Config, scorer=None) -> FastAPI:
@@ -494,12 +709,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def _schedule():
         return schedule_mod.load(store, base_cfg.schedule)
 
-    def _health(paused, hunts, sched) -> dict:
+    def _health(paused, hunts, sched, activity) -> dict:
         return health(store.conn.execute(
             "SELECT started_at, error, warning,"
             " (julianday('now') - julianday(started_at))"
             " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone(),
-            paused, hunts, sched)
+            paused, hunts, sched, activity)
 
     def ctx(request: Request, **kw):
         # Every page carries the paused state. A bot that has been switched off
@@ -513,16 +728,23 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         paused = [h for h in hunts if h.id in off]
         all_paused = bool(hunts) and len(paused) == len(hunts)
         sweeps = [h for h in hunts if h.kind == "sweep"]
-        return {"request": request, "hunts": hunts,
+        # Read once and passed on: the pill needs it on every page, and /runs
+        # states the same figures underneath the list they describe. Two calls
+        # would be two answers to one question, a second apart.
+        activity = store.run_activity()
+        return {"request": request, "hunts": hunts, "activity": activity,
                 # Passed rather than registered as a Jinja filter: the filter
                 # table lives on a module-level Environment, so binding a
                 # timezone into it would make one app's clock another's.
                 "when": lambda raw: local_stamp(raw, base_cfg.schedule.tz),
                 "assets": asset_version(),
+                # Every template that points at the wants list points at the
+                # same string, so moving it again is one edit.
+                "manage_url": MANAGE_URL,
                 "paused_hunts": paused,
                 "all_paused": all_paused,
                 "bin_counts": _counts(),
-                "health": _health(paused, hunts, sched),
+                "health": _health(paused, hunts, sched, activity),
                 "schedule": sched,
                 "sweeps_paused": bool(sweeps)
                                  and all(h.id in off for h in sweeps),
@@ -550,18 +772,45 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 truncated=total > len(items), **extra))
 
     @app.get("/")
-    def wants(request: Request):
+    def wants(request: Request, manage: int = 0):
         """Bin one: things that match something you asked for. Unverified
         matches sit here too, flagged, rather than in a bin of their own -- a
-        9.0 unconfirmed TV stand belongs next to a 9.0 confirmed one."""
-        return _bin(request, "wants.html", "wanted")
+        9.0 unconfirmed TV stand belongs next to a 9.0 confirmed one.
+
+        The list itself is edited here as well, in a panel folded away above
+        the cards. It used to be a panel on /settings, which is the wrong
+        place twice over: this page IS that list's output, and the gear reads
+        as configuration rather than as "the things I am looking for".
+        """
+        cfg = _live()
+        return _bin(request, "wants.html", "wanted", cfg=cfg,
+                    wants=_want_rows(cfg), ilabels=dict(INTERVAL_CHOICES),
+                    manage_open=bool(manage))
 
     @app.get("/saved")
-    def saved(request: Request):
-        items = _rows(store, SAVED_SQL, (PAGE_LIMIT,))
+    def saved(request: Request, show: str = ""):
+        """Two lists behind one tab, defaulting to the one with work in it.
+
+        Things you own accumulate and things to act on do not, so within a few
+        months the page would have been mostly archive -- and a thing you
+        already have is not a thing to decide about. The split is made HERE
+        rather than with a second query, because one `SAVED_SQL` already
+        returns both and dedupes to one row per listing: partitioning what it
+        returns gives both counts exactly, while two queries would each need
+        their own copy of that dedupe and could disagree about a listing that
+        is grabbed for one hunt and saved for another.
+        """
+        rows = _rows(store, SAVED_SQL, (PAGE_LIMIT,))
+        got = [r for r in rows if r["grabbed_at"]]
+        act = [r for r in rows if not r["grabbed_at"]]
+        showing = "grabbed" if show == "grabbed" else "saved"
+        items = got if showing == "grabbed" else act
         return TEMPLATES.TemplateResponse(
             request, "saved.html",
-            ctx(request, items=items, total=len(items),
+            ctx(request, items=items, total=len(items), showing=showing,
+                back="/saved?show=grabbed" if showing == "grabbed" else "/saved",
+                n_act=len(act), n_got=len(got),
+                paid=sum(r["paid_cents"] or 0 for r in got),
                 truncated=False))
 
     @app.get("/near")
@@ -673,12 +922,18 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # dragging the same category back every 30 minutes, and a want hunt
         # searches its own terms instead. So the control appears only when this
         # listing actually reached a sweep, and acts on that sweep's list.
-        sweeps = {h.id for h in _live().hunts if h.kind == "sweep"}
+        cfg = _live()
+        hunts = hunts_including_archived(cfg, store)
+        sweeps = {h.id for h in cfg.hunts if h.kind == "sweep"}
         blockable = next((m for m in matches if m["hunt_id"] in sweeps), None)
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
+            # The newest score decides: it is the one the card is showing.
+            price_unclear=bool(scores and scores[0].get("price_unclear")),
             history=history, sparkline=_sparkline(history),
-            photos=photo_verdict(scores), blockable=blockable,
+            photos=photo_verdict(
+                scores, headed_for_a_bin(store, listing, scores, hunts)),
+            blockable=blockable,
             back=_safe_back(back)))
 
     def _error_page(request: Request, status: int, heading: str,
@@ -749,13 +1004,52 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # `scored` is here for undo, not for the buttons: a card on /skipped
         # is `scored`, and undoing a dismiss there has to put it back exactly
         # where it was or the list lies about what the database holds.
-        if status not in ("saved", "dismissed", "contacted", "wanted",
+        # `grabbed` is NOT here. It carries a figure and clears the listing
+        # out of every other bin, so it gets its own endpoint rather than
+        # riding a form field this one would have to special-case.
+        if status not in ("saved", "dismissed", "wanted",
                           "free_find", "scored"):
             raise StarletteHTTPException(400, f"unknown status {status!r}")
         if not store.set_status(hunt_id, listing_id, status, note or None):
             # Nothing matched. Say so: the card is already folding away and the
             # toast is about to claim it worked, and a triage that silently
             # does nothing is the one failure this page cannot show you.
+            raise StarletteHTTPException(
+                404, f"no listing {listing_id!r} in hunt {hunt_id!r}")
+        return _answer(request, back)
+
+    @app.post("/grabbed")
+    def grabbed(request: Request, hunt_id: str = Form(...),
+                listing_id: str = Form(...), paid: str = Form(""),
+                undo: str = Form(""), back: str = Form("/saved")):
+        """You went and got it, and this is what you paid.
+
+        Its own endpoint rather than a `/triage` status, because it carries a
+        figure and because it does more than move one row: the listing is off
+        the market now, so it leaves every other hunt's bin too.
+
+        **A blank price stores NULL, not zero.** Those are different answers --
+        0 means free, which is most of what this bot finds, and NULL means you
+        did not write it down. Recording a forgotten figure as free would put a
+        lie into the one table that exists to check what the model claims a
+        thing is worth. An unparseable figure is treated as blank rather than
+        raised on, matching the tuning form: a typo on a phone must not cost
+        the record of the purchase itself.
+        """
+        if undo:
+            if not store.ungrab(hunt_id, listing_id):
+                raise StarletteHTTPException(
+                    404, f"no listing {listing_id!r} in hunt {hunt_id!r}")
+            return _answer(request, back)
+        cents: int | None = None
+        if (raw := paid.strip().lstrip("$").replace(",", "")):
+            try:
+                cents = max(0, int(round(float(raw) * 100)))
+            except (TypeError, ValueError):
+                cents = None
+        if not store.mark_grabbed(hunt_id, listing_id, cents):
+            # Same reasoning as `/triage`: the card is already folding away and
+            # the toast is about to say it worked.
             raise StarletteHTTPException(
                 404, f"no listing {listing_id!r} in hunt {hunt_id!r}")
         return _answer(request, back)
@@ -782,25 +1076,39 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def _lines(text: str) -> tuple[str, ...]:
         return tuple(ln.strip() for ln in (text or "").splitlines() if ln.strip())
 
+    def _want_rows(cfg: Config) -> list[dict]:
+        """One row per want, archived ones included, for the manage panel.
+
+        Takes the config it is given rather than calling `_live()` itself: the
+        page that renders these already has one, and recomputing it is a
+        handful of SELECTs spent to arrive at the same answer.
+        """
+        off = store.disabled_hunts()
+        # Both lookups indexed once. `cfg.hunts` is a computed property, so
+        # the linear scan that was here rebuilt every hunt for every want; the
+        # match count was a query per want. Each was quadratic in the one number
+        # on this page a person is expected to grow.
+        by_id = {h.id: h for h in cfg.hunts}
+        wants = list(store.wants(include_archived=True))
+        counts = {}
+        if wants:
+            ids = [sw.hunt_id for sw in wants]
+            counts = {r["hunt_id"]: r["n"] for r in store.conn.execute(
+                WANT_COUNTS_SQL % ",".join("?" * len(ids)), ids)}
+        rows = []
+        for sw in wants:
+            rows.append({
+                "w": sw.want, "stored": sw, "hunt": by_id.get(sw.hunt_id),
+                "hunt_id": sw.hunt_id,
+                "paused": sw.hunt_id in off,
+                "matched": counts.get(sw.hunt_id, 0),
+            })
+        return rows
+
     @app.get("/settings")
     def settings_view(request: Request, err: str = ""):
         cfg, sched = _live(), _schedule()
         off = store.disabled_hunts()
-        # Indexed once. `cfg.hunts` is a computed property, so the linear scan
-        # that was here rebuilt every hunt for every want -- quadratic in the
-        # one number on this page a person is expected to grow.
-        by_id = {h.id: h for h in cfg.hunts}
-        rows = []
-        for sw in store.wants(include_archived=True):
-            hunt = by_id.get(sw.hunt_id)
-            rows.append({
-                "w": sw.want, "stored": sw, "hunt": hunt,
-                "hunt_id": sw.hunt_id,
-                "paused": sw.hunt_id in off,
-                "matched": store.conn.execute(
-                    "SELECT COUNT(*) c FROM hunt_matches WHERE hunt_id=?",
-                    (sw.hunt_id,)).fetchone()["c"],
-            })
         sweeps = []
         for h in (x for x in cfg.hunts if x.kind == "sweep"):
             counts = store.exclude_counts(h.id)
@@ -823,11 +1131,22 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             "SELECT filter_reason, COUNT(*) n FROM hunt_matches "
             "WHERE filter_reason IN ('too_far','too_far_by_city') "
             "GROUP BY filter_reason")}
+        # Image passes actually spent. Not "times the budget refused one":
+        # that is only knowable by re-deciding `route`, and the raw count of
+        # unmet requests is dominated by listings the pipeline declined to buy
+        # photos for because they were not headed for a bin anyway. A settings
+        # hint that conflated the two would invite raising a number that
+        # changes nothing.
+        looked = store.conn.execute(
+            "SELECT COUNT(*) c FROM scores WHERE images_checked=1").fetchone()["c"]
         tuning = {
             "min_deal_score": cfg.defaults.min_deal_score,
             "free_find_min_score": cfg.defaults.free_find_min_score,
             "max_results": cfg.defaults.max_results,
             "radius_miles": cfg.location.radius_miles,
+            "max_image_checks": cfg.scorer.max_image_checks,
+            "images_per_check": cfg.scorer.images_per_check,
+            "looked": looked,
             "near_miss": near,
             "too_far": sum(far.values()),
             "backlog": sum(store.unjudged_counts().values()),
@@ -837,7 +1156,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             "combos": len([h for h in cfg.hunts if h.id not in off]) * len(cfg.sources),
         }
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
-            request, cfg=cfg, sched=sched, wants=rows, sweeps=sweeps,
+            request, cfg=cfg, sched=sched, n_wants=len(store.wants()),
+            sweeps=sweeps,
             intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
             err=err, tuning=tuning,
             start=schedule_mod.fmt_hhmm(sched.start_minute),
@@ -862,9 +1182,10 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def save_tuning(request: Request, min_deal_score: str = Form(""),
                     free_find_min_score: str = Form(""),
                     max_results: str = Form(""), radius_miles: str = Form(""),
+                    max_image_checks: str = Form(""),
                     back: str = Form("/settings")):
-        """The four numbers worth a thumb. Everything else in config.yaml stays
-        in config.yaml -- the source rate limits especially, which exist to keep
+        """The numbers worth a thumb. Everything else in config.yaml stays in
+        config.yaml -- the source rate limits especially, which exist to keep
         Facebook from blocking you and live inside the adapter precisely so a
         caller cannot bypass them."""
         # The form fields have to be declared for FastAPI, but the LOOP is
@@ -873,7 +1194,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         submitted = {"min_deal_score": min_deal_score,
                      "free_find_min_score": free_find_min_score,
                      "max_results": max_results,
-                     "radius_miles": radius_miles}
+                     "radius_miles": radius_miles,
+                     "max_image_checks": max_image_checks}
         for key in store.TUNING:
             raw = submitted.get(key, "")
             if str(raw).strip():
@@ -1001,7 +1323,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def edit_want(request: Request, name: str):
         stored = store.get_want(name)
         if stored is None:
-            return RedirectResponse("/settings", status_code=303)
+            return RedirectResponse(MANAGE_URL, status_code=303)
         w = stored.want
         return _want_form(request, stored=stored, values={
             "name": w.name, "description": w.description,
@@ -1025,8 +1347,14 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                   "max_price": max_price, "queries": queries,
                   "requires": requires}
         stored = store.get_want(existing) if existing else None
+        # "Suggest terms" posts here in the background now, so every way this
+        # can answer has a JSON twin. Same shape as /settings/exclude: ok:false
+        # and a sentence, never a status the script has to decode.
+        wants_json = request.headers.get("x-requested-with") == "fetch"
 
         def fail(msg):
+            if wants_json:
+                return {"ok": False, "error": msg}
             return _want_form(request, stored=stored, values=values,
                               error=msg, status=400)
 
@@ -1044,10 +1372,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         if action == "suggest":
             drafted = _draft_queries(slug, description, _lines(requires))
             if not drafted:
+                msg = ("Could not draft search terms just now. "
+                       "Type a few, or try again in a moment.")
+                if wants_json:
+                    return {"ok": False, "error": msg}
                 return _want_form(
                     request, stored=stored, values=values, interval=interval,
-                    error="Could not draft search terms just now. "
-                          "Type a few, or try again in a moment.")
+                    error=msg)
             # ADDED to what is already there, never swapped for it. Replacing
             # would throw away a term typed and not yet committed to a pill --
             # and this form's whole rule is that a round trip loses nothing.
@@ -1057,6 +1388,11 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 if t.lower() not in seen:
                     seen.add(t.lower())
                     merged.append(t)
+            # The script asks for the merged list and rewrites the pills in
+            # place. The merge stays here rather than being done twice: a
+            # browser with no script gets the same list in the same order.
+            if wants_json:
+                return {"ok": True, "queries": merged}
             values["queries"] = "\n".join(merged)
             return _want_form(request, stored=stored, values=values,
                               interval=interval)
@@ -1092,11 +1428,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # colliding with it, and its old matches come back with it.
         store.restore_want(slug)
         store.set_hunt_interval(f"want:{slug}", _clean_interval(interval))
-        return RedirectResponse("/settings", status_code=303)
+        # Back to the list you just changed, open, rather than to the top of a
+        # settings page with the change somewhere below the fold.
+        return RedirectResponse(MANAGE_URL, status_code=303)
 
     @app.post("/wants/archive")
     def archive_want(request: Request, name: str = Form(...),
-                     restore: str = Form("0"), back: str = Form("/settings")):
+                     restore: str = Form("0"), back: str = Form(MANAGE_URL)):
         """Deleting a want stops its hunt. It does NOT delete anything: every
         listing it matched, every score and every dismissal stays where it is,
         readable at /hunt/want:<name>, because nothing in this project is ever
@@ -1189,8 +1527,17 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # figure above it on which day is which.
         offset = int((now.astimezone(sched.tz) if sched.tz
                       else now.astimezone()).utcoffset().total_seconds() // 60)
-        days = _fill_days(store.spend_by_day(30, offset),
-                          min(30, max(history_days, 1)), offset)
+        by_day = store.spend_by_day(30, offset)
+        days = _fill_days(by_day, min(30, max(history_days, 1)), offset)
+        # The same week the bars draw, said in figures. A bar chart answers
+        # "is this normal"; it cannot answer "what did Tuesday cost", which is
+        # the question you have when today's number looks high. Newest first:
+        # today is the row you came for.
+        week_days = []
+        for d in reversed(_fill_days(by_day, 7, offset)):
+            day = date.fromisoformat(d["day"])
+            week_days.append({**d, "label": f"{day:%a} {day.day} {day:%b}",
+                              "today": d["day"] == days[-1]["day"]})
 
         # A run rate, from the shorter of a week and what we actually have.
         # Annualising four days of a new bot would be a made-up number stated
@@ -1231,10 +1578,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         tokens = store.token_totals()
         billed = tokens["input"] + tokens["cached"]
         return TEMPLATES.TemplateResponse(request, "stats.html", ctx(
-            request, spend=spend, days=days, bars=_daybars(days, ceiling),
+            request, spend=spend, days=days, week_days=week_days,
+            bars=_daybars(days, ceiling),
             ceiling=ceiling, per_day=per_day, history_days=history_days,
             by_hunt=by_hunt, by_source=store.spend_by_source(),
             stages=store.spend_by_stage(), funnel=store.funnel(),
+            calibration=store.calibration(),
             today=today, asleep=not sched.is_open(), tz_name=sched.tz_name,
             tokens=tokens,
             cache_pct=(tokens["cached"] / billed * 100) if billed else None))
@@ -1243,8 +1592,27 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def runs(request: Request):
         rows = [dict(r) for r in store.conn.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
+        for r in rows:
+            r["took"] = took(r["started_at"], r["finished_at"])
+        # What the pill is talking about. It has room for "Judging" and a
+        # clock, and nothing else -- so the listings themselves, and which
+        # hunt and which site each came from, live on the page it links to.
+        judged = []
+        for j in store.judged_recently(12):
+            judged.append({
+                **j,
+                "hunt": j["hunt_id"].split(":", 1)[-1],
+                # A first-pass drop is a score of 0.0 with a `:triage` model.
+                # Shown as a drop rather than as a verdict of zero, which is
+                # what the number alone would read as.
+                "dropped": (j["model"] or "").endswith(":triage"),
+            })
         return TEMPLATES.TemplateResponse(request, "runs.html", ctx(
-            request, runs=rows, quota=_quota_state(),
+            request, runs=rows, quota=_quota_state(), judged=judged,
+            # What the plan has left, next to the switch that overrides it.
+            # `base_cfg` rather than `_live()`: the ceilings are config, not
+            # one of the things the dashboard is allowed to tune.
+            usage=plan_usage_view(read_plan_usage(store, base_cfg.scorer)),
             backlog=store.unjudged_counts()))
 
     return app

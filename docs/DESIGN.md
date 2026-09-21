@@ -71,7 +71,7 @@ price_observations(listing_id, observed_at, price_cents);   -- append-only
 
 hunt_matches(
   hunt_id TEXT, listing_id TEXT, matched_at TEXT,
-  status TEXT,                    -- new|scored|surfaced|dismissed|saved|contacted|gone
+  status TEXT,                    -- new|scored|surfaced|dismissed|saved|grabbed|gone
   PRIMARY KEY (hunt_id, listing_id)
 );
 

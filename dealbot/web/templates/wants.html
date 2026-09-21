@@ -3,6 +3,8 @@
 {% block content %}
 {% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
 {% set gratis = items|selectattr('price_cents','equalto',0)|list|length %}
+{% set live = wants|rejectattr('stored.archived')|list %}
+{% set gone = wants|selectattr('stored.archived')|list %}
 <div class="pagehead">
   <div class="headrow">
     <h1>Wants</h1>
@@ -23,6 +25,71 @@
   </p>
   <p>Matches for things on your list. Amber means a requirement is unconfirmed.</p>
 </div>
+
+{# Folded away, not hidden: the page's job is still the cards, so the list of
+   wants is one tap above them rather than a screenful in front of them. It is
+   a <details> the server can render open -- /wants/save comes back to
+   ?manage=1#manage, so saving lands on the row you just changed. #}
+<details class="panel manage" id="manage"{% if manage_open %} open{% endif %}>
+  <summary>
+    <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>
+    <span class="what">What I am looking for</span>
+    <span class="count num">{{ live|length }}</span>
+    <svg class="i chev" aria-hidden="true"><use href="#i-chev"/></svg>
+  </summary>
+  {% for r in live %}
+  <div class="wantrow {{ 'off' if r.paused }}">
+    <a class="grow" href="/wants/{{ r.w.name }}">
+      <b>{{ r.w.name }}</b>
+      <small>
+        {%- if r.w.max_price_cents == 0 %}Free ones only
+        {%- else %}Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}{% endif %}
+        {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,
+              r.hunt.interval_minutes ~ ' min')|lower }}
+        {#- No terms, so no hunt of its own: the free sweep is all that sees it.
+            The form will not create one of these any more, but config.yaml can
+            still seed one, and older wants predate the rule. #}
+        {%- else %} &middot; no search terms{% endif %}
+        {%- if r.matched %} &middot; {{ r.matched }} matched{% endif %}
+        {%- if r.paused %} &middot; paused{% endif %}
+      </small>
+    </a>
+    <svg class="i go" aria-hidden="true"><use href="#i-open"/></svg>
+  </div>
+  {% else %}
+  <div class="wantrow">
+    <span class="grow"><small>Nothing on the list. The free sweep still runs
+      and still finds things.</small></span>
+  </div>
+  {% endfor %}
+
+  {% if gone %}
+  <h3 class="subhead">Removed</h3>
+  {% for r in gone %}
+  <div class="wantrow off">
+    <a class="grow" href="/hunt/{{ r.hunt_id }}">
+      <b>{{ r.w.name }}</b>
+      <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
+        still readable.</small>
+    </a>
+    <form method="post" action="/wants/archive" data-inplace="#manage"
+          data-toast="Restored.">
+      <input type="hidden" name="name" value="{{ r.w.name }}">
+      <input type="hidden" name="restore" value="1">
+      <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="formactions">
+    <a class="btn primary" href="/wants/new">
+      <svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add a want</a>
+  </div>
+  <p class="settings-note">New wants only see listings found <b>from now
+    on</b>.</p>
+</details>
+
 <div class="stack">
 {% for i in items %}{{ card(i, '/') }}{% else %}
 <div class="empty">

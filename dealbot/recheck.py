@@ -17,8 +17,14 @@ Three things keep it cheap and safe:
 
   * **Only what is in a bin.** Re-checking the whole store would be hundreds of
     requests to learn something about listings nobody will look at.
-  * **Paced per listing.** One detail fetch per listing per interval, capped
-    per run, and the source's own rate limit still applies underneath.
+  * **Paced per listing, at two speeds.** One detail fetch per listing per
+    interval, capped per run, and the source's own rate limit still applies
+    underneath. The list you curated is asked about on every pass; the
+    candidate bins are paced far slower. They do not cost the same: a saved
+    listing is one you might be about to drive to, while `wanted` and
+    `free_find` are things you have not decided on -- and they are the half
+    that grows to dozens, against sources that throttle silently. Anything
+    that simply vanishes from search is retired by `mark_gone` regardless.
   * **Fails open, and means it.** A request that errors is not evidence a
     listing is gone, and neither is a page that came back without one. On
     Facebook a missing payload is `unknown` rather than `removed`, because a
@@ -40,11 +46,16 @@ log = logging.getLogger("dealbot.recheck")
 
 # What is worth a request: things you might drive to. `scored` is the vast
 # middle and nobody is going to look at it.
-BIN_STATUSES = ("wanted", "free_find", "saved", "contacted")
+BIN_STATUSES = ("wanted", "free_find", "saved")
 
 # A decision the user made about a listing is theirs. Something they saved is
 # still theirs after it sells -- it gets marked, not taken off their list.
-KEEP_STATUS = ("saved", "contacted")
+KEEP_STATUS = ("saved",)
+
+# `grabbed` is deliberately in NEITHER list. `mark_grabbed` stamps `sold_at`,
+# and `due_for_recheck` already filters on that, so asking Facebook whether a
+# thing in your garage is still for sale cannot happen. Adding it here would
+# spend a request per pass to be told what you already know.
 
 
 @dataclass
@@ -87,19 +98,36 @@ def availability(full: Listing | None, source: str = "") -> str:
 
 
 def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
-            every_hours: float = 6.0, max_per_run: int = 10,
+            every_hours: float = 6.0, saved_every_hours: float = 0.25,
+            max_per_run: int = 10,
             statuses: Sequence[str] = BIN_STATUSES) -> RecheckResult:
-    """Re-confirm the availability of listings sitting in a bin."""
+    """Re-confirm the availability of listings sitting in a bin.
+
+    Two speeds, and the faster one goes FIRST so a full candidate bin can never
+    crowd your own list out of the per-run cap.
+    """
     result = RecheckResult()
     if max_per_run <= 0 or not statuses:
         return result
 
-    # Zero or less means "all of them", not "none of them": that is what the
-    # manual `recheck --all` asks for.
-    cutoff = None if every_hours <= 0 else (
-        datetime.now(timezone.utc) - timedelta(hours=every_hours)
-    ).isoformat(timespec="seconds")
-    due = store.due_for_recheck(list(statuses), cutoff, max_per_run)
+    def cutoff(hours: float) -> str | None:
+        # Zero or less means "all of them", not "none of them": that is what
+        # the manual `recheck --all` asks for.
+        if hours <= 0:
+            return None
+        return (datetime.now(timezone.utc)
+                - timedelta(hours=hours)).isoformat(timespec="seconds")
+
+    # Never LESS often than the candidates, and `--all` (0) still means all.
+    keep_hours = 0.0 if every_hours <= 0 else min(every_hours, saved_every_hours)
+    keep = [s for s in statuses if s in KEEP_STATUS]
+    rest = [s for s in statuses if s not in KEEP_STATUS]
+    due: list[tuple[str, str, Listing]] = []
+    if keep:
+        due += store.due_for_recheck(keep, cutoff(keep_hours), max_per_run)
+    if rest and len(due) < max_per_run:
+        due += store.due_for_recheck(rest, cutoff(every_hours),
+                                     max_per_run - len(due))
     by_name = {name: src for name, src in sources}
     blocked: set[str] = set()
     asked: set[str] = set()

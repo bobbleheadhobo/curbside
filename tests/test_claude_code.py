@@ -291,14 +291,38 @@ def test_below_the_ceiling_it_carries_on(scorer, monkeypatch):
     sc.check_available()
 
 
-def test_a_stale_reading_never_seals_the_pause_shut(scorer, monkeypatch):
-    """A utilisation number only arrives with a model call. Enforcing an old one
-    means no calls, so no fresh number, so no way to discover the window has
-    reopened."""
+def test_an_undated_stale_reading_never_seals_the_pause_shut(scorer, monkeypatch):
+    """A reading that named no reset instant can only be refreshed by spending a
+    call, so an old one lets one pass through rather than sealing itself shut."""
     sc, store = scorer
     monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.99, minutes_ago=120)
     sc.check_available()          # let one through to refresh
+
+
+def test_a_dated_reading_holds_without_spending_to_re_ask(scorer, monkeypatch):
+    """MEASURED: a 7-day window at 92% with 21 hours left on it let a pass
+    through every 31 minutes -- 13 in six hours, $0.57 -- to re-learn a number
+    that cannot change until the window rolls. The reading names its own expiry,
+    so hold until then."""
+    from dealbot.scoring.claude_code import RESET_7D
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, seven=0.92, minutes_ago=180)
+    store.set_setting(RESET_7D, str(time.time() + 21 * 3600))
+    with pytest.raises(ScoringUnavailable, match="7-day"):
+        sc.check_available()
+
+
+def test_the_hold_lifts_itself_at_the_instant_it_named(scorer, monkeypatch):
+    """Which is what keeps the rule from being a pause nobody can clear: past
+    its reset the reading has expired, so the gate is simply gone."""
+    from dealbot.scoring.claude_code import RESET_7D
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, seven=0.92, minutes_ago=180)
+    store.set_setting(RESET_7D, str(time.time() - 1))
+    sc.check_available()
 
 
 def test_a_fresh_reading_is_enforced(scorer, monkeypatch):
@@ -307,6 +331,52 @@ def test_a_fresh_reading_is_enforced(scorer, monkeypatch):
     _record(store, five=0.99, minutes_ago=5)
     with pytest.raises(ScoringUnavailable):
         sc.check_available()
+
+
+def test_a_window_that_has_already_reset_stops_nothing(scorer, monkeypatch):
+    """A reading is only as good as the window it describes. Ninety-nine percent
+    of a window that rolled ten minutes ago is history, and standing aside for
+    it keeps the bot out of a window that has already refilled."""
+    from dealbot.scoring.claude_code import RESET_5H
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.99, minutes_ago=1)
+    store.set_setting(RESET_5H, str(time.time() - 600))
+    sc.check_available()
+
+
+def test_a_window_still_running_is_enforced(scorer, monkeypatch):
+    """The other half of the rule: an expiry in the future dates the reading as
+    current, so the ceiling still applies."""
+    from dealbot.scoring.claude_code import RESET_5H
+    sc, store = scorer
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    _record(store, five=0.99, minutes_ago=1)
+    store.set_setting(RESET_5H, str(time.time() + 600))
+    with pytest.raises(ScoringUnavailable, match="5-hour"):
+        sc.check_available()
+
+
+def test_each_reading_is_stored_with_its_own_expiry(scorer, monkeypatch):
+    """Both windows report their own `resetsAt`, and it is not the top-level
+    one: that belongs to whichever window tripped the threshold. Storing the
+    wrong one dates a reading against the wrong clock."""
+    from dealbot.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
+                                             UTIL_7D)
+    sc, store = scorer
+    stream = (Path(__file__).resolve().parents[1]
+              / "fixtures/streams/minimal-result.jsonl").read_text()
+
+    class Finished:
+        stdout, stderr, returncode = stream, "", 0
+
+    monkeypatch.setattr("dealbot.scoring.claude_code.subprocess.run",
+                        lambda *a, **k: Finished())
+    sc._invoke("system", "user", "sonnet")
+    assert store.get_setting(UTIL_5H) == "0.41"
+    assert store.get_setting(UTIL_7D) == "0.17"
+    assert store.get_setting(RESET_5H) == "1788856200"
+    assert store.get_setting(RESET_7D) == "1789160400"     # its own, not 5h's
 
 
 def test_no_reading_at_all_is_not_a_blocker(scorer, monkeypatch):

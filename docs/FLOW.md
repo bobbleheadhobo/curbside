@@ -14,7 +14,7 @@ Companion to DESIGN.md. This is *what it does* and *how control moves through it
 | F4 | Deterministic gates before any LLM call | price, radius, keywords, seen-before, blocked sellers |
 | F5 | LLM scoring, structured output | only on gate survivors |
 | F6 | Dashboard feed | scored listings by hunt, score desc |
-| F7 | Triage: save / dismiss | per hunt, persists. `contacted` still exists as a status and still counts as triaged, but the UI stopped offering it |
+| F7 | Triage: save / dismiss / grabbed | per hunt, persists. `grabbed` records what you actually paid, which is the only ground truth the database has |
 | F8 | Run health | why was today quiet — broken or genuinely nothing |
 
 ### v1.5 (cheap to add once the above works, high value)
@@ -213,7 +213,7 @@ if **any** admit rule fires and **no** reject rule does.
 
 ```
 REJECT (checked first, cheapest first):
-  - status is dismissed/saved/contacted for this hunt   → "triaged"
+  - status is dismissed/saved/grabbed for this hunt      → "triaged"
   - price_cents > hunt.max_price                         → "over_price"
   - distance_mi > location.radius_miles                  → "too_far"
   - title/description matches hunt.exclude               → "excluded_kw"
@@ -275,9 +275,8 @@ Failure is handled at three different depths, and the distinctions are load-bear
    new ───────────┤                                             ↓
                   └── gate admit ──→ scored ──≥ threshold──→ surfaced
                                         │                       │
-                                        └─ below threshold      ├─→ saved
-                                           (visible in "all")   ├─→ dismissed ──→ feeds F12
-                                                                └─→ contacted
+                                        └─ below threshold      ├─→ saved ──→ grabbed
+                                           (visible in "all")   └─→ dismissed ──→ feeds F12
 
    any state ──(absent from source N consecutive runs)──→ gone
 ```
@@ -298,7 +297,9 @@ Four bins, sorted by *why* a listing is there rather than by how sure we are:
   a disclosure, because the photo and price are what you decide on first.
 - **Free finds** (`/free`) — `status = free_find`. Worth grabbing regardless of
   the list.
-- **Saved** (`/saved`) — `status IN (saved, contacted)`. What you decided to act on.
+- **Saved** (`/saved`) — `status IN (saved, grabbed)`. What you decided to act on,
+  and what you went and got. A grabbed listing is marked and counted apart, not
+  moved to a page of its own.
 - **Skipped** (`/skipped`) — judged, then passed over. Renamed from `/near`,
   which read as "near me"; the old URL 308-redirects.
 - **Hunt** (`/hunt/<id>`) — everything matched for one hunt, filtered by status,
@@ -313,9 +314,11 @@ Four bins, sorted by *why* a listing is there rather than by how sure we are:
   everything) and the list of hunts.
 
 Triage is **one** POST endpoint, `/triage`, writing `hunt_matches.status`
-(+ optional dismiss note); `/hunts/toggle` is the only other write. The UI
-offers Save and Dismiss only — `contacted` remains a valid status and still
-counts as triaged, but nothing surfaces it any more.
+(+ optional dismiss note). Recording a purchase is a second, `/grabbed`, because
+it carries a figure and stamps the listing as well as the match; `/hunts/toggle`
+and the settings writes are the others. There was a `contacted` status once,
+meaning "I messaged the seller"; it was never offered, never used, and
+contradicted the read-only boundary, so it went when `grabbed` arrived.
 
 ## Part 6 — CLI
 

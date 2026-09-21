@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -33,7 +33,11 @@ def make_listing(lid="fixture:1", title="TV stand 72 inch", price_cents=10000,
         url=f"https://example/{lid}", city="Albuquerque",
         lat=35.08, lng=-106.65, distance_mi=1.0, seller_id="s1",
         seller_name="S", images=("a.jpg",), category="furniture",
-        posted_at=datetime(2026, 9, 8, tzinfo=timezone.utc), raw={},
+        # RELATIVE, like FixtureSource slides a recording forward. A fixed
+        # date rots against `max_age_days`: this one read as fresh until the
+        # 15th, when two tests about photoless listings began failing with
+        # `too_old` for reasons that had nothing to do with photographs.
+        posted_at=datetime.now(timezone.utc) - timedelta(days=1), raw={},
     )
     base.update(kw)
     return Listing(**base)

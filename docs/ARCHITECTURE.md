@@ -102,7 +102,7 @@ Pure arithmetic and string matching. Cheapest checks first, and **every
 rejection is stored with its reason** so an empty result is explainable.
 
 ```
-REJECT   already saved/dismissed/contacted   → "triaged"
+REJECT   already saved/dismissed/grabbed     → "triaged"
          over the hunt's max_price            → "over_price"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
@@ -321,10 +321,23 @@ Two different facts, deliberately kept apart:
 |---|---|---|
 | `gone` | stopped **appearing** in results | `mark_gone`, after 3 consecutive misses of that same source — 45 min on the free sweep, 3 h on an hourly want hunt. Reversible: seen again, the status is restored. |
 | `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source: Facebook's item payload carries `is_sold` and `is_live`, and a removed Craigslist posting stops returning a detail payload at all. `sold` is the source saying so; `removed` is only the page no longer resolving. |
+| `listings.grabbed_at` / `paid_cents` | **you** went and got it | `mark_grabbed`, from the **Grabbed it** button on `/saved`. Also stamps `sold_at` with reason `grabbed`, which is what makes every existing `sold_at IS NULL` guard exclude it: no re-check request and no price alert is ever spent on a thing in your garage. `paid_cents` is nullable and 0 is a different answer -- 0 is free, NULL is "I did not note it". These two columns are the **only** ground truth in the database; everything else about value is the model's claim. `upsert_listing` deliberately does not know them, so no refresh can overwrite a purchase. |
+| `scores.price_unclear` | the $0 is not real | Neither site has a "make me an offer" price, so a seller who wants one puts $0 and says so in the description ("Send me offers please over 50 wrenches"). The model sets this; the card then stops printing FREE, and `route` keeps it out of the free bin -- a price nobody knows cannot be weighed against the trip. It stays `scored` and shows on `/skipped`, marked. The flag decides the bin rather than the score, so the model can still say plainly whether the thing would be worth having. |
 
 The re-check costs requests and no model quota, so it rides along with `once`:
-one detail fetch per bin listing every 6 hours, capped per run, and only for
-statuses you might act on. A `saved` listing is *marked*, never un-saved.
+one detail fetch per bin listing, capped per run, and only for statuses you
+might act on. A `saved` listing is *marked*, never un-saved.
+
+It runs at **two speeds**, because the two halves of a bin are not worth the
+same. `saved` is the things you might be about to drive to and
+there are only ever a handful, so they are asked about on **every pass** —
+`grabbed` is in neither list, because the `sold_at` stamp already excludes it —
+`recheck.saved_every_hours: 0.25`. `wanted` and `free_find` are candidates
+nobody has decided on and the half that grows to dozens, so they stay at
+**6 hours**: at the saved pace they would be a few hundred item-page fetches a
+day at a site that throttles silently, to learn something `mark_gone` already
+half-answers for free. The faster half is queued **first**, so a full candidate
+bin can never spend the per-run cap before your own list is reached.
 
 It fails open, and three things make that true rather than aspirational:
 
@@ -374,7 +387,7 @@ fails if either loses it.
 
 | guard | behaviour |
 |---|---|
-| Plan quota | Stands aside at **70%** of the 5-hour window or **90%** of the 7-day one. Waiting for an outright rejection means otter has already been refused by the time we react; these numbers come from Claude Code's own `rate_limit_event` stream, so Curbside yields first. A reading older than 30 minutes is treated as unknown and one run is let through — enforcing a stale number is self-sealing, since no calls means no fresh number. |
+| Plan quota | Stands aside at **70%** of the 5-hour window or **90%** of the 7-day one. Waiting for an outright rejection means otter has already been refused by the time we react; these numbers come from Claude Code's own `rate_limit_event` stream, so Curbside yields first. A reading past its own window's `resetsAt` is retired: the window it measured has rolled. Until then it HOLDS, however old it is, because utilisation does not fall before a window resets — re-asking cost $0.57 in six hours, one pass every 31 minutes against a 7-day window with 21 hours left on it. Only an *undated* reading older than 30 minutes is treated as unknown and lets one pass through, since with no expiry there is no other way to learn the window reopened. `read_plan_usage` decides all of it, and `/runs` draws exactly what it decided. **The hold is on judging alone**: the re-check and the price-drop alert are requests and no model call, so they keep running. |
 | Daily ceiling | $10/day, a blunt backstop under the quota ceiling. Counts in-flight spend, not just finished runs. |
 | Rate-limit pause | If refused anyway, resumes at `resetsAt`; never zero. |
 | Connectivity preflight | A `claude -p` with no network burns ~10 min of retry backoff; a 200ms TCP probe avoids it. |
@@ -406,8 +419,8 @@ rebuilding the block per run would change the cached prefix per run — costing
 
 ## 8a. Price drops on things you already care about
 
-The re-check pass refreshes the price of everything in a bin every six hours,
-and for a long time nothing read it. Alerts only fired when a listing *entered*
+The re-check pass refreshes the price of everything in a bin — saved things
+every pass, candidates every six hours — and for a long time nothing read it. Alerts only fired when a listing *entered*
 a bin, so a saved $200 credenza falling to $120 said nothing at all — with
 every observation needed to notice it already on disk.
 
@@ -440,14 +453,14 @@ All of this was collected and none of it was visible:
 
 | view | what it holds |
 |---|---|
-| `/` wants | matches for your list, unverified ones flagged |
+| `/` wants | matches for your list, unverified ones flagged. The wants list is edited here, in a panel folded above the cards |
 | `/free` free finds | worth collecting regardless of the list |
-| `/saved` | what you decided to act on (saved + contacted) |
+| `/saved` | what you decided to act on, and what you went and grabbed |
 | `/skipped` | judged, then passed over. `/near` 308-redirects here |
 | `/hunt/<id>` | everything one hunt matched, including rejections and why |
 | `/listing/<id>` | detail, score history, price sparkline |
-| `/runs` | every fetch attempt: counts, cost, errors |
-| `/settings` | waking hours, cadences, and the wants list |
+| `/runs` | every fetch attempt: counts, cost, errors, and what the plan has left |
+| `/settings` | waking hours, cadences, the tuned limits, and the blocked words |
 | `/wants/<name>` | one want: what it looks for, its budget, its cadence |
 
 The runs page carries two **pause switches**: one for the sweeps, one for
@@ -544,7 +557,16 @@ and the `Config` attribute it lands on — so `config.with_store` applies them
 generically. `radius_miles` is the odd one out, landing on
 `location` rather than `defaults`; before the destination was written down, that
 meant a second hand-written `replace`, and a fifth number would have meant a
-third. Adding one is now a line in `TUNING` plus its form field.
+third. Adding one is now a line in `TUNING` plus its form field, which is
+exactly what surfacing `max_image_checks` (destination `scorer`) cost.
+
+`max_image_checks` is the image budget: how many listings per hunt per run may
+have their photographs looked at, at `images_per_check` photos each. **It is
+not the reason most unmet image requests go unmet.** An image pass is only
+bought for a listing `route` would already put in a bin, so a low-scoring
+listing that asks to be seen is declined by that test and never reaches the
+budget at all. Raising the number buys looks only when one batch holds several
+bin-bound listings at once.
 
 **Seeding writes nothing on a read.** Both seed calls run inside `with_store`,
 which the dashboard calls *per request*, so they must be no-ops once a database

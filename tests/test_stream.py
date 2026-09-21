@@ -40,6 +40,37 @@ def test_rate_limit_comes_from_its_own_event_not_the_result():
     assert f.resets_at is not None
 
 
+def test_each_window_carries_its_own_reset_not_the_top_level_one():
+    """The top-level `resetsAt` belongs to whichever window tripped the
+    threshold. Reading it as the five-hour window's expiry ages a reading
+    against the wrong clock -- and in the warning capture, where the seven-day
+    window is the one that tripped, the two are hours apart."""
+    f = _facts()
+    assert f.five_hour_resets_at == 1788856200
+    assert f.seven_day_resets_at == 1789160400
+
+    warned = extract(parse_events(
+        (FIXTURE.parent / "rate-limit-warning.jsonl").read_text()))
+    assert warned.resets_at == warned.seven_day_resets_at == 1789160400
+    assert warned.five_hour_resets_at == 1789146600
+
+
+def test_a_window_reading_is_a_number_AND_the_instant_it_expires():
+    """They are one reading and must move together. An event carrying a fresh
+    `resetsAt` and no utilisation used to stand the PREVIOUS window's figure
+    against the NEW window's expiry -- and a dated reading is held until its own
+    reset, so nothing could retire it. Judging would stand aside for a whole
+    window on a number that had already refilled."""
+    def ev(**five_hour):
+        return {"type": "rate_limit_event",
+                "rate_limit_info": {"unifiedWindows": {"five_hour": five_hour}}}
+
+    f = extract([ev(utilization=0.92, resetsAt=1788856200),
+                 ev(resetsAt=1789146600)])
+    assert f.five_hour_utilization == 0.92
+    assert f.five_hour_resets_at == 1788856200   # expires on its own clock
+
+
 def test_cost_sums_across_every_result_never_just_the_last():
     ev = parse_events(FIXTURE.read_text())
     doubled = ev + [e for e in ev if e.get("type") == "result"]

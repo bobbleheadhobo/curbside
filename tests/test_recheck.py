@@ -173,6 +173,46 @@ def test_a_listing_is_not_rechecked_twice_in_an_interval(store):
     assert len(src.calls) == 2
 
 
+def test_the_list_you_curated_is_asked_about_far_more_often(store):
+    """Both bins cost requests and no quota, but they are not worth the same.
+
+    A saved listing is one you might be about to drive to, and there are only
+    ever a handful. `wanted` and `free_find` are candidates nobody has decided
+    on, and they are the half that grows to dozens -- at the saved pace those
+    would be a few hundred item-page fetches a day at a site that throttles
+    silently, to learn something `mark_gone` already half-answers for free.
+    """
+    from datetime import datetime, timedelta, timezone
+    register(store, make_listing("fb:mine"), "saved")
+    register(store, make_listing("fb:maybe"), "wanted")
+    src = Says(lambda x: replace(x, raw={"is_live": True}))
+
+    assert recheck(store, [("fixture", src)]).n_checked == 2   # never checked
+    hour_ago = (datetime.now(timezone.utc)
+                - timedelta(hours=1)).isoformat(timespec="seconds")
+    store.conn.execute("UPDATE hunt_matches SET rechecked_at=?", (hour_ago,))
+
+    r = recheck(store, [("fixture", src)])
+    assert r.n_checked == 1
+    assert src.calls[-1] == "fb:mine"
+    # ...and `--all` still means all of them, saved pacing included.
+    assert recheck(store, [("fixture", src)], every_hours=0).n_checked == 2
+
+
+def test_a_full_candidate_bin_cannot_crowd_out_your_saved_list(store):
+    """The per-run cap is what keeps this inside the source request budget, so
+    the faster half has to be asked FIRST. Ordered the other way, six free
+    finds would spend the whole cap and the thing you are driving to would go
+    unconfirmed for as long as the bin stayed full."""
+    for i in range(6):
+        register(store, make_listing(f"fb:maybe{i}"), "free_find")
+    register(store, make_listing("fb:mine"), "saved")
+    src = Says(lambda x: replace(x, raw={"is_live": True}))
+
+    assert recheck(store, [("fixture", src)], max_per_run=2).n_checked == 2
+    assert "fb:mine" in src.calls
+
+
 def test_only_listings_in_a_bin_are_worth_a_request(store):
     for status in ("new", "scored", "filtered", "dismissed", "gone"):
         register(store, make_listing(f"fb:{status}"), status)
@@ -266,3 +306,37 @@ def test_a_listing_in_two_bins_is_only_asked_about_once(tmp_path):
     r = recheck(store, [("craigslist", fine)], every_hours=0, max_per_run=10)
     assert fine.asked == ["craigslist:9"]
     assert r.n_checked == 1
+
+
+# --- something you own is not something to ask the seller about -------------
+
+
+def test_a_grabbed_listing_is_never_rechecked(store):
+    """`mark_grabbed` stamps `sold_at`, and `due_for_recheck` already filters on
+    that, so the guard costs no new code. Worth pinning anyway: a grabbed
+    listing is `saved`'s successor and `saved` is re-checked on EVERY pass, so
+    the wrong status list here would spend a request per tick asking Facebook
+    whether the bookshelf in your hallway is still for sale."""
+    l = register(store, make_listing(), "saved")
+    store.mark_grabbed("h", l.id, 1800)
+    src = Says(l)
+
+    result = recheck(store, [("fixture", src)], every_hours=0, max_per_run=10)
+
+    assert src.calls == [], "asked the source about a thing you already own"
+    assert result.n_checked == 0
+    assert store.due_for_recheck(["saved", "grabbed"], None, 10) == []
+
+
+def test_grabbing_does_not_retire_it_from_your_own_list(store):
+    """It leaves every OTHER bin, because it is off the market -- and stays on
+    yours, because that is the decision you made. Same rule `retire_sold`
+    already applies to a sold listing that you saved."""
+    l = register(store, make_listing(), "saved", hunt_id="mine")
+    store.mark_matches("sweep", [l])
+    store.set_status("sweep", l.id, "free_find")
+
+    store.mark_grabbed("mine", l.id, 0)
+
+    assert store.statuses("mine")[l.id] == "grabbed"
+    assert store.statuses("sweep")[l.id] == "gone"

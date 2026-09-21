@@ -233,6 +233,8 @@ main.wide{max-width:1100px}
   font-variant-numeric:tabular-nums
 }
 .stats .hi b{color:var(--warn)}
+/* The one count on this site that is an outcome rather than work done. */
+.stats .ok b{color:var(--good)}
 /* Phone first, and this is the line that overflows first: the figures shrink
    rather than push the page head onto a third line. Below 430px covers every
    phone in portrait. */
@@ -288,6 +290,18 @@ form.inline{display:inline-flex}
 .chip.want{background:var(--good-soft);color:var(--good)}
 .chip.want svg.i{color:var(--good)}
 .chip.unk{background:var(--warn-soft);color:var(--warn)}
+/* Red, but QUIET -- and the route here matters, because the obvious fix was
+   tried and was wrong. `red_flags` holds mostly caveats: across 299 of them
+   the commonest are "No price listed" and "Only one photo", which as filled
+   red boxes looked exactly like the handful that matter ("photos 1 and 2 show
+   unrelated items"). So they went amber. That fixed the shouting and broke the
+   meaning: amber is this interface's "we do not know" -- unknowns, an
+   unverified match, an unanswered photo request -- and a flag is not missing
+   information, it is something noticed AGAINST the listing.
+
+   The real culprit was the fill, not the hue. Muted red on a soft ground, and
+   a bare rule in the list form, says "counts against it" without claiming
+   danger. */
 .chip.flag{
   background:var(--bad-soft);color:var(--bad);
   white-space:normal;text-align:left;align-items:flex-start;
@@ -299,9 +313,27 @@ form.inline{display:inline-flex}
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden
 }
 .flags{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:6px}
+/* In the score table it is the whole cell, with nothing beneath to clear. */
+td .flags{margin:0}
+.judgement .flags,.judgement .unknowns,.judgement .reqs{margin:0}
+/* The same tint the chip carries on the closed card, and the same shape as
+   `.unknowns` right below it. A bare colour on the plain background read as
+   unstyled: opening a card took the colour coding AWAY, which is backwards --
+   the disclosure is where you go to read the flags properly. */
+/* A left RULE rather than a filled block, and RED rather than amber.
+   Two separate lessons, and they interact. Filled, this was one of three amber
+   boxes in a row and none of them read as emphasis. Amber was also the wrong
+   distinction: it is this interface's "we do not know" -- unknowns, an
+   unverified match, an unanswered photo request -- and a flag is not missing
+   information, it is something the model noticed AGAINST the listing. Two
+   different statements were wearing one colour.
+
+   Red works here only because it is a rule now. As a filled red box "Only one
+   photo" read as an alarm, which is what sent it amber in the first place; a
+   3px rule states the same thing without shouting it. */
 .flags li{
   display:flex;gap:7px;align-items:flex-start;font-size:13px;line-height:1.45;
-  color:var(--bad)
+  color:var(--bad);border-left:3px solid var(--bad);padding:1px 0 1px 10px
 }
 .flags svg.i{font-size:15px;margin-top:1px;flex:none}
 .chip.flag svg.i{margin-top:2px}
@@ -358,6 +390,55 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
 .shot.empty svg.i{font-size:17px;stroke-width:1.5}
 @media (min-width:560px){.shot-wrap{width:148px;height:148px}}
 
+/* --- off the market ------------------------------------------------------- */
+/* It was a grey chip the size of "photos checked", four chips along a row of
+   attributes. A thing that has sold is not one more attribute of it: it is the
+   answer to the only question the card is being asked. So it goes across the
+   photograph, which is where the eye lands first, and the price it no longer
+   has is struck out. */
+.soldmark{
+  position:absolute;left:0;right:0;bottom:0;
+  /* The card's own tap target is stretched over this. Nothing here is
+     clickable, so it must not swallow the tap that opens the listing. */
+  pointer-events:none;
+  padding:5px 6px;border-radius:0 0 10px 10px;
+  background:var(--fg);color:var(--card);
+  font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  text-align:center;line-height:1.2
+}
+/* Yours, not taken from you. `gone` greys the photograph out and strikes the
+   price through, which on something you own reads as "somebody else bought
+   this" -- the opposite of what happened. So a grabbed card keeps its colour
+   and its price, and states the good news in the same place the bad news goes.
+   The card itself is tinted rather than faded. */
+  /* `--good-soft` rather than white: it is the near-black green in dark
+     mode and the pale one in light, so the mark stays legible in both. */
+.soldmark.got{background:var(--good);color:var(--good-soft)}
+.card.got{border-color:var(--good)}
+.card.gone .shot{filter:grayscale(1);opacity:.55}
+.card.gone .price .now,.price.gone .now{
+  color:var(--dim);text-decoration:line-through;text-decoration-thickness:1.5px}
+.card.gone .price .chip.drop,.price.gone .chip.drop{display:none}
+/* The same statement at the top of the detail page, where there is room for
+   the date we confirmed it. */
+.gonebanner{
+  display:flex;align-items:center;gap:9px;margin:0 0 14px;
+  padding:12px 15px;border-radius:var(--r);
+  background:var(--fg);color:var(--bg);font-size:13.5px;line-height:1.45
+}
+.gonebanner b{font-weight:680}
+.gonebanner svg.i{font-size:18px;flex:none}
+/* Same shape, opposite news. Inverted like `.gonebanner` would read as a
+   warning, and owning the thing is the good outcome. */
+.gotbanner{
+  display:flex;align-items:center;gap:9px;margin:0 0 14px;
+  padding:12px 15px;border-radius:var(--r);
+  background:var(--good-soft);color:var(--good);
+  border:1px solid var(--good);font-size:13.5px;line-height:1.45
+}
+.gotbanner b{font-weight:680}
+.gotbanner svg.i{font-size:18px;flex:none}
+
 .info{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}
 .info p{margin:0}
 .info h2{
@@ -369,6 +450,9 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
 .price .now.free{color:var(--good);text-transform:uppercase;font-size:15px;letter-spacing:.02em}
 .price .strike{font-size:13px;color:var(--faint);text-decoration:line-through}
 .price .none{font-size:14px;color:var(--faint);font-weight:500}
+/* Not green, and not a number. A $0 the seller contradicted in the
+   description is not a price, and the free bin must not read FREE over it. */
+.price .unclear{font-size:15px;color:var(--bad);font-weight:620}
 .where{
   font-size:12.5px;color:var(--dim);display:flex;align-items:center;
   gap:2px 12px;flex-wrap:wrap;line-height:1.5
@@ -412,10 +496,12 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
 .reqs svg.i{font-size:15px;margin-top:1px;stroke-width:2.1}
 .reqs .yes{color:var(--good)} .reqs .no{color:var(--bad)} .reqs .maybe{color:var(--warn)}
 .reqs i{color:var(--dim);font-style:normal}
+/* Same treatment as `.flags`, and for the same reason: two filled amber blocks
+   stacked on each other read as one undifferentiated warning. */
 .unknowns{
-  display:flex;gap:8px;align-items:flex-start;background:var(--warn-soft);
-  border-radius:var(--r-sm);padding:9px 11px;font-size:12.5px;line-height:1.5;
-  color:var(--warn);margin:0 0 10px
+  display:flex;gap:8px;align-items:flex-start;
+  border-left:3px solid var(--warn);padding:1px 0 1px 10px;
+  font-size:12.5px;line-height:1.5;color:var(--warn);margin:0 0 10px
 }
 .unknowns svg.i{font-size:15px;margin-top:1px}
 
@@ -428,12 +514,20 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
    and it will happily break a BUTTON label one letter per line. Two labelled
    actions fit a phone; three did not. */
 .actions button{min-height:var(--tap);width:100%;padding:0 10px;white-space:nowrap}
+/* A labelled action that is NOT in a form, so it needs the flex rule the forms
+   get. Without it the bare button keeps the `width:100%` above as its basis
+   while `form.inline` has a basis of 0: the form collapsed to nothing and the
+   Dismiss label spilled out of its own box, over the top of this one. */
+.actions .grabtoggle{flex:1 1 0;min-width:0}
+.actions .grabtoggle[aria-expanded=true]{
+  background:var(--good-soft);border-color:var(--good);color:var(--good)}
 .actions .blocktoggle{flex:none;width:var(--tap);padding:0;color:var(--dim)}
 .actions .blocktoggle:hover{color:var(--warn);border-color:var(--warn)}
 .actions .blocktoggle[aria-expanded=true]{
   background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
 @media (min-width:560px){
   .actions form.inline{flex:none}
+  .actions .grabtoggle{flex:none}
   .actions button{width:auto;min-height:36px}
   .actions .blocktoggle{margin-left:auto;min-height:36px;height:36px;width:36px}
 }
@@ -604,6 +698,13 @@ input::placeholder,textarea::placeholder{color:var(--faint)}
 .termedit .terms{gap:6px}
 .termedit .term{font-size:14px;padding:6px 6px 6px 12px}
 .termedit .term button{font-size:16px;line-height:1}
+/* A requirement is a sentence, not a word: the pill wraps rather than running
+   off the side of a phone, and its × stays where the eye expects it. */
+.termedit.wide .term{
+  max-width:100%;align-items:flex-start;line-height:1.4;
+  padding:7px 6px 7px 12px;text-align:left
+}
+.termedit.wide .term button{margin-top:-1px;flex:none}
 .field.inline-check{flex-direction:row;align-items:flex-start;gap:11px}
 .field.inline-check input[type=checkbox]{
   width:22px;height:22px;min-height:0;margin:0;flex:none;accent-color:var(--accent)}
@@ -623,18 +724,59 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 }
 .formerr svg.i{font-size:17px;margin-top:1px;flex:none}
 
-/* --- the wants list on /settings ------------------------------------------ */
-.wantrow{
+/* --- a list row: a title, a sub-line, and one thing on the right ----------- */
+/* Two lists wear it -- the wants on / and what is being judged on /runs. Same
+   shape, so it is one component with two names rather than a copy, the way
+   `.control-row` and `.triage-row` already are. */
+/* Same panel as everything else, with a summary for a heading. It is closed by
+   default: the page below it is the cards, and a screenful of configuration in
+   front of them would be the settings page all over again. */
+.manage>summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;
+  min-height:var(--tap);padding:11px 15px;font-size:13px;font-weight:620;
+  border-bottom:1px solid transparent;
+  transition:background .15s;-webkit-tap-highlight-color:transparent
+}
+.manage>summary::-webkit-details-marker{display:none}
+.manage>summary:hover{background:var(--line-soft)}
+.manage>summary svg.i{font-size:16px;color:var(--faint);flex:none}
+.manage>summary .what{flex:1;min-width:0}
+.manage>summary .count{
+  font-size:11.5px;font-weight:620;color:var(--dim);background:var(--line-soft);
+  border-radius:99px;padding:2px 8px
+}
+.manage>summary .chev{margin-left:0;transition:transform .2s ease}
+.manage[open]>summary{border-bottom-color:var(--line-soft)}
+.manage[open]>summary .chev{transform:rotate(180deg)}
+.manage{margin-bottom:18px}
+/* A heading inside the panel, for the wants that were removed. */
+.subhead{
+  margin:0;padding:11px 15px 7px;font-size:11px;font-weight:620;
+  letter-spacing:.03em;text-transform:uppercase;color:var(--faint);
+  border-top:1px solid var(--line-soft)
+}
+
+.wantrow,.judgedrow{
   display:flex;align-items:center;gap:12px;padding:12px 15px;
   border-bottom:1px solid var(--line-soft)
 }
-.wantrow:last-of-type{border-bottom:0}
-.wantrow .grow{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
-.wantrow b{font-size:15px;font-weight:600;letter-spacing:-.012em}
-.wantrow small{font-size:12.5px;color:var(--dim);line-height:1.45}
+.wantrow:last-of-type,.judgedrow:last-of-type{border-bottom:0}
+.wantrow .grow,.judgedrow .grow{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.wantrow b,.judgedrow b{font-size:15px;font-weight:600;letter-spacing:-.012em}
+.wantrow small,.judgedrow small{font-size:12.5px;color:var(--dim);line-height:1.45}
 .wantrow.off b,.wantrow.off small{color:var(--faint)}
 .wantrow .go{font-size:17px;color:var(--faint);flex:none}
-.wantrow a.grow:hover b{color:var(--accent)}
+.wantrow a.grow:hover b,.judgedrow a.grow:hover b{color:var(--accent)}
+/* The title is a seller's, so it runs long: two lines, the same clamp the
+   cards use, rather than one line of ellipsis that names nothing. */
+.judgedrow b{
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;line-height:1.3
+}
+.judgedrow .score{font-size:12px}
+.judgedrow .score b{min-width:40px;font-size:15px}
+.judgedrow .chip{flex:none}
+
 .settings-note{
   margin:0;padding:12px 15px;background:var(--bg);border-top:1px solid var(--line-soft);
   font-size:12.5px;line-height:1.6;color:var(--dim)
@@ -650,6 +792,60 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .state-line.photostate{align-items:flex-start}
 .state-line.photostate.asked{background:var(--warn-soft);color:var(--warn)}
 .state-line.photostate.asked b{color:var(--warn)}
+/* --- the judgement -------------------------------------------------------- */
+/* NOT `.verdict`. That name is already taken by the badge `app.js` stamps into
+   a card as it folds away, which is `position:absolute; inset:0; z-index:2` --
+   and it sits LATER in this file, so it won, and the whole panel became an
+   overlay landing on top of the listing's photographs. A class name is a
+   global, and this file is one namespace shared by every page. */
+/* The score and the sentence, at the top of the panel. It was a one-row
+   `table.responsive` on 87% of listings, which on a phone stacks into a
+   labelled row per column and so read date, hunt, model, score, want, flags,
+   reasoning: the judgement last and a timestamp as the largest text on screen.
+   Prose for a verdict; the table survives below for the 13% with a second pass
+   to compare against. */
+.judgement{padding:14px 15px;display:flex;flex-direction:column;gap:11px}
+.judgement-top{display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+.judgement-id{min-width:0;display:flex;flex-direction:column;gap:3px}
+.judgement-id .tags{margin:0}
+/* Which hunt judged this, on what, when. In the header rather than a footnote:
+   it is the context the sentence below is read in, and demoting it to one grey
+   line at the bottom lost something real. */
+.judgement-facts{
+  margin:0;font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums
+}
+/* The card stacks the score over "/10" in a right-aligned gutter at the end of
+   a row. Here it leads a header line, so it reads across instead and stops
+   squeezing the sentence into a column beside it. */
+.judgement .score{
+  flex:none;flex-direction:row;align-items:baseline;gap:4px;
+  padding-left:0;text-align:left
+}
+.judgement .score b{font-size:20px;padding:6px 10px 5px}
+/* Bigger than the card's: there the sentence confirms the photo and the price,
+   here it is the thing you came to read. */
+.judgement-why{margin:0;font-size:14.5px;line-height:1.55;color:var(--fg)}
+.judgement-none{margin:0;padding:14px 15px;color:var(--dim);font-size:13.5px}
+/* An earlier pass: the same shape as the judgement, turned down. Quieter on
+   purpose -- it is what the model thought before it knew something, kept so
+   "the photographs changed my mind" is visible rather than asserted. */
+.pass{
+  padding:11px 15px 13px;display:flex;flex-direction:column;gap:8px;
+  border-top:1px solid var(--line-soft)
+}
+.pass:first-of-type{border-top:0}
+.pass-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pass .score{flex:none;flex-direction:row;align-items:baseline;gap:4px;
+             padding-left:0;text-align:left}
+.pass .score b{font-size:15px;min-width:38px;padding:4px 7px 3px}
+.pass .judgement-facts{flex:1;min-width:0}
+.pass-why{margin:0;font-size:13px;line-height:1.5;color:var(--dim)}
+.pass .flags{margin:0}
+.judgement-morelabel{
+  margin:0;padding:13px 15px 9px;border-top:1px solid var(--line-soft);
+  font-size:12px;font-weight:620;color:var(--dim);
+  letter-spacing:.02em;text-transform:uppercase
+}
 .photoq{
   margin:0;padding:10px 15px 12px 39px;font-size:12.5px;line-height:1.5;
   color:var(--dim);border-bottom:1px solid var(--line-soft)
@@ -779,6 +975,27 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .addterm input{min-height:38px;font-size:15px;padding:7px 11px}
 .addterm button{flex:none;min-height:38px;width:auto}
 
+/* --- what did you pay ------------------------------------------------------ */
+/* Shares `.blockrow`'s geometry: same reveal, same place on the card, so the
+   two rows cannot drift apart visually. Only the money field is new. */
+.grabrow{
+  padding:12px 12px 13px;border-top:1px solid var(--line-soft);background:var(--bg)
+}
+.grabrow b{display:block;font-size:13.5px;font-weight:620;margin-bottom:5px}
+.grabrow p{margin:0 0 9px;font-size:12.5px;line-height:1.5;color:var(--dim)}
+.grabform{display:flex;align-items:center;gap:8px}
+.grabform .lbl{margin:0;font-size:13px;font-weight:550;color:var(--dim)}
+/* Fills what the label and button leave. It is the only thing in this row you
+   actually operate, and a default-width text input next to two fixed items
+   left a money field narrower than the word above it. */
+.grabform input{flex:1 1 0;min-width:0;min-height:38px;font-size:15px;padding:7px 11px}
+.grabform button{flex:none;min-height:38px;width:auto}
+/* The figure on a card you already own. Stated once, quietly: it is a fact,
+   not a call to action. */
+.grabbed{
+  margin:2px 0 0;font-size:13px;font-weight:550;color:var(--good)
+}
+
 /* the list of blocked words on /settings */
 .terms{display:flex;flex-wrap:wrap;gap:7px}
 .term{
@@ -845,6 +1062,35 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   display:flex;justify-content:space-between;margin:5px 0 0;
   font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums
 }
+/* --- plan usage (/runs) ----------------------------------------------------
+   Two bars under the Judging switch: how much of the plan the last judged
+   listing reported using, and the mark the bot stands aside at. Bars rather
+   than numbers because the question is "how close is it", which a number
+   answers only if you remember the ceiling. The accent is neutral on purpose:
+   40% of a plan window is neither good nor bad, and amber is kept for the one
+   state that actually stops work. */
+.meters{display:grid;gap:14px;padding:14px 15px}
+@media (min-width:700px){ .meters{grid-template-columns:repeat(2,1fr);gap:18px} }
+.meter .meterhead{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  font-size:13px;font-weight:600;margin:0 0 6px
+}
+.meter .meterhead b{font-variant-numeric:tabular-nums;font-weight:650}
+.meter .meterhead b.hi{color:var(--warn)}
+/* `position:relative` is load-bearing: the ceiling mark is positioned against
+   this track, and without it the mark lands against the page instead. */
+.meter .track{
+  position:relative;height:8px;border-radius:999px;
+  background:var(--line);overflow:hidden
+}
+.meter .fill{height:100%;border-radius:999px;background:var(--accent)}
+.meter .fill.over{background:var(--warn)}
+.meter .ceiling{
+  position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;
+  background:var(--fg);opacity:.35
+}
+.meter small{display:block;margin:6px 0 0;font-size:11.5px;line-height:1.5;color:var(--faint)}
+
 .panel-note{
   margin:0;padding:11px 15px;font-size:12.5px;line-height:1.55;color:var(--dim);
   border-top:1px solid var(--line-soft)
@@ -873,13 +1119,19 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 }
 
 .split .hint{margin:8px 0 0;font-size:11.5px;line-height:1.5;color:var(--faint)}
-/* The dearest few listings judged today. A list rather than a table: three
-   columns of two words each would be a table pretending to be one. */
-.dearest{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+/* The few listings that cost the most today. A list rather than a table:
+   three columns of two words each would be a table pretending to be one. */
+.dearest{margin:0;padding:0;list-style:none;display:grid;gap:9px}
 .dearest li{display:flex;align-items:baseline;gap:8px;font-size:13px}
+/* TWO LINES, not one with an ellipsis. Sellers write "Older antique shelf or
+   book case older entertainment center" and a third of a phone's width was
+   showing "Older antique shelf or bo...", which names nothing -- the point of
+   the list is recognising WHICH listing ate the money. Same clamp the card
+   titles use, so long titles behave the same way everywhere. */
 .dearest a{
-  color:var(--fg);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
-  flex:1 1 auto;min-width:0
+  color:var(--fg);flex:1 1 auto;min-width:0;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden
 }
 .dearest a:hover{color:var(--accent)}
 .dearest .num{flex:none;color:var(--dim);font-variant-numeric:tabular-nums}

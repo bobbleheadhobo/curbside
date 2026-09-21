@@ -30,7 +30,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
@@ -55,6 +55,10 @@ PAUSE_REASON = "scoring_paused_reason"
 # refusal from the other end still refuses.
 OVERRIDE_UNTIL = "quota_override_until"
 UTIL_5H, UTIL_7D, UTIL_AT = "util_five_hour", "util_seven_day", "util_recorded_at"
+# Each window's own reset instant, recorded alongside its utilisation. Without
+# it a reading has no expiry date, and a number that cannot expire is one the
+# bot keeps standing aside for after the window it describes has already rolled.
+RESET_5H, RESET_7D = "util_five_hour_resets_at", "util_seven_day_resets_at"
 
 
 def _tz(name: str | None):
@@ -69,6 +73,120 @@ def _tz(name: str | None):
     except Exception:                                   # noqa: BLE001
         log.warning("unknown scorer timezone %r; using local time", name)
         return None
+
+
+def _as_number(raw: str | None) -> float | None:
+    """A settings row as a number, or None. Settings are strings typed by
+    whatever last wrote them, and a row that will not parse must read as "no
+    reading" rather than stop a run."""
+    try:
+        return float(raw)                               # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+@dataclass(frozen=True)
+class PlanWindow:
+    """One of Claude Code's plan windows as last reported, with everything
+    needed to decide whether it should stop the judging.
+
+    `used` is a fraction, not a percent. `expired` says the window has rolled
+    since the reading was taken, and `stale` that the reading is older than the
+    bot is willing to enforce -- two different ways for the same number to be
+    history, and both mean it must not gate anything.
+    """
+    label: str
+    used: float
+    ceiling: float
+    resets_at: float | None
+    expired: bool
+    stale: bool
+
+    @property
+    def over(self) -> bool:
+        """Whether this window is why judging stands aside.
+
+        A reading that carries its own `resetsAt` is good until that instant,
+        stale or not: utilisation does not fall before the window rolls, so a
+        call sent to find out learns nothing and spends against the very window
+        that is over its ceiling. MEASURED on the live box: a 7-day window at
+        92% with 21 hours left on it let one pass through every 31 minutes --
+        13 of them in six hours, $0.57, each one a triage call plus an
+        appraisal or two before the refreshed reading stopped the batch again.
+
+        Only an UNDATED reading falls back to the staleness rule, and there it
+        is still the right answer: with no expiry there is no way to know the
+        window reopened except to try it.
+        """
+        if self.expired or self.ceiling <= 0 or self.used < self.ceiling:
+            return False
+        return self.resets_at is not None or not self.stale
+
+
+@dataclass(frozen=True)
+class PlanUsage:
+    """Every window we have a reading for, plus when that reading was taken.
+
+    The scorer asks this whether to stand aside; the dashboard asks it what to
+    draw. One answer to one question, rather than a gate and a display free to
+    disagree about what 72% means.
+    """
+    windows: tuple[PlanWindow, ...]
+    recorded_at: datetime | None
+    stale: bool
+
+    @property
+    def known(self) -> bool:
+        return bool(self.windows)
+
+    @property
+    def blocking(self) -> tuple[PlanWindow, ...]:
+        return tuple(w for w in self.windows if w.over)
+
+
+def read_plan_usage(store: Store, cfg: ScorerConfig,
+                    now: float | None = None) -> PlanUsage:
+    """What Claude Code last said about the plan, read from `settings`.
+
+    READ ONLY: the dashboard calls this on a GET, and a GET must not write.
+
+    Both ways a reading dies are applied here. A reading past its own `resetsAt`
+    has EXPIRED: the window it describes no longer exists, and standing aside
+    for it keeps the bot out of a window that has already refilled. A reading
+    older than `utilization_stale_minutes` is STALE, which matters only for a
+    window that reported no `resetsAt` -- see `PlanWindow.over`, where an
+    undated reading falls back to "spend one pass to find out" and a dated one
+    simply holds until the instant it named.
+    """
+    now = time.time() if now is None else now
+    recorded_at = None
+    stamp = store.get_setting(UTIL_AT)
+    if stamp:
+        try:
+            recorded_at = datetime.fromisoformat(stamp)
+        except ValueError:
+            recorded_at = None
+    if recorded_at is not None and recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    stale = (recorded_at is None
+             or datetime.fromtimestamp(now, timezone.utc) - recorded_at
+             > timedelta(minutes=cfg.utilization_stale_minutes))
+
+    windows = []
+    for label, util_key, reset_key, ceiling in (
+        ("5-hour", UTIL_5H, RESET_5H, cfg.max_five_hour_utilization),
+        ("7-day", UTIL_7D, RESET_7D, cfg.max_seven_day_utilization),
+    ):
+        used = _as_number(store.get_setting(util_key))
+        if used is None:
+            continue
+        resets_at = _as_number(store.get_setting(reset_key))
+        windows.append(PlanWindow(
+            label=label, used=used, ceiling=max(0.0, float(ceiling or 0.0)),
+            resets_at=resets_at,
+            expired=resets_at is not None and resets_at <= now,
+            stale=stale))
+    return PlanUsage(tuple(windows), recorded_at, stale)
 
 
 class ScoringUnavailable(RuntimeError):
@@ -201,37 +319,16 @@ class ClaudeCodeScorer:
         by the time we react. These numbers come from Claude Code's own
         rate_limit_event stream, so we can yield first.
 
-        A stale reading is treated as unknown and allowed through -- otherwise
-        pausing is self-sealing: no calls means no fresh number means no way to
-        discover the window has reopened.
+        A reading that is stale, or that has outlived the window it describes,
+        stops nothing -- see `read_plan_usage`, which is the one place those
+        rules live so the dashboard draws exactly what this gate enforces.
         """
         if self.overridden():
             return
-        stamp = self.store.get_setting(UTIL_AT)
-        if not stamp:
-            return
-        try:
-            age = datetime.now(timezone.utc) - datetime.fromisoformat(stamp)
-        except ValueError:
-            return
-        if age > timedelta(minutes=self.cfg.utilization_stale_minutes):
-            return
-
-        for key, ceiling, label in (
-            (UTIL_5H, self.cfg.max_five_hour_utilization, "5-hour"),
-            (UTIL_7D, self.cfg.max_seven_day_utilization, "7-day"),
-        ):
-            raw = self.store.get_setting(key)
-            if raw is None or ceiling <= 0:
-                continue
-            try:
-                used = float(raw)
-            except ValueError:
-                continue
-            if used >= ceiling:
-                raise ScoringUnavailable(
-                    f"{label} plan window at {used*100:.0f}% "
-                    f"(ceiling {ceiling*100:.0f}%) -- standing aside")
+        for window in read_plan_usage(self.store, self.cfg).blocking:
+            raise ScoringUnavailable(
+                f"{window.label} plan window at {window.used*100:.0f}% "
+                f"(ceiling {window.ceiling*100:.0f}%) -- standing aside")
 
     def _pause(self, seconds_until: float | None, reason: str) -> None:
         # Never 0: a falsy deadline reads as "no deadline, resume now", which
@@ -283,10 +380,15 @@ class ClaudeCodeScorer:
         # Record quota state whether or not this call succeeded. Both windows:
         # a steady background poller creeps up `seven_day` without ever tripping
         # `five_hour`, and only one of those is obvious.
-        if facts.five_hour_utilization is not None:
-            self.store.set_setting(UTIL_5H, str(facts.five_hour_utilization))
-        if facts.seven_day_utilization is not None:
-            self.store.set_setting(UTIL_7D, str(facts.seven_day_utilization))
+        # Each window's reset instant rides along with its utilisation: it is
+        # what dates the reading, and a number with no expiry is one nothing
+        # can ever retire.
+        for key, value in ((UTIL_5H, facts.five_hour_utilization),
+                           (UTIL_7D, facts.seven_day_utilization),
+                           (RESET_5H, facts.five_hour_resets_at),
+                           (RESET_7D, facts.seven_day_resets_at)):
+            if value is not None:
+                self.store.set_setting(key, str(value))
         if (facts.five_hour_utilization is not None
                 or facts.seven_day_utilization is not None):
             self.store.set_setting(
@@ -394,6 +496,7 @@ class ClaudeCodeScorer:
             condition=self._as_text(data.get("condition")),
             matched_want=self._as_text(data.get("matched_want")),
             worth_grabbing=bool(data.get("worth_grabbing")),
+            price_unclear=bool(data.get("price_unclear")),
             needs_images=bool(data.get("needs_images")),
             image_question=self._as_text(data.get("image_question")),
             unknowns=self._as_str_tuple(data.get("unknowns")),

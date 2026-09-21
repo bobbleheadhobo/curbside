@@ -125,13 +125,18 @@ everything free passes it. Ask instead whether it is worth the trip.
 
 Drop only: broken or parts-only junk, service advertisements, and things too
 trivial to fetch. This is a coarse first pass -- when unsure, KEEP it; the next
-stage looks properly."""
+stage looks properly.
+
+`why` gets eight words. Say what the thing is and what decided it. Do not spend
+them on "no match": it is true of nearly everything here and the next stage
+decides that anyway."""
 
 APPRAISE_INSTRUCTION = """\
 Return ONE JSON object and nothing else:
 {"match": "yes"|"no"|"unknown",
  "matched_want": "<want name>"|null,
  "worth_grabbing": true|false,
+ "price_unclear": true|false,
  "needs_images": true|false,
  "image_question": "<what to look for>"|null,
  "deal_score": 0-10,
@@ -152,13 +157,29 @@ entirely, is this worth going to collect or buy at this price? A working
 appliance or solid furniture given away free is worth grabbing even though it
 matches nothing on the list. Junk is not.
 
+`price_unclear` is true when the price field and the description disagree about
+what this costs -- $0 or a token price, and words asking for money ("send me
+offers", "price on request"). It is the contradiction that sets it, never the
+word "offer" on its own: a priced listing inviting offers is ordinary haggling
+and `price_unclear` is false. Setting it makes the interface stop calling the
+listing free; say what the seller actually wrote in `red_flags`.
+
 `needs_images` asks whether looking at the photos would actually settle one of
 your unknowns. Set it true ONLY when the answer is visible in a photograph --
 colour, shape, style, visible damage, how many tiers something has. Set it FALSE
 when the unknown cannot be resolved by looking: absolute dimensions have no
 reference scale in a photo, so a stated width you cannot confirm stays unknown
 whatever the pictures show. When true, `image_question` says exactly what to look
-for, in one sentence."""
+for, in one sentence.
+
+`reasoning` is the one sentence a person actually reads, under the card. Spend
+it on the THING: what it is, what condition it looks to be in, and why it is or
+is not worth the trip. Do not restate the fields printed around it -- the score
+sits beside it, `matched_want` is a chip on the same card, and `red_flags` are
+listed underneath. In particular, do not open with whether it matched a want.
+Nearly every free listing matches none, so the sentence starts by saying
+nothing; and one that DID match is routed to a different bin, so the reader is
+not wondering."""
 
 
 # --- drafting search terms for a new want ------------------------------------

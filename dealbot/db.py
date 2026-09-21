@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS listings (
   -- different from `gone`, which only means it stopped appearing in results.
   sold_at       TEXT,
   sold_reason   TEXT,
+  -- When YOU went and got it, and what you actually handed over. The user's
+  -- facts, not the source's: `upsert_listing` deliberately does not know these
+  -- columns, so no amount of re-fetching can overwrite a purchase.
+  --
+  -- `paid_cents` is nullable and 0 is not the same answer. 0 means free, which
+  -- is most of what this bot finds; NULL means you did not write it down. A
+  -- forgotten figure recorded as free would be a calibration point that lies,
+  -- and the whole reason these columns exist is that nothing else in the
+  -- database can check what the model claims a thing is worth.
+  grabbed_at    TEXT,
+  paid_cents    INTEGER,
   raw           TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS ix_listings_fingerprint ON listings(fingerprint);
@@ -76,7 +87,7 @@ CREATE TABLE IF NOT EXISTS hunt_matches (
   hunt_id       TEXT NOT NULL,
   listing_id    TEXT NOT NULL REFERENCES listings(id),
   matched_at    TEXT NOT NULL,
-  status        TEXT NOT NULL,          -- new|filtered|scored|wanted|free_find|saved|dismissed|contacted|gone
+  status        TEXT NOT NULL,          -- new|filtered|scored|wanted|free_find|saved|grabbed|dismissed|gone
   filter_reason TEXT,
   dismiss_note  TEXT,
   miss_count    INTEGER NOT NULL DEFAULT 0,
@@ -108,6 +119,10 @@ CREATE TABLE IF NOT EXISTS scores (
   condition          TEXT,
   matched_want       TEXT,
   worth_grabbing     INTEGER NOT NULL DEFAULT 0,
+  -- $0 in the price box, money asked for in the words. Structured rather than
+  -- left inside `red_flags`, because the CARD has to stop saying FREE and
+  -- string-matching the model's prose to decide that would be a coin toss.
+  price_unclear      INTEGER NOT NULL DEFAULT 0,
   needs_images       INTEGER NOT NULL DEFAULT 0,
   image_question     TEXT,
   images_checked     INTEGER NOT NULL DEFAULT 0,
@@ -199,7 +214,8 @@ class Store:
         """Add columns that arrived after a database was first created. Nothing
         is ever dropped or rewritten -- old rows keep their defaults."""
         for table, cols in (
-            ("scores", (("match", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("scores", (("price_unclear", "INTEGER NOT NULL DEFAULT 0"),
+                        ("match", "TEXT NOT NULL DEFAULT 'unknown'"),
                         ("unknowns", "TEXT NOT NULL DEFAULT '[]'"),
                         ("requirements", "TEXT NOT NULL DEFAULT '[]'"),
                         ("worth_grabbing", "INTEGER NOT NULL DEFAULT 0"),
@@ -210,7 +226,9 @@ class Store:
                           ("img_key", "TEXT"),
                           ("previous_price_cents", "INTEGER"),
                           ("sold_at", "TEXT"),
-                          ("sold_reason", "TEXT"))),
+                          ("sold_reason", "TEXT"),
+                          ("grabbed_at", "TEXT"),
+                          ("paid_cents", "INTEGER"))),
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("status_before_gone", "TEXT"),
                               ("notified_at", "TEXT"),
@@ -232,6 +250,12 @@ class Store:
         # Indexes on migrated columns must be created HERE, not in SCHEMA:
         # executescript runs before the ALTER TABLE above, so an index naming a
         # new column fails on every pre-existing database.
+        # `runs` is asked twice on every page render now -- the health pill
+        # wants what was judged in the last hour -- and the only index it had
+        # was (hunt_id, started_at), whose second column no clause here can
+        # reach. A table nothing ever deletes from gets scanned forever.
+        self.conn.execute("CREATE INDEX IF NOT EXISTS ix_runs_started "
+                          "ON runs(started_at)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_dup_key "
                           "ON listings(dup_key)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS ix_listings_img_key "
@@ -483,7 +507,10 @@ class Store:
         if not seen_ids:
             return 0
         marks = ",".join("?" * len(seen_ids))
-        keep = "status NOT IN ('gone','saved','contacted')"
+        # `grabbed` joins `saved` here for the same reason: both are the user's
+        # own decision about a listing, and a thing sitting in their garage
+        # must not be retired because the seller took the post down.
+        keep = "status NOT IN ('gone','saved','grabbed')"
         of_source = "listing_id IN (SELECT id FROM listings WHERE source=?)"
 
         # Seen again: reset the miss counter, and un-retire it. A listing that
@@ -528,7 +555,7 @@ class Store:
     def record_rejections(self, hunt_id: str, rejected: Sequence[tuple[str, str]]) -> None:
         now = _now()
         # A filter outcome may only replace "not yet judged". Everything else --
-        # scored, surfaced, saved, dismissed, contacted -- is a real outcome that
+        # scored, surfaced, saved, dismissed, grabbed -- is a real outcome that
         # outranks it. Without the guard, a surfaced listing that is unchanged on
         # the next run gets demoted to `filtered` and silently drops out of the
         # feed before it is ever triaged.
@@ -584,17 +611,20 @@ class Store:
                 LIMIT ?""",
             [*statuses, *( [older_than] if older_than is not None else [] ), limit]
         ).fetchall()
-        return [(r["hunt_id"], r["status"], self._row_to_listing(r)) for r in rows]
+        return [(r["hunt_id"], r["status"], self.row_to_listing(r)) for r in rows]
 
     def retire_sold(self, listing_id: str) -> int:
         """Take a listing known to be off the market out of every bin.
 
         Every bin: one listing can match several hunts, and marking only the
         hunt that happened to re-check it would leave the same sold couch
-        sitting in another tab. `saved` and `contacted` are deliberately
+        sitting in another tab. `saved` and `grabbed` are deliberately
         untouched -- those are the user's own decisions, and something they
         saved should be marked sold, not quietly removed from their list.
         `new` and `scored` are included so nothing pays to judge it later.
+
+        `mark_grabbed` calls this too, which is what clears the same listing
+        out of every OTHER hunt's bin when you go and collect it.
         """
         cur = self.conn.execute(
             """UPDATE hunt_matches
@@ -620,6 +650,67 @@ class Store:
                                    is_active = 0
                WHERE id = ?""", (_now(), reason, listing_id))
 
+    def mark_grabbed(self, hunt_id: str, listing_id: str,
+                     paid_cents: int | None) -> int:
+        """Record that you went and got this thing.
+
+        Assembled out of what already exists rather than new SQL, because every
+        one of these steps is a rule written down somewhere else:
+
+        1. the stamps. `grabbed_at` COALESCEs like `sold_at` -- the first time
+           you said so is the honest date -- while `paid_cents` is a plain set,
+           so correcting a figure lands.
+        2. the status, on the row you acted on ONLY. A listing matched by two
+           hunts keeps the other hunt's decision intact, and undo therefore has
+           one unambiguous thing to restore.
+        3. `mark_sold(..., 'grabbed')`. It is genuinely off the market, and this
+           is the step that does most of the work: `due_for_recheck` and
+           `price_drops` both already filter on `l.sold_at IS NULL`, so no
+           request and no alert is ever spent on a thing in your garage. No new
+           guard needed in either.
+        4. `retire_sold`, which clears the same listing out of every OTHER
+           hunt's bin while leaving `saved` and `grabbed` alone.
+
+        Returns the rows the status change touched, which the dashboard checks
+        the same way it checks `set_status`.
+        """
+        self.conn.execute(
+            """UPDATE listings SET grabbed_at = COALESCE(grabbed_at, ?),
+                                   paid_cents = ?
+               WHERE id = ?""", (_now(), paid_cents, listing_id))
+        changed = self.set_status(hunt_id, listing_id, "grabbed")
+        self.mark_sold(listing_id, "grabbed")
+        self.retire_sold(listing_id)
+        return changed
+
+    def ungrab(self, hunt_id: str, listing_id: str) -> int:
+        """Undo a grab, all the way down.
+
+        A mis-tap must not leave a permanent purchase behind, so unlike
+        `mark_sold` this really does clear the stamps. The `sold_reason`
+        condition is the part that matters: a listing the re-check pass found
+        genuinely sold, that you then grabbed and un-grabbed, must stay sold.
+        Only a stamp THIS wrote is withdrawn.
+
+        The other hunts' rows need no unwinding. `mark_gone` already restores a
+        `gone` row from `status_before_gone` when the listing is seen again and
+        `sold_at` is null, so clearing the stamp is what lets that happen.
+
+        `saved` is the restore target rather than something remembered, because
+        the button is only ever offered on a saved card.
+        """
+        self.conn.execute(
+            """UPDATE listings
+               SET grabbed_at = NULL, paid_cents = NULL,
+                   sold_at    = CASE WHEN sold_reason='grabbed'
+                                     THEN NULL ELSE sold_at END,
+                   is_active  = CASE WHEN sold_reason='grabbed'
+                                     THEN 1 ELSE is_active END,
+                   sold_reason = CASE WHEN sold_reason='grabbed'
+                                      THEN NULL ELSE sold_reason END
+               WHERE id = ?""", (listing_id,))
+        return self.set_status(hunt_id, listing_id, "saved")
+
     def pending_notifications(self, hunt_id: str, limit: int = 50
                               ) -> list[tuple[Listing, Score]]:
         """Everything sitting in a bin that has never been announced.
@@ -641,10 +732,13 @@ class Store:
                WHERE m.hunt_id = ? AND m.notified_at IS NULL
                  AND m.status IN ('wanted', 'free_find')
                ORDER BY s.deal_score DESC LIMIT ?""", (hunt_id, limit)).fetchall()
-        return [(self._row_to_listing(r), self._row_to_score(r)) for r in rows]
+        return [(self.row_to_listing(r), self.row_to_score(r)) for r in rows]
 
+    # Public, because the dashboard needs them too: the listing page re-decides
+    # `pipeline.route` for one already-judged listing, and rebuilding a Score
+    # by hand there would be a third place that knows the column list.
     @staticmethod
-    def _row_to_listing(r: sqlite3.Row) -> Listing:
+    def row_to_listing(r: sqlite3.Row) -> Listing:
         return Listing(
             id=r["id"], source=r["source"], source_id=r["source_id"],
             title=r["title"], description=r["description"],
@@ -659,7 +753,7 @@ class Store:
                        if r["posted_at"] else None))
 
     @staticmethod
-    def _row_to_score(r: sqlite3.Row) -> Score:
+    def row_to_score(r: sqlite3.Row) -> Score:
         return Score(
             listing_id=r["listing_id"], hunt_id=r["hunt_id"], model=r["model"],
             scored_at=datetime.fromisoformat(r["scored_at"]),
@@ -670,7 +764,8 @@ class Store:
             unknowns=tuple(json.loads(r["unknowns"] or "[]")),
             requirements=tuple(json.loads(r["requirements"] or "[]")),
             red_flags=tuple(json.loads(r["red_flags"] or "[]")),
-            reasoning=r["reasoning"], images_checked=bool(r["images_checked"]))
+            reasoning=r["reasoning"], images_checked=bool(r["images_checked"]),
+            price_unclear=bool(r["price_unclear"]))
 
     def was_notified(self, hunt_id: str, listing_id: str) -> bool:
         row = self.conn.execute(
@@ -718,15 +813,17 @@ class Store:
         self.conn.execute(
             """INSERT INTO scores (listing_id, hunt_id, model, scored_at, match,
                  deal_score, unknowns, requirements, est_value_cents, condition,
-                 matched_want, worth_grabbing, needs_images, image_question,
-                 images_checked, red_flags, reasoning, priced_at_cents,
+                 matched_want, worth_grabbing, price_unclear, needs_images,
+                 image_question, images_checked, red_flags, reasoning,
+                 priced_at_cents,
                  input_tokens, output_tokens, cache_read_tokens, cost_usd)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (score.listing_id, score.hunt_id, score.model,
              score.scored_at.isoformat(timespec="seconds"), score.match,
              score.deal_score, json.dumps(list(score.unknowns)),
              json.dumps(list(score.requirements)), score.est_value_cents,
              score.condition, score.matched_want, int(score.worth_grabbing),
+             int(score.price_unclear),
              int(score.needs_images), score.image_question,
              int(score.images_checked),
              json.dumps(list(score.red_flags)), score.reasoning,
@@ -743,8 +840,7 @@ class Store:
                  ON s.id = m.mx""", (hunt_id,))}
 
     def price_drops(self, threshold: float = 0.15,
-                    statuses: Sequence[str] = ("saved", "contacted", "wanted",
-                                               "free_find"),
+                    statuses: Sequence[str] = ("saved", "wanted", "free_find"),
                     limit: int = 20) -> list[tuple[str, Listing, Score, int]]:
         """Things in a bin that are materially cheaper than when you last heard.
 
@@ -778,10 +874,10 @@ class Store:
         # is in hand -- this used to re-query for it once PER ROW, on a path
         # the timer runs every 15 minutes.
         ids = [r["score_id"] for r in rows]
-        scores = {sr["id"]: self._row_to_score(sr) for sr in self.conn.execute(
+        scores = {sr["id"]: self.row_to_score(sr) for sr in self.conn.execute(
             f"SELECT * FROM scores WHERE id IN ({','.join('?' * len(ids))})",
             ids)}
-        return [(r["hunt_id"], self._row_to_listing(r),
+        return [(r["hunt_id"], self.row_to_listing(r),
                  scores[r["score_id"]], r["was"]) for r in rows]
 
     def mark_price_alerted(self, hunt_id: str, listing_id: str,
@@ -806,7 +902,7 @@ class Store:
         """
         if limit <= 0:
             return []
-        return [self._row_to_listing(r) for r in self.conn.execute(
+        return [self.row_to_listing(r) for r in self.conn.execute(
             """SELECT l.* FROM hunt_matches m JOIN listings l ON l.id = m.listing_id
                WHERE m.hunt_id = ? AND m.status = 'new' AND l.source = ?
                  AND l.sold_at IS NULL
@@ -867,6 +963,52 @@ class Store:
                WHERE started_at >= date('now', ?)
                GROUP BY day ORDER BY day""",
             (shift, f"-{int(days) + 1} days"))]
+
+    def run_activity(self, minutes: int = 60) -> dict[str, Any]:
+        """What the bot has actually been DOING lately, for the health pill.
+
+        `scored` is the figure that answers "is it looking at listings". A bot
+        that fetches every 15 minutes and judges nothing is indistinguishable
+        from a healthy one from the outside, and that is precisely the state
+        both standdowns leave it in.
+
+        `in_flight` is a run begun and not finished, bounded by the same
+        window: a process killed mid-pass leaves `finished_at` NULL forever,
+        so an unbounded check would say "Looking now" until someone noticed.
+        """
+        since = (datetime.now(timezone.utc)
+                 - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+        r = self.conn.execute(
+            """SELECT COUNT(*) runs, COALESCE(SUM(n_scored), 0) scored,
+                      COALESCE(SUM(finished_at IS NULL), 0) unfinished
+               FROM runs WHERE started_at >= ?""", (since,)).fetchone()
+        # WHICH pass is in flight, not just that one is: the pill can only fit
+        # "Looking now", so the hunt and the source have to be reachable from
+        # the page it links to.
+        now = None
+        if r["unfinished"]:
+            row = self.conn.execute(
+                """SELECT hunt_id, source, started_at FROM runs
+                   WHERE finished_at IS NULL AND started_at >= ?
+                   ORDER BY id DESC LIMIT 1""", (since,)).fetchone()
+            now = dict(row) if row else None
+        return {"runs": r["runs"], "scored": r["scored"],
+                "in_flight": now is not None, "now": now}
+
+    def judged_recently(self, limit: int = 12) -> list[dict[str, Any]]:
+        """The last listings the model actually looked at, newest first.
+
+        WITH the first-pass drops. They are written as scores with a `:triage`
+        model and they count towards `n_scored`, so leaving them out would put
+        this list at odds with the figure the health pill states -- and they
+        are half of what "what is it judging" means: the cheap pass reads
+        every one of them.
+        """
+        return [dict(r) for r in self.conn.execute(
+            """SELECT s.scored_at, s.hunt_id, s.model, s.deal_score,
+                      s.listing_id, s.reasoning, l.title, l.source
+               FROM scores s JOIN listings l ON l.id = s.listing_id
+               ORDER BY s.id DESC LIMIT ?""", (int(limit),))]
 
     def spend_by_hunt(self, since: str | None = None) -> list[dict[str, Any]]:
         """What each hunt cost and what it actually found.
@@ -968,6 +1110,12 @@ class Store:
         saved = self.conn.execute(
             "SELECT COUNT(*) n FROM hunt_matches WHERE status='saved'"
         ).fetchone()["n"]
+        # The only outcome number in the whole database. Everything above it
+        # counts work done; this counts things that ended up in the user's
+        # house, which is the only thing that makes the rest worth paying for.
+        grabbed = self.conn.execute(
+            "SELECT COUNT(*) n FROM hunt_matches WHERE status='grabbed'"
+        ).fetchone()["n"]
         # `n_fetched` sums per-run counts, so every run re-reads the whole feed
         # and the same listing is counted again each time: 85,028 "fetched"
         # against 1,348 listings actually on file. The funnel is work done, not
@@ -975,7 +1123,32 @@ class Store:
         # a claim about distinct listings.
         distinct = self.conn.execute(
             "SELECT COUNT(*) n FROM listings").fetchone()["n"]
-        return {**dict(r), "saved": saved, "distinct": distinct}
+        return {**dict(r), "saved": saved, "grabbed": grabbed,
+                "distinct": distinct}
+
+    def calibration(self) -> dict[str, Any]:
+        """What the model said a grabbed thing was worth, against what you paid.
+
+        The bot asserts a value on every listing it judges and nothing has ever
+        checked one. This is the check, and it only becomes meaningful with a
+        handful of rows -- which is why it is a line on /stats rather than a
+        page: it is a fact about the bot, not a record of your shopping.
+
+        Only listings with BOTH a figure paid and an estimate count, and the
+        paid figure must be recorded rather than merely zero. A free thing with
+        an estimate is the most common and most useful case here.
+        """
+        r = self.conn.execute(
+            """SELECT COUNT(*) n,
+                      COALESCE(SUM(s.est_value_cents), 0) est,
+                      COALESCE(SUM(l.paid_cents), 0) paid
+               FROM listings l
+               JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
+                                        WHERE listing_id = l.id)
+               WHERE l.grabbed_at IS NOT NULL
+                 AND l.paid_cents IS NOT NULL
+                 AND s.est_value_cents IS NOT NULL""").fetchone()
+        return dict(r)
 
     def dearest_since(self, since: str, limit: int = 5) -> list[dict[str, Any]]:
         """The individual listings that cost the most, newest window first.
@@ -1084,7 +1257,7 @@ class Store:
 
     # --- settings -----------------------------------------------------------
 
-    # The four numbers you would actually reach for, overriding config.yaml.
+    # The numbers you would actually reach for, overriding config.yaml.
     # Deliberately NOT everything in that file: the source rate limits protect
     # you from being blocked by Facebook and live inside the adapter so a caller
     # cannot bypass them, which a tap on a phone would be.
@@ -1094,12 +1267,19 @@ class Store:
     # the rest sit on `defaults` -- and without it `config.with_store` needed a
     # hand-written `replace` per destination, so a fifth number meant editing
     # the validation here AND the application there, in two files, with nothing
-    # connecting them.
+    # connecting them. `max_image_checks` was that fifth number, and landing it
+    # on `scorer` cost exactly this one line.
+    #
+    # Zero is a legal image budget and means "never look at the photographs".
+    # The others start at 1 because a hunt that judges nothing is a hunt that
+    # has been turned off, and there is a pause switch for that; an image pass
+    # is an extra on top of a judgement that happens either way.
     TUNING = {
         "min_deal_score":      (float, 0.0, 10.0, "defaults"),
         "free_find_min_score": (float, 0.0, 10.0, "defaults"),
         "max_results":         (int, 1, 50, "defaults"),
         "radius_miles":        (float, 1.0, 200.0, "location"),
+        "max_image_checks":    (int, 0, 50, "scorer"),
     }
 
     def tuning(self) -> dict[str, float | int]:

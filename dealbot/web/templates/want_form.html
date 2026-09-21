@@ -52,11 +52,11 @@
     </div>
 
     <div class="field">
-      <label for="f-req">Must be true</label>
-      <textarea id="f-req" name="requires"
+      <label for="f-requires">Must be true</label>
+      <textarea id="f-requires" name="requires"
         placeholder="at least 70 inches wide&#10;not a corner unit">{{ v.requires or '' }}</textarea>
-      <p class="hint">One per line, optional. Each is answered separately,
-        with evidence.</p>
+      <p class="hint">Optional. Each one is answered separately, with
+        evidence.</p>
     </div>
 
     <div class="field">
@@ -71,7 +71,7 @@
 
     <div class="formactions">
       <button class="primary">{{ 'Save' if stored else 'Add want' }}</button>
-      <a class="btn" href="/settings">Cancel</a>
+      <a class="btn" href="{{ manage_url }}">Cancel</a>
     </div>
   </form>
 </div>

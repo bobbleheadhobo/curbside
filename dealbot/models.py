@@ -293,6 +293,11 @@ class Score:
     # Set by the model when looking at the photos would actually settle an
     # unknown. Deliberately its own decision: colour and shape are visible,
     # absolute width is not, so the model opts in only where it would help.
+    # The seller put $0 in the price box and asked for money in the words:
+    # "send me offers", "price on request". Neither site has a "make me an
+    # offer" price, so this is how that gets expressed -- and a card reading
+    # FREE in green over it is the one thing the free bin must not do.
+    price_unclear: bool = False
     needs_images: bool = False
     image_question: str | None = None
     images_checked: bool = False
