@@ -259,6 +259,65 @@
     <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
       This listing has not matched a hunt.</div>
     {% endfor %}
+    {# Recording a purchase was reachable only from a saved CARD, so opening the
+       listing to look at it properly took the control away -- the same mistake
+       blocking a word made, noted directly below. The price row is the card's,
+       so one implementation in app.js serves both. #}
+    {% if grabbable %}
+    <div class="grabctx" data-hunt="{{grabbable.hunt_id}}"
+         data-listing="{{listing.id}}" data-back="{{back}}">
+      <div class="triage-row">
+        {% if got %}
+        <span class="who">Yours
+          <small>Grabbed {{ when(listing.grabbed_at) }}.
+            {%- if listing.paid_cents == 0 %} Free.
+            {%- elif listing.paid_cents is not none %} Paid ${{ '{:,.0f}'.format(listing.paid_cents/100) }}.
+            {%- endif %}</small></span>
+        <div class="triage-actions">
+          <form method="post" action="/grabbed">
+            <input type="hidden" name="hunt_id" value="{{grabbable.hunt_id}}">
+            <input type="hidden" name="listing_id" value="{{listing.id}}">
+            <input type="hidden" name="undo" value="1">
+            <input type="hidden" name="back" value="{{back}}">
+            <button title="Put it back in the saved list and forget the price">
+              <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Not mine</button>
+          </form>
+        </div>
+        {% else %}
+        <span class="who">You went and got it
+          <small>Records what you paid, and takes it off the market.</small></span>
+        <div class="triage-actions">
+          <button type="button" class="grabtoggle" aria-expanded="false">
+            <svg class="i" aria-hidden="true"><use href="#i-check"/></svg>
+            Grabbed it</button>
+        </div>
+        {% endif %}
+      </div>
+      {% if not got %}
+      <div class="grabrow" hidden>
+        <b>What did you pay?</b>
+        <form class="grabform" method="post" action="/grabbed" id="grab-detail">
+          <input type="hidden" name="hunt_id" value="{{grabbable.hunt_id}}">
+          <input type="hidden" name="listing_id" value="{{listing.id}}">
+          <input type="hidden" name="back" value="{{back}}">
+          <label class="lbl" for="paid-detail">Paid</label>
+          <input type="text" inputmode="decimal" id="paid-detail" name="paid"
+                 autocomplete="off"
+                 value="{% if listing.price_cents is not none %}{{ '%g'|format(listing.price_cents/100) }}{% endif %}">
+          <button class="primary">Grabbed it</button>
+        </form>
+        {% if grabbable.hunt_id.startswith('want:') %}
+        <label class="donerow" for="done-detail">
+          <input type="checkbox" id="done-detail" name="done" value="1"
+                 form="grab-detail">
+          <span>Done looking for <b>{{ grabbable.hunt_id[5:] }}</b>. Stops the
+            search and clears what it found.</span>
+        </label>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
     {# Blocking a word was reachable only from a card in the free inbox, so
        opening the listing to look at it properly took the control away. Same
        four data attributes as the card carries, which is what lets one

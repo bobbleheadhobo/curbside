@@ -931,6 +931,15 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         hunts = hunts_including_archived(cfg, store)
         sweeps = {h.id for h in cfg.hunts if h.kind == "sweep"}
         blockable = next((m for m in matches if m["hunt_id"] in sweeps), None)
+        # Which hunt a grab is recorded against. The same order the bin views
+        # rank by: a decision you already made outranks a candidacy. Any of
+        # them would do -- `mark_grabbed` clears the listing out of the others
+        # regardless -- but the row you acted on is the one undo restores, and
+        # `saved` is where you would have grabbed it from.
+        rank = {"grabbed": 0, "saved": 1, "wanted": 2, "free_find": 3}
+        grabbable = min((m for m in matches if m["status"] in rank),
+                        key=lambda m: (rank[m["status"]], m["hunt_id"]),
+                        default=None)
         return TEMPLATES.TemplateResponse(request, "listing.html", ctx(
             request, listing=listing, scores=scores, matches=matches,
             # The newest score decides: it is the one the card is showing.
@@ -938,7 +947,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             history=history, sparkline=_sparkline(history),
             photos=photo_verdict(
                 scores, headed_for_a_bin(store, listing, scores, hunts)),
-            blockable=blockable,
+            blockable=blockable, grabbable=grabbable,
+            got=bool(listing.get("grabbed_at")),
             back=_safe_back(back)))
 
     def _error_page(request: Request, status: int, heading: str,

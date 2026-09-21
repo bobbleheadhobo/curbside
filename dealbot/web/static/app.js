@@ -331,6 +331,19 @@
     });
   }
 
+  function grabAndLeave(form) {
+    var data = new FormData(form);
+    var back = data.get("back") || "/saved";
+    post("/grabbed", data).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      handOff({kind: "grabbed", hunt_id: data.get("hunt_id"),
+               listing_id: data.get("listing_id"), grabbed: "1"});
+      location.assign(back);
+    }).catch(function () {
+      toast("That did not save. Still connected?", null, null, true);
+    });
+  }
+
   /* Hand an undo across a navigation. Used by both things that decide on a
      page with no card to fold: triage on the detail page, and blocking a word
      from it. `term` is set only by the second, and undoing that has to unblock
@@ -382,6 +395,19 @@
     // know, rendered the toast as the literal "undefined."
     var said = u.term ? "Never showing \u201c" + u.term + "\u201d again."
                       : (LABEL[u.kind] || "Saved") + ".";
+    /* A grab is withdrawn through its own endpoint: the listing is stamped and
+       sold as well as moved, and restoring the status alone would leave a
+       thing you do not own marked as bought. */
+    if (u.grabbed) {
+      toast("Grabbed.", "Undo", function () {
+        post("/grabbed", {hunt_id: u.hunt_id, listing_id: u.listing_id,
+                          undo: "1"}).then(function (r) {
+          if (r.ok) { location.reload(); return; }
+          toast("That did not save. Still connected?", null, null, true);
+        });
+      });
+      return;
+    }
     if (UNDOABLE.indexOf(u.was) < 0) { toast(said); return; }
     toast(said, "Undo", function () {
       // Unblock first: a restored listing that is still blocked would be
@@ -415,6 +441,17 @@
           && !form.hasAttribute("data-inplace")) {
         ev.preventDefault();
         actAndLeave(form);
+        return;
+      }
+      /* The same control on the detail page, where there is nothing to fold.
+         Undo travels in sessionStorage and is offered on the page we land on,
+         exactly as triage and blocking already do from here. `undo` posts are
+         left to the browser: they move the listing between tabs, so the 303
+         lands you somewhere already correct. */
+      if (form.getAttribute("action") === "/grabbed"
+          && !form.querySelector("[name=undo]")) {
+        ev.preventDefault();
+        grabAndLeave(form);
         return;
       }
       if (form.hasAttribute && form.hasAttribute("data-inplace")) {
@@ -521,13 +558,17 @@
   }
 
   document.addEventListener("click", function (ev) {
-    /* Checked before the block handler: both live in a card's action row, and
-       this one needs no block context at all. */
+    /* Checked before the block handler: both live in an action row, and this
+       one needs no block context at all.
+
+       The container is a card in a bin OR the panel on the detail page, so it
+       is found by looking for the row rather than for a card -- the same
+       reason `blockCtx` exists. */
     var g = ev.target.closest && ev.target.closest(".grabtoggle");
     if (g) {
       ev.preventDefault();
-      var gcard = g.closest("article.card");
-      var grow = gcard && gcard.querySelector(".grabrow");
+      var gctx = g.closest("article.card, .grabctx");
+      var grow = gctx && gctx.querySelector(".grabrow");
       if (!grow) return;
       var gopen = grow.hidden;
       grow.hidden = !gopen;

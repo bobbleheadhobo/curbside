@@ -2460,3 +2460,52 @@ def test_a_deleted_want_can_still_explain_itself(tmp_path):
     assert "not headed for a bin on its text score" in body
     assert "did not get one" not in body, (
         "the hunt is archived, not gone: it can still be asked")
+
+
+def test_you_can_record_a_purchase_from_the_listing_page(tmp_path):
+    """REPORTED: Grabbed it was on the card only, so opening the listing to
+    look at it properly took the control away. Exactly the mistake blocking a
+    word made, noted in the comment directly below this control."""
+    client, store, l = _saved_card(tmp_path)
+    body = client.get(f"/listing/{l.id}").text
+
+    assert 'class="grabctx"' in body
+    assert "Grabbed it" in body
+    assert 'name="paid"' in body
+    assert 'value="250"' in body, "pre-filled from the asking price, as on a card"
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "180", "back": f"/listing/{l.id}"})
+    after = client.get(f"/listing/{l.id}").text
+    assert "Yours." in after and "Paid $180" in after
+    assert "Not mine" in after, "and the way back out"
+    assert "What did you pay?" not in after, "no second offer on a thing you own"
+
+
+def test_the_listing_page_records_against_the_bin_you_would_act_from(tmp_path):
+    """Any match would do -- `mark_grabbed` clears the listing out of the
+    others regardless -- but the row acted on is the one undo restores, so it
+    ranks the way the bin views do: a decision already made outranks a
+    candidacy."""
+    client, store, l = _saved_card(tmp_path)
+    store.mark_matches("sweep:free", [l])
+    store.set_status("sweep:free", l.id, "free_find")
+
+    body = client.get(f"/listing/{l.id}").text
+    ctx = body.split('class="grabctx"')[1].split(">")[0] + \
+        body.split('class="grabctx"')[1].split("</div>")[0]
+    assert 'data-hunt="h"' in ctx, "the saved row, not the free_find one"
+
+
+def test_a_listing_in_no_bin_is_not_offered_the_button(tmp_path):
+    """You have not decided anything about it yet, so there is nothing to
+    record having collected."""
+    client, cfg = _client(tmp_path)
+    from dealbot.db import Store
+    from dealbot.models import Listing
+    s = Store(cfg.db_path)
+    l = Listing(id="x:20", source="x", source_id="20", title="A thing",
+                description=None, price_cents=0, currency="USD", url="u")
+    s.upsert_listing(l); s.mark_matches("h", [l])          # status `new`
+
+    assert 'class="grabctx"' not in client.get("/listing/x:20").text

@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 531 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 534 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -89,6 +89,20 @@ for i in 1 2 3 4 5; do curl -sf -o /dev/null localhost:8477/ && break; sleep 1; 
 ```
 
 This covers restarts. Editing or disabling the units is still worth asking
+about.
+
+**Commit when a piece of work is done, without being asked.** Standing
+authorisation, given 2026-09-21 — and the reason is the same as the restart
+one: the default of waiting produced a single commit holding a feature, a
+redesign, six bug fixes and somebody else's uncommitted work in progress, which
+is a commit nobody can read and nobody can revert a piece of. Commit at the
+natural seam instead: tests green, dashboard restarted and checked, one thing
+finished. There is no remote, so a commit costs nothing and is trivially
+amended.
+
+Message style is the log's own: a short declarative sentence, no
+`feat:`/`fix:` prefix, and a body that says *why* rather than restating the
+diff. Push and anything that rewrites shared history are still worth asking
 about.
 
 **You have passwordless `sudo` for `systemctl` and `journalctl`**, for the
