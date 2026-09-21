@@ -28,7 +28,7 @@ weeks to encounter naturally:
 | `$120 → free` | the "now FREE" treatment |
 | an **unverified** match | amber, requirement `?` marks, "worth checking" |
 | requirement evidence | the ✅/❌/❓ block, which can run to five lines |
-| red flags | caution chips, amber |
+| red flags | red: *counts against it*, distinct from amber's *we do not know* |
 | something already **saved** | `/saved` is empty in production |
 | something that **sold** | the band across the photo, the struck price |
 | **$0 with a price the seller contradicted** | "price unclear", and the group on `/free` |
@@ -232,16 +232,23 @@ which outranks the UA `[hidden]` stylesheet.
 **Wide tables stack on a phone.** `<table class="responsive">` with
 `data-label` on every `<td>` turns into label/value pairs in a two-column
 grid under 720px; `.lead` and `.span2` span the full width and `.empty-note`
-disappears. Runs and the listing's scores table both use it — the scores
-table's reasoning column used to sit off the right edge behind a scrollbar.
+disappears. `/runs` uses it. The listing page used to as well and no longer
+does — see "A verdict is prose; a table is for comparing" below.
 
 **`_card.html` is the shared macro.** Four views render through it, so a change
-there lands everywhere. It takes `(item, back_url, actions, show_status)`;
-`back_url` is where the triage buttons return to, `actions` are the triage
-statuses offered inline (`['saved','dismissed']`, except `/saved` which offers
-`['dismissed']` on `/saved`), and `show_status` is off everywhere but the hunt
-views — the bins are named after their status, so repeating it on every row is
-noise.
+there lands everywhere. It takes
+`(item, back_url, actions, show_status, block, grab)`. `back_url` is where the
+triage buttons return to; `actions` are the triage statuses offered inline
+(`['saved','dismissed']`, and `['dismissed']` on `/saved`); `show_status` is off
+everywhere but the hunt views, since the bins are named after their status;
+`block` adds the *Never show me* control, sweep cards only; `grab` adds
+**Grabbed it** and the price row, `/saved` only.
+
+**A grabbed card offers no Dismiss.** `/saved?show=grabbed` passes `actions=[]`
+and the macro renders *Not mine* instead — dismissed titles become negative
+examples in that hunt's next prompt, so dismissing a thing you liked enough to
+drive out and buy would teach the exact opposite of what happened. *Not mine* is
+also the recovery path once the Undo toast is gone.
 
 `_card.html` also exports two smaller macros. `_money(cents)` renders `free` or
 `$1,234`, and **`price(price_cents, was)`** renders the whole price block —
@@ -471,11 +478,38 @@ that number is now on `/settings`, so they can.
 `headed_for_a_bin` in `app.py` is the separator, and it **calls** `route`
 rather than re-deriving it, rebuilding the `Score` and `Listing` through
 `Store.row_to_score` / `row_to_listing` (public for this reason). Re-deriving
-is the mistake `route`'s own docstring records. It returns `None` when it
-cannot say — a want deleted since — and the page then claims neither cause.
+is the mistake `route`'s own docstring records. It returns `None` only when it
+genuinely cannot say, and the page then claims neither cause — which used to
+mean every listing judged by a deleted want, 254 of 1,378 here, until
+`hunts_including_archived` started rebuilding those hunts from the archived
+wants. A want is archived rather than dropped precisely so this is possible.
 
 `photo_verdict` in `app.py` computes the states, and the line sits at the TOP
-of the Scores panel rather than under the table.
+of the Scores panel rather than under the judgement.
+
+## A verdict is prose; a table is for comparing
+
+The Scores panel was a `table.responsive`, and **87% of listings carry exactly
+one score**, so nine times in ten it was a one-row table — a shape whose whole
+purpose is reading across rows. Worse on a phone, where `responsive` stacks
+into a labelled row per column: it read *When, Hunt, Model, Score, Want, Flags,
+Reasoning*. The judgement last, behind four fields of metadata, with a
+timestamp as the largest text in the panel. Two of those fields were the same
+string: a want hunt's id IS `want:` plus its name, true 478 times out of 507.
+
+Now the latest score leads — the number in its `s-hi`/`s-mid`/`s-lo` colour, the
+want as a chip, one quiet line of `hunt · model · when`, then the reasoning at
+full width. The facts sit in the **header** rather than a footnote: they are the
+context the sentence is read in. Demoting them to one grey line at the bottom
+was tried and lost something real.
+
+**History shows what came BEFORE, never the verdict again.** The table's first
+row was the current score repeated in full — same number, hunt, model,
+timestamp and sentence — so the older row beneath it read as the page
+contradicting itself. Only `scores[1:]` is drawn now, under *Earlier passes*,
+in the same shape turned down. The photo-state line at the top already frames
+it ("Looking took the score from 6.0 to 8.0"); the older sentence is the detail
+behind that number.
 
 **Where it did look, show the score before.** Both rows are kept for exactly
 this reason — the text judgement stays next to the one that looked — and it

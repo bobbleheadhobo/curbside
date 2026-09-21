@@ -458,7 +458,7 @@ All of this was collected and none of it was visible:
 | `/saved` | what you decided to act on, and what you went and grabbed |
 | `/skipped` | judged, then passed over. `/near` 308-redirects here |
 | `/hunt/<id>` | everything one hunt matched, including rejections and why |
-| `/listing/<id>` | detail, score history, price sparkline |
+| `/listing/<id>` | detail, the judgement and every earlier pass, price sparkline |
 | `/runs` | every fetch attempt: counts, cost, errors, and what the plan has left |
 | `/settings` | waking hours, cadences, the tuned limits, and the blocked words |
 | `/wants/<name>` | one want: what it looks for, its budget, its cadence |

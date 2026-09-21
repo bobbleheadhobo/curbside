@@ -304,8 +304,9 @@ Four bins, sorted by *why* a listing is there rather than by how sure we are:
   which read as "near me"; the old URL 308-redirects.
 - **Hunt** (`/hunt/<id>`) — everything matched for one hunt, filtered by status,
   including rejected listings with their reason. This is how you tune a hunt.
-- **Listing** (`/listing/<id>`) — images, full description, score history with
-  requirements and unknowns, price sparkline, link out, triage.
+- **Listing** (`/listing/<id>`) — images, full description, the judgement
+  (score, reasoning, flags, requirements and unknowns) with earlier passes
+  beneath it, price sparkline, link out, triage.
 - **Runs** (`/runs`) — per run: fetched / new / candidates / scored / wanted /
   free / images / cost / error / warning. `error` means the FETCH failed and is
   the column `last_success_at` reads; a run that fetched but stood aside from

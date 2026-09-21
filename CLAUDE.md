@@ -125,8 +125,17 @@ from the dashboard instead:
 * **each hunt's cadence** — `settings` rows keyed `hunt_interval:<hunt_id>`
 * **the wants themselves** — a `wants` table, which `config.yaml` **seeds once**
 * **the blocked words** — `hunt_exclude:<id>`, also seeded once
+* **the tuned limits** — the wants bar, the free bar, the batch cap, the
+  radius and the image budget, in `settings` rows keyed `tune:<name>`
 
-The first, second and fourth live on `/settings`. The wants are edited on `/`,
+`Store.TUNING` carries each of those as `(cast, floor, ceiling, destination)`,
+and `config.with_store` applies them generically from it, so adding a sixth is
+one line there plus its form field. Without the destination written down it was
+a hand-written `replace` per landing place, in a second file, with nothing
+connecting the two.
+
+The first, second, fourth and fifth live on `/settings`. The wants are edited
+on `/`,
 in a panel folded away above the cards, because that page is the list's output
 and a gear reads as configuration. `app.MANAGE_URL` is the one place that link
 is written; every save and every Cancel goes back to it.
@@ -154,7 +163,13 @@ restart. Every CLI command goes through `cli._open()`, and the dashboard
 recomputes per request (`app._live()`).
 
 A deleted want is archived, never dropped — its hunt stops, and everything it
-ever matched stays readable at `/hunt/want:<name>`.
+ever matched stays readable at `/hunt/want:<name>`. **Anything that re-decides
+an old score has to rebuild that hunt**, because `cfg.hunts` no longer contains
+it: `app.hunts_including_archived` hands the archived wants back to
+`Config.hunts` so every threshold resolves exactly as a live one's does. This is
+not a corner — 254 of 1,378 listings carry a newest score from a want since
+deleted, and without it the listing page could only say it did not know why the
+photographs were never looked at.
 
 ## Invariants — break these and it fails quietly
 
@@ -197,6 +212,20 @@ is gated by the hours, so a hand-run `dealbot once` always runs.
 **Nothing is deleted.** Rejected listings keep their reason; listings keep their
 raw source payload. Three separate parser bugs have been repaired from data
 already on disk, with no re-fetching. Price observations are append-only.
+
+**What you paid is the only ground truth in the database.** Every judged
+listing carries an `est_value_cents` the model made up, and nothing else here
+can falsify one. `listings.grabbed_at` and `paid_cents` are written by the
+*user*, from **Grabbed it** on `/saved`, and they invert the four-edit rule
+below: `upsert_listing` deliberately does not know those columns, so no amount
+of re-fetching can overwrite a purchase. `paid_cents` is nullable and **0 is a
+different answer from NULL** — 0 is free, which is most of what this bot finds,
+and NULL is "I did not write it down". Render one as the other and you have put
+a lie in the one table that can check the model. `mark_grabbed` also stamps
+`sold_at` with reason `grabbed`, which is what makes every existing
+`sold_at IS NULL` guard exclude it from re-checks and price alerts; add no new
+ones. Undo really clears the stamps, but only where `sold_reason='grabbed'`, so
+a listing the re-check pass found genuinely sold stays sold.
 
 **One rule fails closed, on purpose: `excluded_kw`.** A blocked listing is
 dropped before anything reads it. Because these are now words typed on a phone,
@@ -315,6 +344,16 @@ precisely the number that counter exists to make visible.
 from the other.** Where that is not practical, make the drift a test failure;
 `tests/test_docs.py` is that idea applied to the docs.
 
+**One stylesheet is one namespace, across every page.** `.verdict` was already
+the badge `app.js` stamps into a card as it folds away — `position:absolute;
+inset:0; z-index:2` — and its rule sits *later* in `app.css`, so a new panel
+that borrowed the name silently became an absolutely-positioned overlay landing
+on top of a listing's photographs. The HTML was correct the whole time, which is
+why reading it found nothing. Generic names are the ones already taken:
+`verdict`, `panel`, `row`, `card`, `score`. Grep the stylesheet before you name
+a thing, and prefer a prefix (`judgement-top`, `judgement-facts`) so one edit
+cannot collide halfway.
+
 Related: **an index on a migrated column must be created in `_migrate`, not in
 SCHEMA.** `executescript` runs before the `ALTER TABLE`, so an index naming a
 new column fails on every existing database. `ix_listings_dup_key` is there for
@@ -373,6 +412,23 @@ query that filters on a new column means adding its index too.
   function — `images.fetch_downscaled` — so the hardening (size cap enforced
   while reading, content-type check, timeout, re-encode through Pillow) has one
   implementation rather than two kept in step by hand.
+* **Colour carries meaning here, and amber is not the safe default.** Three
+  meanings, three colours: **amber** is *we do not know* (unknowns, an
+  unverified match, an unanswered photo request), **red** is *counts against
+  it* (`red_flags`), **green** is *confirmed*. Flags spent a while amber
+  because filled red boxes made "Only one photo" read as an alarm — the fill
+  was the culprit, not the hue, and going amber fixed the shouting by breaking
+  the distinction. **One filled block per panel**, stating the panel's own
+  state; notes inside it get a left rule. Six amber things in one panel is six
+  things with no emphasis, and that is what it looked like.
+* **`max_image_checks` is a backstop, not the gate.** Stage 5b buys photographs
+  only for a listing `route` would ALREADY bin on its text score, so one that
+  scores poorly and asks to be seen is declined long before the budget is
+  consulted: 162 of 169 unmet requests, against the budget's 7. It is on
+  `/settings` so it can be set to **0**, not because raising it does much. The
+  listing page blamed the budget for all of them for a while, which was wrong
+  96% of the time and named the one number a reader might go and change in
+  response. `app.headed_for_a_bin` calls `route` rather than re-deriving it.
 * **`str.replace` on a SQL string is a silent no-op when the needle misses.**
   The bin queries were built by replacing text in each other; editing the
   literal `"WHERE m.status = ?"` would have produced a perfectly valid query
