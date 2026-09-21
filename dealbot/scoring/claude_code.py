@@ -250,6 +250,11 @@ class ClaudeCodeScorer:
         invalidated too. Once a day is frequent enough to learn from and rare
         enough to keep the cache warm.
         """
+        # A want hunt has no use for them -- `build_system_prompt` drops the
+        # block -- so do not spend the read, and above all do not spend the
+        # WRITE that refreshing the snapshot does.
+        if hunt.kind != "sweep":
+            return ()
         if hunt.id in self._negatives:
             return self._negatives[hunt.id]
 

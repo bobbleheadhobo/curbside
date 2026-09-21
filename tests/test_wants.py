@@ -752,3 +752,85 @@ def test_nothing_to_clear_offers_no_button(app):
     hid, made = _want_with_listings(client, cfg, store)
     client.post("/wants/archive", data={"name": "lamp", "clear": "1"})
     assert "Clear " not in client.get("/?manage=1").text
+
+
+# --- when a want is asking the wrong question -------------------------------
+
+
+def _dismiss_at(store, hunt_id, n, score, start=100):
+    """`n` dismissals on `hunt_id`, each scored `score`."""
+    from datetime import datetime, timezone
+    from dealbot.models import Listing, Score
+    for i in range(n):
+        lid = f"d:{hunt_id}:{start + i}"
+        l = Listing(id=lid, source="x", source_id=str(start + i),
+                    title=f"A bookshelf {i}", description=None, price_cents=0,
+                    currency="USD", url="u")
+        store.upsert_listing(l)
+        store.mark_matches(hunt_id, [l])
+        store.save_score(Score(listing_id=lid, hunt_id=hunt_id, model="m",
+                               scored_at=datetime.now(timezone.utc),
+                               match="yes", deal_score=score,
+                               est_value_cents=None, condition=None,
+                               matched_want="lamp", worth_grabbing=True,
+                               unknowns=(), requirements=(), red_flags=(),
+                               reasoning="r"), priced_at_cents=0)
+        store.set_status(hunt_id, lid, "dismissed")
+
+
+def test_only_dismissals_that_overrule_the_model_count(app):
+    """Every hunt here sits at 97-100% dismissed, because that is how a bin
+    gets emptied -- a rate cannot tell a want that is asking the wrong question
+    from one that is working. What can: dismissing something the hunt's own bar
+    called good enough. `want:bookshelf` has 36 dismissals and none over the
+    bar, and it is the want with nothing wrong with it."""
+    client, cfg, store = app
+    _dismiss_at(store, "want:agree", 8, score=3.0)
+    _dismiss_at(store, "want:disagree", 4, score=9.0, start=200)
+
+    assert store.overruled("want:agree", 7.0) == 0
+    assert store.overruled("want:disagree", 7.0) == 4
+
+
+def test_the_nudge_appears_only_once_there_is_a_pattern(app):
+    client, cfg, store = app
+    store.seed_wants((Want(name="lamp", description="a lamp",
+                           max_price_cents=10000, queries=("lamp",)),))
+
+    _dismiss_at(store, "want:lamp", 2, score=9.0)
+    assert "Tighten what it asks for" not in client.get("/?manage=1").text
+
+    _dismiss_at(store, "want:lamp", 1, score=9.0, start=300)
+    body = client.get("/?manage=1").text
+    assert "Tighten what it asks for" in body
+    assert "<b>3</b> that scored well enough" in body
+
+
+def test_rewriting_the_want_is_the_acknowledgement(app):
+    """The dismissals do not disappear when you act on them, so without a
+    baseline the nudge would never stop."""
+    client, cfg, store = app
+    store.seed_wants((Want(name="lamp", description="a lamp",
+                           max_price_cents=10000, queries=("lamp",)),))
+    _dismiss_at(store, "want:lamp", 4, score=9.0)
+    assert "Tighten what it asks for" in client.get("/?manage=1").text
+
+    client.post("/wants/save", data={
+        "existing": "lamp", "name": "lamp", "description": "a lamp, big",
+        "max_price": "100", "queries": "lamp", "requires": "at least 20 inches",
+        "interval": 60})
+    assert "Tighten what it asks for" not in client.get("/?manage=1").text
+
+    # And it comes back only if the new rule does not catch them either.
+    _dismiss_at(store, "want:lamp", 3, score=9.0, start=400)
+    assert "Tighten what it asks for" in client.get("/?manage=1").text
+
+
+def test_a_stopped_want_is_not_nagged(app):
+    """It cannot act on the advice, and the row's job is Restore or Clear."""
+    client, cfg, store = app
+    store.seed_wants((Want(name="lamp", description="a lamp",
+                           max_price_cents=10000, queries=("lamp",)),))
+    _dismiss_at(store, "want:lamp", 5, score=9.0)
+    client.post("/wants/archive", data={"name": "lamp"})
+    assert "Tighten what it asks for" not in client.get("/?manage=1").text

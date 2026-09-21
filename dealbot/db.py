@@ -779,6 +779,45 @@ class Store:
             "UPDATE hunt_matches SET notified_at=? WHERE hunt_id=? AND listing_id=?",
             (_now(), hunt_id, listing_id))
 
+    # How many over-bar dismissals must pile up before the want is worth
+    # rewriting. Three, because the live counts are 9, 2 and 1: five would only
+    # ever fire on one want, and one fires on a fluke.
+    OVERRULED_THRESHOLD = 3
+
+    def overruled(self, hunt_id: str, bar: float) -> int:
+        """Dismissals of listings this hunt's own bar said were good enough.
+
+        The disagreements, and nothing else. Dismissing something the model
+        already scored poorly is you and it agreeing; a rate would not see the
+        difference, because every hunt here sits at 97-100% dismissed -- that
+        is simply how a bin gets emptied. `want:bookshelf` has 36 dismissals
+        and NONE of them over the bar, and it is the want with nothing wrong.
+
+        Each one that is over the bar is a rule the want does not state: the
+        requirements said this qualifies and the user said it does not.
+        """
+        return self.conn.execute(
+            """SELECT COUNT(*) n FROM hunt_matches m
+               JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
+                                        WHERE hunt_id=m.hunt_id
+                                          AND listing_id=m.listing_id)
+               WHERE m.hunt_id=? AND m.status='dismissed' AND s.deal_score >= ?""",
+            (hunt_id, bar)).fetchone()["n"]
+
+    def overruled_baseline(self, hunt_id: str) -> int:
+        """What `overruled` stood at when the want was last rewritten.
+
+        The dismissals do not go away when you act on them, so without this the
+        nudge would never stop. Saving the want IS the acknowledgement.
+        """
+        try:
+            return int(self.get_setting(f"overruled:{hunt_id}") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def note_want_rewritten(self, hunt_id: str, bar: float) -> None:
+        self.set_setting(f"overruled:{hunt_id}", str(self.overruled(hunt_id, bar)))
+
     def dismissed_titles(self, hunt_id: str, limit: int = 20) -> list[str]:
         """What you have rejected for this hunt, newest first.
 

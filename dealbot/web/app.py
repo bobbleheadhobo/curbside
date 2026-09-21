@@ -1129,6 +1129,14 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 "w": sw.want, "stored": sw, "hunt": by_id.get(sw.hunt_id),
                 "hunt_id": sw.hunt_id,
                 "paused": sw.hunt_id in off,
+                # Only for a live want: a stopped hunt cannot act on advice,
+                # and the nudge would be one more thing on a row whose job is
+                # now Restore or Clear.
+                "overruled": (
+                    max(0, store.overruled(sw.hunt_id, h.min_deal_score)
+                        - store.overruled_baseline(sw.hunt_id))
+                    if (h := by_id.get(sw.hunt_id)) else 0),
+                "nudge_at": Store.OVERRULED_THRESHOLD,
                 "matched": (counts.get(sw.hunt_id) or {"n": 0})["n"],
                 "in_bins": (counts.get(sw.hunt_id) or {"in_bins": 0})["in_bins"] or 0,
             })
@@ -1457,6 +1465,10 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # colliding with it, and its old matches come back with it.
         store.restore_want(slug)
         store.set_hunt_interval(f"want:{slug}", _clean_interval(interval))
+        # Rewriting it is how you act on the nudge, so this is where it resets.
+        # It returns only once three MORE over-bar dismissals pile up, which
+        # means the rule just written did not catch them either.
+        store.note_want_rewritten(f"want:{slug}", _live().defaults.min_deal_score)
         # Back to the list you just changed, open, rather than to the top of a
         # settings page with the change somewhere below the fold.
         return RedirectResponse(MANAGE_URL, status_code=303)

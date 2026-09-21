@@ -308,7 +308,10 @@ def render_wants(wants: Sequence[Want]) -> str:
 
 def render_negative_examples(dismissed_titles: Sequence[str]) -> str:
     """Snapshot of what was dismissed for this hunt. Refresh once a day -- see
-    the module docstring on why this must not move per run."""
+    the module docstring on why this must not move per run.
+
+    SWEEP ONLY -- `build_system_prompt` enforces it. See the note there.
+    """
     if not dismissed_titles:
         return ""
     lines = "\n".join(f"  - {t}" for t in dismissed_titles)
@@ -363,8 +366,27 @@ def load_rubric(path: str | Path = "prompts/rubric.md") -> str:
 
 def build_system_prompt(hunt: Hunt, dismissed_titles: Sequence[str] = (),
                         rubric: str | None = None) -> str:
-    """Stable-first assembly. Do not reorder these blocks."""
+    """Stable-first assembly. Do not reorder these blocks.
+
+    **Negative examples go to the SWEEP only**, and the reason is in the data.
+    The block says "do not surface things like these again" followed by titles
+    and nothing else -- no reason, because none is recorded. On a sweep that is
+    exactly right: the dismissal IS a judgement about the category, and
+    "Dishwasher", "30 feet of pipe", "Free electric range" are categories you
+    do not want.
+
+    On a want hunt it inverts. A want dismissal is almost always "right
+    category, WRONG SPECIMEN" -- too small, wrong colour, too far -- and the
+    title carries the category, not the reason. Measured on the live data: 33
+    of 34 dismissals on `want:bookshelf` were bookshelves, 53 of 61 on
+    `want:tv-stand` were tv stands. So the hunt whose whole purpose is finding
+    bookshelves was being told, daily, not to surface things like "Bookshelf".
+
+    The precise instrument for a want is its `requires` list, which is stated
+    up front and reported on individually. A title-only negative example is a
+    blunt, unexplained version of it pointing the wrong way.
+    """
     blocks = [rubric or load_rubric(), render_wants(hunt.wants)]
-    if (neg := render_negative_examples(dismissed_titles)):
+    if hunt.kind == "sweep" and (neg := render_negative_examples(dismissed_titles)):
         blocks.append(neg)
     return "\n\n".join(blocks)

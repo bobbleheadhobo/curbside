@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 536 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 541 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -321,6 +321,26 @@ kill an entire run, fetch included. All of that lives in **one** place —
 build a `Score` from the same schema, and when they each spelled it out a field
 wired into only the first would vanish from image-checked listings. Those are by
 design the *high-scoring* ones headed for a bin, so nothing would look broken.
+
+**Dismissal learning is for the SWEEP only.** The block says "do not surface
+things like these again" followed by titles and no reason, because no reason is
+recorded. On a sweep that is exactly right -- the dismissal IS a judgement
+about the category, and *Dishwasher*, *30 feet of pipe*, *Free electric range*
+are categories you do not want. On a want hunt it inverts: a dismissal there is
+almost always *right category, wrong specimen*, and the title carries the
+category. Measured: 33 of 34 dismissals on `want:bookshelf` were bookshelves,
+53 of 61 on `want:tv-stand` were tv stands, so the hunt whose whole purpose was
+finding bookshelves was told daily not to surface things like "Bookshelf".
+`build_system_prompt` enforces the split and `_negative_examples` skips the
+snapshot entirely for a want, which also saves its daily WRITE.
+
+The instrument for a want is its `requires` list. When a want keeps being
+overruled -- **dismissals of listings its own bar called good enough**, which
+is `Store.overruled` -- the dashboard says so on that want's row and sends you
+there. Not a rate: every hunt here sits at 97-100% dismissed, because that is
+how a bin gets emptied, and `want:bookshelf` had 36 dismissals with NONE over
+the bar. Saving the want resets the baseline, because rewriting it is the
+acknowledgement.
 
 **Prompt prefix stability is money.** Caching is prefix-matched, so the prompt
 is assembled most-stable-first: rubric, then wants, then a *daily* snapshot of

@@ -719,3 +719,20 @@ def test_the_daily_ceiling_counts_the_users_day_not_utcs(scorer, monkeypatch):
     store.finish_run(store.start_run(_hunt(), "x"), cost_usd=5.0)
     with pytest.raises(ScoringUnavailable, match="daily spend"):
         sc.check_available()
+
+
+def test_a_want_hunt_never_pays_to_snapshot_its_dismissals(tmp_path):
+    """`build_system_prompt` drops the block for a want hunt, so fetching the
+    titles is wasted -- and refreshing the daily snapshot is a WRITE, which on
+    the dashboard's read path is the one thing that must not happen."""
+    from dealbot.db import Store
+    from dealbot.scoring.claude_code import ClaudeCodeScorer
+
+    store = Store(tmp_path / "t.db")
+    scorer = ClaudeCodeScorer.__new__(ClaudeCodeScorer)
+    scorer.store, scorer._negatives = store, {}
+
+    want = type("H", (), {"id": "want:x", "kind": "want"})()
+    assert scorer._negative_examples(want) == ()
+    assert store.get_setting("negatives:want:x") is None, "no write either"
+    store.close()

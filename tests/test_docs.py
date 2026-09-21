@@ -67,10 +67,17 @@ def test_no_doc_claims_something_is_unbuilt_when_it_is_built():
         assert "notifications** are not built" not in text, doc
         assert "designed, not yet wired" not in text, doc
 
-    # dismissal learning: the block reaches the prompt, so nothing may say it does not
-    prompt = build_system_prompt(
-        type("H", (), {"wants": ()})(), ("a dismissed title",), rubric="R")
-    assert "a dismissed title" in prompt
+    # Dismissal learning reaches the prompt, so nothing may say it does not --
+    # but it reaches the SWEEP's prompt only. A want dismissal is "right
+    # category, wrong specimen" almost every time (33 of 34 on bookshelf were
+    # bookshelves), so the block told that hunt not to surface bookshelves.
+    def stub(kind):
+        return type("H", (), {"wants": (), "kind": kind})()
+
+    assert "a dismissed title" in build_system_prompt(
+        stub("sweep"), ("a dismissed title",), rubric="R")
+    assert "a dismissed title" not in build_system_prompt(
+        stub("want"), ("a dismissed title",), rubric="R")
 
 
 def test_the_appraisal_asks_for_a_sentence_about_the_THING():

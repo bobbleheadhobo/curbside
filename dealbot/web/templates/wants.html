@@ -56,6 +56,20 @@
     </a>
     <svg class="i go" aria-hidden="true"><use href="#i-open"/></svg>
   </div>
+  {# The want is asking the wrong question, and here is the evidence. Only
+     counts dismissals the model had scored AT OR ABOVE this want's own bar:
+     those are the ones where what it says it wants and what you actually want
+     disagree. Dismissing something already scored low is agreement, and a
+     plain rate cannot tell them apart -- every hunt here sits at 97-100%
+     dismissed, because that is how a bin gets emptied. #}
+  {% if r.overruled >= r.nudge_at %}
+  <a class="nudge" href="/wants/{{ r.w.name }}">
+    <svg class="i" aria-hidden="true"><use href="#i-help"/></svg>
+    <span>You dismissed <b>{{ r.overruled }}</b> that scored well enough.
+      Something you want is not written down.
+      <b class="go">Tighten what it asks for</b></span>
+  </a>
+  {% endif %}
   {% else %}
   <div class="wantrow">
     <span class="grow"><small>Nothing on the list. The free sweep still runs
