@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS listings (
   -- database can check what the model claims a thing is worth.
   grabbed_at    TEXT,
   paid_cents    INTEGER,
+  -- The source's own version stamp, where it states one. Craigslist's item
+  -- endpoint serves a cache that does not converge -- two fetches minutes
+  -- apart returned a seller's pre-edit and post-edit copies of one posting --
+  -- and `updatedDate` is what tells them apart, so an older payload can be
+  -- refused instead of ping-ponging the price and buying an appraisal each
+  -- time it swings down.
+  source_updated_at TEXT,
   raw           TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS ix_listings_fingerprint ON listings(fingerprint);
@@ -194,6 +201,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _iso(when: datetime | None) -> str | None:
+    return when.isoformat() if when else None
+
+
 class Store:
     """One connection per thread.
 
@@ -228,7 +239,8 @@ class Store:
                           ("sold_at", "TEXT"),
                           ("sold_reason", "TEXT"),
                           ("grabbed_at", "TEXT"),
-                          ("paid_cents", "INTEGER"))),
+                          ("paid_cents", "INTEGER"),
+                          ("source_updated_at", "TEXT"))),
             ("hunt_matches", (("miss_count", "INTEGER NOT NULL DEFAULT 0"),
                               ("status_before_gone", "TEXT"),
                               ("status_before_archive", "TEXT"),
@@ -355,8 +367,8 @@ class Store:
     def upsert_listing(self, listing: Listing) -> UpsertResult:
         now = _now()
         row = self.conn.execute(
-            "SELECT price_cents, first_seen FROM listings WHERE id=?",
-            (listing.id,)).fetchone()
+            "SELECT price_cents, first_seen, source_updated_at "
+            "FROM listings WHERE id=?", (listing.id,)).fetchone()
 
         if row is None:
             # A relist is a *new* id whose fingerprint we have seen before. That
@@ -370,8 +382,8 @@ class Store:
                      price_cents, previous_price_cents, currency, url, city, lat, lng, distance_mi,
                      seller_id, seller_name, images, category, posted_at,
                      fingerprint, dup_key, img_key, first_seen, last_seen,
-                     is_active, raw)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+                     is_active, source_updated_at, raw)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
                 (listing.id, listing.source, listing.source_id, listing.title,
                  listing.description, listing.price_cents,
                  listing.previous_price_cents, listing.currency,
@@ -381,6 +393,7 @@ class Store:
                  listing.posted_at.isoformat() if listing.posted_at else None,
                  listing.fingerprint, listing.dup_key, listing.image_key,
                  now, now,
+                 _iso(listing.source_updated_at),
                  json.dumps(listing.raw)),
             )
             return UpsertResult(listing.id, True, False, None, is_relist,
@@ -426,6 +439,12 @@ class Store:
                  -- would quietly resurrect everything the re-check retired.
                  last_seen    = ?,
                  is_active    = CASE WHEN sold_at IS NULL THEN 1 ELSE 0 END,
+                 -- The fourth edit, and COALESCE for the usual reason: only
+                 -- the item page states this, so an index-only refresh must
+                 -- not wipe it. Craigslist's own cache goes backwards, but
+                 -- `detail` refuses an older payload before it ever reaches
+                 -- here, so this only ever moves forward.
+                 source_updated_at = COALESCE(?, source_updated_at),
                  raw = ?
                WHERE id = ?""",
             (listing.title, listing.description, listing.price_cents,
@@ -435,10 +454,14 @@ class Store:
              listing.posted_at.isoformat() if listing.posted_at else None,
              listing.category, listing.seller_id, listing.seller_name,
              json.dumps(list(listing.images)), json.dumps(list(listing.images)),
-             now, json.dumps(listing.raw), listing.id),
+             now, _iso(listing.source_updated_at),
+             json.dumps(listing.raw), listing.id),
         )
+        # The stamp as it was BEFORE this write: that is what the enrichment
+        # about to happen must compare a fresh payload against.
         return UpsertResult(listing.id, False, changed, previous, False,
-                            first_seen=row["first_seen"])
+                            first_seen=row["first_seen"],
+                            source_updated_at=row["source_updated_at"])
 
     def scored_duplicate(self, hunt_id: str, dup_key: str | None,
                          exclude_id: str,
@@ -526,7 +549,11 @@ class Store:
                              SELECT id FROM listings WHERE sold_at IS NOT NULL)
                         THEN COALESCE(status_before_gone, 'new')
                         ELSE status END,
-                    status_before_gone = NULL
+                    -- Cleared because it has just been used, or was stale.
+                    -- NOT on a `grabbed` row: there it is what undo restores,
+                    -- and Facebook goes on showing a listing after it sells.
+                    status_before_gone = CASE WHEN status='grabbed'
+                                              THEN status_before_gone END
                 WHERE hunt_id=? AND listing_id IN ({marks})""",
             [hunt_id, *seen_ids])
         self.conn.execute(
@@ -661,9 +688,13 @@ class Store:
         1. the stamps. `grabbed_at` COALESCEs like `sold_at` -- the first time
            you said so is the honest date -- while `paid_cents` is a plain set,
            so correcting a figure lands.
-        2. the status, on the row you acted on ONLY. A listing matched by two
-           hunts keeps the other hunt's decision intact, and undo therefore has
-           one unambiguous thing to restore.
+        2. the status, on the row you acted on ONLY, remembering what it was.
+           A listing matched by two hunts keeps the other hunt's decision
+           intact, and undo therefore has one unambiguous thing to restore.
+           The button started life on `/saved` alone, where "put it back"
+           could only mean `saved`; it is on the listing page now, where the
+           row you act on may be `wanted` or `free_find`, and undoing a mis-tap
+           must not quietly move a free find onto your saved list.
         3. `mark_sold(..., 'grabbed')`. It is genuinely off the market, and this
            is the step that does most of the work: `due_for_recheck` and
            `price_drops` both already filter on `l.sold_at IS NULL`, so no
@@ -679,6 +710,13 @@ class Store:
             """UPDATE listings SET grabbed_at = COALESCE(grabbed_at, ?),
                                    paid_cents = ?
                WHERE id = ?""", (_now(), paid_cents, listing_id))
+        # COALESCE so grabbing twice cannot overwrite the answer with
+        # `grabbed`, which would make undo a no-op.
+        self.conn.execute(
+            """UPDATE hunt_matches
+               SET status_before_gone = COALESCE(status_before_gone, status)
+               WHERE hunt_id=? AND listing_id=? AND status <> 'grabbed'""",
+            (hunt_id, listing_id))
         changed = self.set_status(hunt_id, listing_id, "grabbed")
         self.mark_sold(listing_id, "grabbed")
         self.retire_sold(listing_id)
@@ -697,8 +735,12 @@ class Store:
         `gone` row from `status_before_gone` when the listing is seen again and
         `sold_at` is null, so clearing the stamp is what lets that happen.
 
-        `saved` is the restore target rather than something remembered, because
-        the button is only ever offered on a saved card.
+        It goes back to whatever it WAS, which `mark_grabbed` wrote down. That
+        used to be a flat `saved`, which was true while the button lived only
+        on a saved card and stopped being true the moment it appeared on the
+        listing page: undoing a mis-tap on a free find moved it to your saved
+        list, silently, and nothing said so. `saved` survives as the fallback
+        for rows grabbed before this was recorded.
         """
         self.conn.execute(
             """UPDATE listings
@@ -710,7 +752,13 @@ class Store:
                    sold_reason = CASE WHEN sold_reason='grabbed'
                                       THEN NULL ELSE sold_reason END
                WHERE id = ?""", (listing_id,))
-        return self.set_status(hunt_id, listing_id, "saved")
+        cur = self.conn.execute(
+            """UPDATE hunt_matches
+               SET status = COALESCE(status_before_gone, 'saved'),
+                   status_before_gone = NULL, updated_at = ?
+               WHERE hunt_id=? AND listing_id=? AND status='grabbed'""",
+            (_now(), hunt_id, listing_id))
+        return cur.rowcount
 
     def pending_notifications(self, hunt_id: str, limit: int = 50
                               ) -> list[tuple[Listing, Score]]:
@@ -751,7 +799,9 @@ class Store:
             images=tuple(json.loads(r["images"] or "[]")),
             category=r["category"],
             posted_at=(datetime.fromisoformat(r["posted_at"])
-                       if r["posted_at"] else None))
+                       if r["posted_at"] else None),
+            source_updated_at=(datetime.fromisoformat(r["source_updated_at"])
+                               if r["source_updated_at"] else None))
 
     @staticmethod
     def row_to_score(r: sqlite3.Row) -> Score:

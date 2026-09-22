@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 561 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 568 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -239,7 +239,11 @@ a lie in the one table that can check the model. `mark_grabbed` also stamps
 `sold_at` with reason `grabbed`, which is what makes every existing
 `sold_at IS NULL` guard exclude it from re-checks and price alerts; add no new
 ones. Undo really clears the stamps, but only where `sold_reason='grabbed'`, so
-a listing the re-check pass found genuinely sold stays sold.
+a listing the re-check pass found genuinely sold stays sold, and it puts the
+row back to what `mark_grabbed` wrote into `status_before_gone` rather than to
+a flat `saved` — the button is on the listing page as well now, so the row you
+act on may be `wanted` or `free_find`, and a mis-tap undone must not move a
+free find onto your saved list.
 
 **One rule fails closed, on purpose: `excluded_kw`.** A blocked listing is
 dropped before anything reads it. Because these are now words typed on a phone,
@@ -434,6 +438,18 @@ query that filters on a new column means adding its index too.
   was **no** working sale signal for a saved Craigslist listing at all: it
   could vanish from search and 410 on the web and still read as for sale
   forever.
+* **State that travels from the store back to a source needs a column, and
+  `row_to_listing` has to load it.** That staleness rule shipped reading the
+  previous `updatedDate` out of `listing.raw`, and it was dead code: the two
+  callers hand `detail` either a listing parsed off the search feed, whose
+  `raw` is the search payload, or one from `row_to_listing`, which **does not
+  rebuild `raw` at all**. The comparison had None on one side every time and
+  failed open every time, while four tests passed — because a test is the only
+  thing that ever built the listing the code expected. It is a column now
+  (`listings.source_updated_at`, a `Listing` field, four edits and
+  `row_to_listing`), and the pipeline hands it to enrichment off the
+  `UpsertResult`, because a search-parsed listing cannot know it. **Any test
+  for a rule like this has to round-trip through `Store`.**
 * Craigslist's search feed omits descriptions *and* the posting date; both only
   arrive from the item endpoint, which wants the **uuid** (field 13), not the
   numeric posting id. **Anything sorting on `posted_at` before enrichment is

@@ -183,6 +183,19 @@ def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
     return len(dropped)
 
 
+def _with_stamp(listing: Listing, upserts: dict[str, UpsertResult]) -> Listing:
+    """The source's own version stamp for this listing, as stored.
+
+    `upsert_listing` reports what it HELD before the write, which is what a
+    freshly fetched item page has to be compared against.
+    """
+    prior = upserts.get(listing.id)
+    stamp = prior.source_updated_at if prior else None
+    if not stamp:
+        return listing
+    return replace(listing, source_updated_at=datetime.fromisoformat(stamp))
+
+
 def run_hunt(
     store: Store,
     hunt: Hunt,
@@ -329,7 +342,11 @@ def run_hunt(
         failed = 0
         for cand in gr.candidates:
             try:
-                full = source.detail(cand.listing)
+                # A listing parsed off a search feed cannot know the version
+                # stamp we already hold for it, and without it a source cannot
+                # recognise a stale cached copy of its own item page. The
+                # store just told us, one stage ago.
+                full = source.detail(_with_stamp(cand.listing, upserts))
             except SourceBlocked as exc:
                 # Blocked or out of request budget. Stop enriching, but do NOT
                 # kill the run: what was already enriched is good, and the rest

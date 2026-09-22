@@ -1466,9 +1466,18 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         store.restore_want(slug)
         store.set_hunt_interval(f"want:{slug}", _clean_interval(interval))
         # Rewriting it is how you act on the nudge, so this is where it resets.
-        # It returns only once three MORE over-bar dismissals pile up, which
-        # means the rule just written did not catch them either.
-        store.note_want_rewritten(f"want:{slug}", _live().defaults.min_deal_score)
+        # It returns only once `OVERRULED_THRESHOLD` MORE over-bar dismissals
+        # pile up, which means the rule just written did not catch them either.
+        #
+        # Resolved against the HUNT, not against `defaults`: a want hunt may
+        # carry its own `min_deal_score`, and a baseline counted at one bar
+        # against a display counted at another is the same class of drift as
+        # two copies of a threshold. `/` reads `h.min_deal_score`, so this must.
+        hid = f"want:{slug}"
+        cfg = _live()
+        bar = next((h.min_deal_score for h in cfg.hunts if h.id == hid),
+                   cfg.defaults.min_deal_score)
+        store.note_want_rewritten(hid, bar)
         # Back to the list you just changed, open, rather than to the top of a
         # settings page with the change somewhere below the fold.
         return RedirectResponse(MANAGE_URL, status_code=303)

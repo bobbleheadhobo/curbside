@@ -170,6 +170,11 @@ class Listing:
     images: tuple[str, ...] = ()
     category: str | None = None
     posted_at: datetime | None = None
+    # The SOURCE's own version stamp for this posting, when it states one.
+    # Craigslist does (`updatedDate`) and it is the only way to tell its
+    # pre-edit and post-edit copies apart -- its item endpoint serves both,
+    # from a cache that does not converge. Facebook states nothing, so None.
+    source_updated_at: datetime | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -265,6 +270,11 @@ class UpsertResult:
     # The batch cap needs it -- Craigslist's feed carries no posting date, so
     # this is the only date it has to order by.
     first_seen: str | None = None
+    # The version stamp ALREADY held for this listing, before this write. Same
+    # reason as `first_seen`: a listing parsed off a search feed cannot know
+    # it, and the enrichment that follows needs it to recognise a stale cached
+    # copy of the item page and refuse it.
+    source_updated_at: str | None = None
 
 
 @dataclass(frozen=True)

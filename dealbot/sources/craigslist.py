@@ -55,16 +55,15 @@ F_IMAGES, F_SLUG, F_PRICE_STR, F_UUID = 4, 6, 10, 13
 PATH_FREE, PATH_ALL = "zip", "sss"
 
 
-def _updated_at(payload: dict) -> int | None:
-    """The posting's own version stamp, from a detail payload."""
-    items = (payload.get("data") or {}).get("items") or []
-    if not items or not isinstance(items[0], dict):
+def _updated_at(item: dict) -> datetime | None:
+    """The posting's own version stamp, off a detail item."""
+    stamp = item.get("updatedDate")
+    if not isinstance(stamp, int):
         return None
-    stamp = items[0].get("updatedDate")
-    return stamp if isinstance(stamp, int) else None
+    return datetime.fromtimestamp(stamp, timezone.utc)
 
 
-def _is_stale(payload: dict, listing: Listing) -> bool:
+def _is_stale(now: datetime | None, was: datetime | None) -> bool:
     """Is this detail payload OLDER than the one already stored?
 
     Craigslist serves the item endpoint from a cache that does not converge:
@@ -72,22 +71,21 @@ def _is_stale(payload: dict, listing: Listing) -> bool:
     pre-edit copy ($150, the original body) and their post-edit copy ($125,
     reworded). Stored blind, the listing's price ping-ponged between the two
     for a day and a half -- nine price observations recording a change that
-    never happened, and, because each downward flap clears
-    `PRICE_DROP_THRESHOLD`, four appraisals bought to re-judge a listing whose
-    verdict never moved.
+    never happened, and, because each downward swing clears
+    `PRICE_DROP_THRESHOLD`, an appraisal bought every time the gate read one
+    as a price drop.
 
-    The payload carries `updatedDate`, so the two copies are distinguishable
-    without guessing: one that predates what we already hold is a stale cache
-    hit and is worth nothing. The previous stamp comes from the listing's own
-    stored `raw`, which is why no column is needed for this.
+    `updatedDate` tells the two copies apart without guessing, and it is
+    carried on `Listing.source_updated_at` rather than dug out of `raw`,
+    because `row_to_listing` does not rebuild `raw` -- a version of this that
+    read it there was dead code that its own tests could not see, since they
+    were the only thing that ever built such a listing.
 
     Absent on either side means "cannot tell", which lets the payload through:
     the first detail fetch of a listing has nothing to compare against, and
-    fail-open is the rule everywhere else in the gate.
+    fail-open is the rule everywhere else here.
     """
-    was = _updated_at({"data": {"items": [(listing.raw or {}).get("detail") or {}]}})
-    now = _updated_at(payload)
-    return was is not None and now is not None and now < was
+    return now is not None and was is not None and now < was
 
 
 def _fields(item: list) -> dict[int, list]:
@@ -246,12 +244,17 @@ class CraigslistSource(Throttled):
     def detail(self, listing: Listing) -> Listing | None:
         payload = self._get(DETAIL_URL.format(uuid=listing.source_id),
                             {"lang": "en", "cc": "US"})
-        if _is_stale(payload, listing):
+        full = self.parse_detail(payload, listing)
+        if full is not None and _is_stale(full.source_updated_at,
+                                          listing.source_updated_at):
             # A cached copy older than the one we already hold. Not an error,
-            # not evidence of anything -- just nothing new. The caller defers.
+            # not evidence of anything -- just nothing new. Both callers treat
+            # None as "no refresh": the pipeline defers the listing to the next
+            # run rather than re-judging it on a price that went backwards, and
+            # `recheck` has already had its availability answer from the page.
             log.info("stale detail payload for %s; ignored", listing.id)
             return None
-        return self.parse_detail(payload, listing)
+        return full
 
     # --- liveness ------------------------------------------------------------
 
@@ -310,6 +313,7 @@ class CraigslistSource(Throttled):
                        for i in (d.get("images") or [])) or listing.images
         posted = d.get("postedDate")
         price = d.get("price")
+        updated = _updated_at(d)
 
         return Listing(
             id=listing.id, source=listing.source, source_id=listing.source_id,
@@ -328,5 +332,6 @@ class CraigslistSource(Throttled):
             category=d.get("categoryAbbr") or listing.category,
             posted_at=(datetime.fromtimestamp(posted, timezone.utc)
                        if posted else listing.posted_at),
+            source_updated_at=updated or listing.source_updated_at,
             raw={**listing.raw, "detail": d},
         )

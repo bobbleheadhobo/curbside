@@ -2083,6 +2083,50 @@ def test_undo_withdraws_the_purchase(tmp_path):
     assert "Grabbed it" in client.get("/saved").text
 
 
+def test_undo_puts_a_free_find_back_where_it_was(tmp_path):
+    """REGRESSION. `ungrab` restored a flat `saved`, which was true only while
+    the button lived on a saved card. It is on the listing page now, where the
+    row you act on may be `free_find` or `wanted` -- so undoing a mis-tap
+    silently moved a free find onto your saved list."""
+    client, store, l = _saved_card(tmp_path)
+    store.set_status("h", l.id, "free_find")
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "paid": "0"})
+    assert store.statuses("h")[l.id] == "grabbed"
+
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "undo": "1"})
+    assert store.statuses("h")[l.id] == "free_find"
+
+
+def test_seeing_a_grabbed_listing_again_does_not_lose_the_undo(tmp_path):
+    """`mark_gone` clears `status_before_gone` for everything it sees again,
+    and Facebook goes on showing a listing after it sells. A grabbed row keeps
+    its hint, or undo quietly reverts to the old flat `saved`."""
+    client, store, l = _saved_card(tmp_path)
+    store.set_status("h", l.id, "wanted")
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id})
+
+    store.mark_gone("h", "facebook", [l.id])          # still in the feed
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "undo": "1"})
+    assert store.statuses("h")[l.id] == "wanted"
+
+
+def test_a_grab_recorded_before_the_hint_existed_still_undoes(tmp_path):
+    """Rows grabbed by the earlier version carry no `status_before_gone`, so
+    the old behaviour has to survive as the fallback."""
+    client, store, l = _saved_card(tmp_path)
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id})
+    store.conn.execute(
+        "UPDATE hunt_matches SET status_before_gone=NULL WHERE listing_id=?",
+        (l.id,))
+    client.post("/grabbed", data={"hunt_id": "h", "listing_id": l.id,
+                                  "undo": "1"})
+    assert store.statuses("h")[l.id] == "saved"
+
+
 def test_the_listing_page_does_not_call_your_own_bookshelf_unlisted(tmp_path):
     """`mark_grabbed` stamps `sold_at` too, so the sold banner would claim a
     thing in your house is no longer available. The grabbed state is checked

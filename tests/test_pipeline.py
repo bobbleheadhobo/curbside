@@ -1661,3 +1661,60 @@ def test_a_blank_price_is_not_free(rig):
         "SELECT paid_cents FROM listings WHERE id=?", (l.id,)).fetchone()
     assert row["paid_cents"] is None
     assert store.calibration()["n"] == 0, "an unrecorded price is not a data point"
+
+
+def test_enrichment_is_told_the_version_stamp_the_store_already_holds(rig):
+    """REGRESSION. Craigslist's item endpoint serves a cache that goes
+    backwards, and `detail` refuses a payload older than the one we hold -- but
+    the listing it is handed comes off the SEARCH feed, which knows no stamp.
+    Without this the rule compares against None every time, fails open every
+    time, and is dead code nothing notices.
+    """
+    from datetime import datetime, timezone
+    from dataclasses import replace
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    stamp = datetime(2026, 9, 21, 14, 21, 33, tzinfo=timezone.utc)
+
+    # Seed the store with a stamp, the way a previous run's detail fetch would.
+    first = next(source.parse(r) for r in source.search(hunt))
+    store.upsert_listing(replace(first, source_updated_at=stamp))
+
+    seen = {}
+
+    class Stamped:
+        name = "fixture"
+        def __init__(self, inner): self.inner = inner
+        def search(self, hunt): return self.inner.search(hunt)
+        def parse(self, raw): return self.inner.parse(raw)
+
+        def detail(self, listing):
+            seen[listing.id] = listing.source_updated_at
+            return self.inner.detail(listing)
+
+    run_hunt(store, hunt, Stamped(source), scorer, notifiers, cfg.location)
+    assert seen[first.id] == stamp
+    # And a listing the store has never enriched still gets None, which is what
+    # lets a first fetch through.
+    assert any(v is None for k, v in seen.items() if k != first.id)
+
+
+def test_a_version_stamp_survives_an_index_only_refresh(rig):
+    """Only the item page states it, so the fourth edit needs its COALESCE like
+    every other enrichable column."""
+    from datetime import datetime, timezone
+    from dataclasses import replace
+
+    cfg, store, source, *_ = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    stamp = datetime(2026, 9, 21, 14, 21, 33, tzinfo=timezone.utc)
+    thin = next(source.parse(r) for r in source.search(hunt))
+
+    store.upsert_listing(replace(thin, source_updated_at=stamp))
+    up = store.upsert_listing(thin)                 # a thin index-only refresh
+    assert up.source_updated_at == stamp.isoformat()
+
+    back = store.row_to_listing(store.conn.execute(
+        "SELECT * FROM listings WHERE id=?", (thin.id,)).fetchone())
+    assert back.source_updated_at == stamp

@@ -5,6 +5,7 @@ and one detail response, both captured 2026-09-08.
 """
 import json
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -202,39 +203,43 @@ def _payload(updated, price):
                                 "updatedDate": updated, "price": price}]}}
 
 
+def _held(listing, stamp):
+    """A listing as the store hands it back, carrying the stamp we already have."""
+    return replace(listing,
+                   source_updated_at=datetime.fromtimestamp(stamp, timezone.utc))
+
+
+def test_the_stamp_is_parsed_off_the_detail_payload(src, stub_listing,
+                                                    monkeypatch):
+    """Without this the comparison below has nothing to compare, and the whole
+    rule silently does nothing."""
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1_790_000_493, 125))
+    full = src.detail(stub_listing)
+    assert full.source_updated_at == datetime(2026, 9, 21, 14, 21, 33,
+                                              tzinfo=timezone.utc)
+
+
 def test_a_stale_detail_copy_is_ignored_rather_than_stored(src, stub_listing,
                                                            monkeypatch):
     """Craigslist's item endpoint serves a cache that does not converge: two
     fetches minutes apart returned the seller's pre-edit and post-edit copies.
     Stored blind, the price ping-pongs -- which reads as a price drop, and buys
     an appraisal, every time it swings down."""
-    held = dict(stub_listing.raw or {})
-    held["detail"] = {"updatedDate": 2000}
-    listing = replace(stub_listing, raw=held)
-
     monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1000, 150))
-    assert src.detail(listing) is None
+    assert src.detail(_held(stub_listing, 2000)) is None
 
 
 def test_a_newer_copy_is_taken(src, stub_listing, monkeypatch):
-    held = dict(stub_listing.raw or {})
-    held["detail"] = {"updatedDate": 1000}
-    listing = replace(stub_listing, raw=held)
-
     monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 125))
-    full = src.detail(listing)
+    full = src.detail(_held(stub_listing, 1000))
     assert full is not None and full.price_cents == 12500
 
 
 def test_the_same_copy_again_is_not_stale(src, stub_listing, monkeypatch):
     """Equal is not older. Every unchanged re-fetch would otherwise be thrown
     away, and with it the price refresh that `recheck` exists for."""
-    held = dict(stub_listing.raw or {})
-    held["detail"] = {"updatedDate": 2000}
-    listing = replace(stub_listing, raw=held)
-
     monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 150))
-    assert src.detail(listing) is not None
+    assert src.detail(_held(stub_listing, 2000)) is not None
 
 
 def test_no_stamp_on_either_side_lets_the_payload_through(src, stub_listing,
@@ -246,3 +251,31 @@ def test_no_stamp_on_either_side_lets_the_payload_through(src, stub_listing,
 
     monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 150))
     assert src.detail(stub_listing) is not None
+
+
+def test_the_stamp_survives_a_round_trip_through_the_store(src, stub_listing,
+                                                           monkeypatch, tmp_path):
+    """THE BUG THIS RULE SHIPPED WITH. The first version read the previous
+    stamp out of `listing.raw`, which only ever exists on a listing a test
+    built by hand: `row_to_listing` does not rebuild `raw`, and the pipeline
+    hands `detail` a listing parsed off the search feed. So the comparison
+    always had None on one side, always failed open, and the guard was dead
+    code that passed every test written for it.
+
+    Anything carrying state from the store to a source belongs in a column and
+    in `row_to_listing`, and the test has to go through both.
+    """
+    from dealbot.db import Store
+    store = Store(tmp_path / "t.db")
+    try:
+        monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 125))
+        store.upsert_listing(src.detail(stub_listing))
+
+        stored = store.row_to_listing(store.conn.execute(
+            "SELECT * FROM listings WHERE id=?", (stub_listing.id,)).fetchone())
+        assert stored.source_updated_at is not None
+
+        monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1000, 150))
+        assert src.detail(stored) is None
+    finally:
+        store.close()
