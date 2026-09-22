@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 568 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 573 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -244,6 +244,26 @@ row back to what `mark_grabbed` wrote into `status_before_gone` rather than to
 a flat `saved` — the button is on the listing page as well now, so the row you
 act on may be `wanted` or `free_find`, and a mis-tap undone must not move a
 free find onto your saved list.
+
+**Facebook carries retail advertisements, and it says so.** Alongside people
+selling their own things there are Poshmark/partner listings —
+`is_partner_listing: true` in the **search** node, so acting on it is free. The
+separation in the collected data is total: 76 of 1,737 carry the flag, and
+**not one of them has coordinates**, against 1,143 of the rest that do. They
+are never a local pickup — there is nothing to drive to, and no price history
+of ours means anything about a warehouse SKU — so `filters` drops them on
+`is_ad`, which is a typed `Listing` field rather than a reach into one source's
+payload. 29 had been appraised before the rule existed, including a Poshmark
+planter that reached `/skipped` at 6.0.
+
+**Do not infer this from shipping.** Ordinary Facebook listings carry
+`is_shipping_offered`, `formatted_shipping_price` and a shipping profile —
+22% of the normal ones do — so "it mentions shipping" would bury real
+listings. The partner-only field is `shipping_cost_text`, and it only arrives
+with a *detail* fetch, which is after the money is spent. The flag is stated
+up front and needs no inference at all. This is the same lesson as the
+advance-fee guidance in the rubric: the clean-looking keyword is not the
+signal.
 
 **One rule fails closed, on purpose: `excluded_kw`.** A blocked listing is
 dropped before anything reads it. Because these are now words typed on a phone,

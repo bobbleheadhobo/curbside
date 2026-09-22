@@ -257,6 +257,9 @@ class FacebookSource(Throttled):
             seller_id=None, seller_name=None,
             images=(photo,) if photo else (),
             category=str(p.get("marketplace_listing_category_id") or "") or None,
+            # Stated in the SEARCH feed, which is what makes it free to act on:
+            # these never reach a detail fetch, let alone the model.
+            is_ad=bool(p.get("is_partner_listing")),
             posted_at=(datetime.fromtimestamp(created, timezone.utc)
                        if created else None),
             raw=p,

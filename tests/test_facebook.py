@@ -5,6 +5,7 @@ search, and one item page. No network is touched here -- which is the point,
 because the live adapter is the part guaranteed to break, and when it does these
 tests say whether the parser or Facebook changed.
 """
+import json
 from pathlib import Path
 
 import pytest
@@ -268,3 +269,37 @@ def test_a_real_item_page_still_parses():
                    source_id="1354512002236671", title="whatever",
                    description=None, price_cents=0, currency="USD", url="u")
     assert FacebookSource(ABQ).parse_detail_html(html, stub) is not None
+
+
+# --- retail advertisements ---------------------------------------------------
+#
+# fixtures/facebook/partner-listing-node.json is the real search-feed node for
+# a Poshmark planter that reached /skipped at 6.0. Facebook states what it is.
+
+FB = Path(__file__).resolve().parents[1] / "fixtures/facebook"
+
+
+def _partner_node():
+    return json.loads((FB / "partner-listing-node.json").read_text())
+
+
+def test_a_partner_listing_is_read_as_an_advertisement():
+    from datetime import datetime, timezone
+    from dealbot.models import RawListing
+    src = FacebookSource(ABQ, city="albuquerque")
+    node = _partner_node()
+    listing = src.parse(RawListing(source="facebook", source_id=node["id"],
+                                   payload=node,
+                                   fetched_at=datetime.now(timezone.utc)))
+    assert listing.is_ad is True
+    # And it is stated in the SEARCH feed, which is what makes acting on it
+    # free: no detail fetch, no appraisal.
+    assert "is_partner_listing" in node
+
+
+def test_an_ordinary_listing_is_not_an_advertisement(src):
+    raws = src.parse_search_html(
+        (HTML / "search-free-abq.html").read_text(errors="replace"))
+    listings = [src.parse(r) for r in raws]
+    assert listings
+    assert not any(l.is_ad for l in listings)

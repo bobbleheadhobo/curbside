@@ -53,7 +53,12 @@ TRIAGED = ("saved", "dismissed", "grabbed")
 # in config.yaml, so raising it will not bring these back. That is the one
 # case where the reason genuinely outlives the decision, and it is the right
 # trade for a listing already past the age the hunt asked for.
-PERMANENT_REJECTIONS = ("too_old", "no_photo", "nothing_to_judge")
+#
+# `is_ad` joins them, and is the least arguable of the four: it is not our
+# inference at all, it is the source stating what kind of thing this is, and
+# no edit by anybody turns a retail advertisement into a neighbour selling a
+# planter.
+PERMANENT_REJECTIONS = ("too_old", "no_photo", "nothing_to_judge", "is_ad")
 
 
 @lru_cache(maxsize=512)
@@ -120,6 +125,20 @@ def gate(
         # Cheapest checks first; each one is a listing we never pay to think about.
         if status in TRIAGED:
             rejected.append((listing.id, "triaged"))
+            continue
+
+        # A retail advertisement, not a neighbour with a thing to get rid of.
+        # This bot exists to find local pickups, and an ad is the one category
+        # that can never be one however good the price looks: it ships from a
+        # warehouse, there is nothing to drive to, and no price history of
+        # ours means anything about it.
+        #
+        # 76 of 1,737 Facebook listings collected carry the flag, NONE of them
+        # carry coordinates, and 29 had already been appraised -- pouf covers,
+        # "Open Box" ottoman slipcovers, a Poshmark planter that reached
+        # /skipped at 6.0 and is what sent me looking.
+        if listing.is_ad:
+            rejected.append((listing.id, "is_ad"))
             continue
 
         if (hunt.max_price_cents is not None

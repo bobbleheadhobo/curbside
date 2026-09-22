@@ -1,0 +1,42 @@
+{
+  "__typename": "ProductItem",
+  "id": "28310438031932303",
+  "primary_listing_photo": {
+    "__typename": "CatalogMarketplaceEnhancementTransformedImage",
+    "image": {
+      "uri": "https://scontent-den2-1.xx.fbcdn.net/v/t39.84726-6/818353538_2473251696411715_6194472436651051585_n.jpg?stp=c0.43.261.261a_dst-jpg_p261x260_tt6&_nc_cat=104&ccb=1-7&_nc_sid=92e707&_nc_ohc=Ywi2bs2MlP0Q7kNvwGARacG&_nc_oc=AdrswnP_VyUbgDV9DlhiTmUWHvCFFhwSJvn-vcSVahh7jhGEsrG2VIcGIgN1Ivol6C0&_nc_zt=14&_nc_ht=scontent-den2-1.xx&_nc_gid=ViHjI-M9erXYlLJpC4fxFw&_nc_ss=70289&oh=00_AQLmhptjGeRw6833cBN7xYthrDmA-BXhXh2IgJfYHkWhpw&oe=6AB8B9C9"
+    },
+    "id": "2473251693078382"
+  },
+  "creation_time": 1789855086,
+  "__isMarketplacePartnershipListing": "ProductItem",
+  "is_partner_listing": true,
+  "__isMarketplaceListingRenderable": "ProductItem",
+  "listing_price": {
+    "formatted_amount": "$18",
+    "amount_with_offset_in_currency": "1800",
+    "amount": "18.00"
+  },
+  "strikethrough_price": null,
+  "location": {
+    "reverse_geocode": null
+  },
+  "is_hidden": false,
+  "is_live": true,
+  "is_pending": false,
+  "is_sold": false,
+  "is_viewer_seller": false,
+  "min_listing_price": null,
+  "max_listing_price": null,
+  "marketplace_listing_category_id": "800089866739547",
+  "marketplace_listing_title": "Ceramic Teal Scalloped Planter - Home Accents",
+  "custom_title": null,
+  "custom_sub_titles_with_rendering_flags": [],
+  "origin_group": null,
+  "listing_video": null,
+  "marketplace_listing_seller": null,
+  "__isMarketplaceListingWithDeliveryOptions": "ProductItem",
+  "delivery_types": [
+    "SHIPPING_OFFSITE"
+  ]
+}

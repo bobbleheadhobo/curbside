@@ -161,3 +161,36 @@ def test_a_price_rejection_is_re_decided_every_run(hunt):
     for reason in ("over_price", "too_far", "too_far_by_city"):
         gr = _gate(hunt, [make_listing()], filtered={"fixture:1": reason})
         assert [c.reason for c in gr.candidates] == ["new"], reason
+
+
+# --- retail advertisements ---------------------------------------------------
+
+def test_an_advertisement_never_costs_anything(hunt):
+    """Facebook carries retail ads alongside people selling their own things.
+    This bot exists to find local pickups, and an ad can never be one however
+    good the price looks: it ships from a warehouse, there is nothing to drive
+    to, and no price history of ours means anything about it.
+
+    76 of 1,737 collected Facebook listings were ads, NONE had coordinates,
+    and 29 had already been appraised -- including the Poshmark planter that
+    reached /skipped at 6.0."""
+    gr = _gate(hunt, [make_listing(is_ad=True)])
+    assert gr.candidates == []
+    assert gr.rejected == [("fixture:1", "is_ad")]
+
+
+def test_an_advertisement_is_rejected_before_the_price_is_even_read(hunt):
+    """It is not a cheap thing we are passing on. It is not a thing at all."""
+    gr = _gate(hunt, [make_listing(is_ad=True, price_cents=0)])
+    assert gr.rejected == [("fixture:1", "is_ad")]
+
+
+def test_an_advertisement_stays_rejected(hunt):
+    """`is_ad` is in PERMANENT_REJECTIONS, so a listing already dropped on it
+    is not re-fetched and re-dropped every run for ever. Nothing anybody edits
+    turns a retail advertisement into a neighbour with a planter."""
+    from dealbot.filters import PERMANENT_REJECTIONS
+    assert "is_ad" in PERMANENT_REJECTIONS
+    gr = _gate(hunt, [make_listing()], filtered={"fixture:1": "is_ad"})
+    assert gr.candidates == []
+    assert gr.rejected == [("fixture:1", "is_ad")]

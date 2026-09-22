@@ -170,6 +170,14 @@ class Listing:
     images: tuple[str, ...] = ()
     category: str | None = None
     posted_at: datetime | None = None
+    # A retail advertisement placed through the marketplace, not a person
+    # selling a thing they own. Facebook states it outright
+    # (`is_partner_listing`); Craigslist has no such surface, so False.
+    #
+    # Typed rather than left in `raw` because the gate must not have to know
+    # one source's payload shape to answer a question every source could be
+    # asked -- and because `raw` is exactly where a rule goes to die quietly.
+    is_ad: bool = False
     # The SOURCE's own version stamp for this posting, when it states one.
     # Craigslist does (`updatedDate`) and it is the only way to tell its
     # pre-edit and post-edit copies apart -- its item endpoint serves both,

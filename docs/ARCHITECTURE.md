@@ -103,6 +103,7 @@ rejection is stored with its reason** so an empty result is explainable.
 
 ```
 REJECT   already saved/dismissed/grabbed     → "triaged"
+         a retail ad, not a person's own thing → "is_ad"
          over the hunt's max_price            → "over_price"
          beyond location.radius_miles          → "too_far"
          city/state alone puts it out of range → "too_far_by_city"
@@ -116,6 +117,15 @@ ADMIT    never scored for this hunt            → "new"
          price fell ≥15% since last score      → "price_drop"
          relist of something already seen      → "relist"
 ```
+
+`is_ad` is Facebook stating it, not us guessing: `is_partner_listing` in the
+search node, so the drop costs nothing. 76 of 1,737 collected listings carry
+it and **none of them has coordinates**. They are Poshmark and partner-brand
+advertisements — a warehouse SKU is never a local pickup, and our price
+history says nothing about one. Do not try to infer it from shipping instead:
+22% of *ordinary* listings carry shipping fields too, and the partner-only
+`shipping_cost_text` arrives only with a detail fetch, by which point the
+money is spent.
 
 `too_far_by_city` exists because Facebook gives no coordinates until the item
 page is fetched, and its results are not confined to your area at all — a single
