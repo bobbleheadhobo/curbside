@@ -101,6 +101,15 @@ class Source(Protocol):
     will call it only for listings that survive the gate. Return None when the
     detail is unavailable; the listing is deferred rather than judged thin.
 
+    `liveness(listing) -> str` is OPTIONAL too, and answers `listed`,
+    `removed` or `unknown` for the re-check pass. Implement it when the
+    detail payload is not trustworthy evidence that a listing still exists --
+    Craigslist keeps serving a cached copy of a posting its author deleted, so
+    "the payload arrived" says nothing there. Asked FIRST, and a `removed`
+    answer skips the detail fetch entirely. Return `unknown`, never `removed`,
+    for anything that might be the site gating us: retiring is irreversible and
+    it empties the list of things the user saved.
+
     Rate limiting belongs INSIDE the adapter, never in the caller, so it cannot
     be bypassed by accident.
     """

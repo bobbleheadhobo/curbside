@@ -7,11 +7,13 @@ listings were retired within an hour of first being seen. Falling off page one
 and being sold look identical from the outside.
 
 So ask the source directly, for the handful of listings you might actually act
-on. Facebook's item payload carries `is_sold` and `is_live` outright; a
-Craigslist posting that has been taken down simply stops returning a detail
-payload. Neither answer needs the model, so this costs requests and no quota
-at all -- the same principle as the rest of the pipeline: fetching is free,
-judgement is not.
+on. Facebook's item payload carries `is_sold` and `is_live` outright.
+Craigslist states nothing, and its item endpoint cannot even be trusted to
+stop answering -- it served a deleted posting in full for over a day -- so
+that source is asked through `liveness` instead, which reads the status code
+of the posting's own page. Neither answer needs the model, so this costs
+requests and no quota at all -- the same principle as the rest of the
+pipeline: fetching is free, judgement is not.
 
 Three things keep it cheap and safe:
 
@@ -70,7 +72,10 @@ class RecheckResult:
 
 
 def availability(full: Listing | None, source: str = "") -> str:
-    """`sold`, `removed`, `listed`, or `unknown`.
+    """`sold`, `removed`, `listed`, or `unknown`, read off a detail payload.
+
+    The fallback, for a source with no `liveness` of its own. Craigslist has
+    one now, so in practice this speaks for Facebook.
 
     `removed` is the weaker claim: the item page no longer resolves, which is
     usually a sale but the source did not say so, and a listing can also be
@@ -145,6 +150,33 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
             store.mark_rechecked(hunt_id, listing.id)
             continue
         asked.add(listing.id)
+
+        # Ask the cheap, direct question first where the source has one. A
+        # `removed` answer settles it without a detail fetch at all.
+        verdict: str | None = None
+        if hasattr(source, "liveness"):
+            try:
+                verdict = source.liveness(listing)
+            except SourceBlocked as exc:
+                _stop(result, blocked, listing, exc)
+                continue
+            except Exception as exc:                      # noqa: BLE001
+                log.warning("liveness failed for %s: %s", listing.id, exc)
+                continue
+
+        # Both answers that are not "listed" are settled here, before any
+        # detail fetch. A deleted posting has nothing worth refreshing, and a
+        # source that is gating us will not answer the second request either.
+        if verdict in ("removed", "sold", "unknown"):
+            result.n_checked += 1
+            store.mark_rechecked(hunt_id, listing.id)
+            if verdict == "unknown":
+                result.n_unknown += 1
+                log.info("%s: no answer either way; left alone", listing.id)
+            else:
+                _retire(store, result, listing, status, verdict)
+            continue
+
         try:
             full = source.detail(listing)
         except SourceBlocked as exc:
@@ -152,11 +184,7 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
             # it and carry on with the others: Facebook's budget is spent by
             # the sweep that runs before this, and breaking outright meant one
             # exhausted source starved every Craigslist listing behind it.
-            log.warning("recheck stopped for %s at %s: %s",
-                        listing.source, listing.id, exc)
-            blocked.add(listing.source)
-            result.error = (f"recheck stopped for {listing.source}: "
-                            f"{type(exc).__name__}: {exc}")
+            _stop(result, blocked, listing, exc)
             continue
         except Exception as exc:                          # noqa: BLE001
             # FAIL OPEN. An unreadable answer is not evidence that a listing is
@@ -167,7 +195,14 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
 
         result.n_checked += 1
         store.mark_rechecked(hunt_id, listing.id)
-        verdict = availability(full, listing.source)
+        # A source that answered `listed` has ALREADY said the posting is
+        # there, and said it from the surface that can tell. A missing or
+        # stale payload after that is a failure to refresh, never a sale --
+        # which is the whole bug: Craigslist's item endpoint kept serving a
+        # deleted posting, and `availability` read the absence of a payload,
+        # when it finally came, as the only sale signal the source had.
+        if verdict is None:
+            verdict = availability(full, listing.source)
 
         if verdict == "unknown":
             # Asked, could not tell. Stamped so it is paced rather than asked
@@ -181,15 +216,30 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
             # a price drop on something already judged gets noticed, since the
             # gate stops such a listing ever being fetched again.
             result.n_listed += 1
-            store.upsert_listing(full)
-            store.record_price(full.id, full.price_cents)
+            if full is not None:
+                store.upsert_listing(full)
+                store.record_price(full.id, full.price_cents)
             continue
 
-        store.mark_sold(listing.id, verdict)
-        result.n_sold += verdict == "sold"
-        result.n_removed += verdict == "removed"
-        retired = store.retire_sold(listing.id)
-        log.info("%s is %s; retired from %d bin(s)%s", listing.id, verdict,
-                 retired, " (kept on your list)" if status in KEEP_STATUS else "")
+        _retire(store, result, listing, status, verdict)
 
     return result
+
+
+def _stop(result: RecheckResult, blocked: set[str], listing: Listing,
+          exc: Exception) -> None:
+    """This SOURCE is gated or out of budget. Stop asking it, keep the others."""
+    log.warning("recheck stopped for %s at %s: %s", listing.source, listing.id, exc)
+    blocked.add(listing.source)
+    result.error = (f"recheck stopped for {listing.source}: "
+                    f"{type(exc).__name__}: {exc}")
+
+
+def _retire(store: Store, result: RecheckResult, listing: Listing,
+            status: str, verdict: str) -> None:
+    store.mark_sold(listing.id, verdict)
+    result.n_sold += verdict == "sold"
+    result.n_removed += verdict == "removed"
+    retired = store.retire_sold(listing.id)
+    log.info("%s is %s; retired from %d bin(s)%s", listing.id, verdict,
+             retired, " (kept on your list)" if status in KEEP_STATUS else "")

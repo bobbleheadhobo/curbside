@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 542 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 561 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -416,6 +416,24 @@ query that filters on a new column means adding its index too.
   every bin, permanently. A missing Facebook payload is now `unknown`, never
   `removed` — that source states `is_sold` and `is_live` when it answers at all.
 * `Sec-Fetch-*` headers are mandatory on Facebook or you get a bodyless 400.
+* **Craigslist's `sapi` item endpoint is not evidence a posting exists.** It
+  serves a cache that does not converge, and keeps serving a posting after its
+  author deletes it: an Onkyo receiver sitting in `saved` came back HTTP 200
+  with price, body and photographs for more than a day after deletion, while
+  `www.craigslist.org` answered **410 Gone** for the same url the whole time.
+  Worse, two fetches eight minutes apart returned the seller's pre-edit copy
+  ($150) and post-edit copy ($125), so the stored price ping-ponged for a day
+  and a half — nine price observations for one real change, and four
+  appraisals bought re-judging it, because each downward flap clears
+  `PRICE_DROP_THRESHOLD`. Two rules come out of that, and they are separate:
+  availability is asked of the **page** (`CraigslistSource.liveness`, a HEAD,
+  status code only, `410`/`404` → `removed` and everything else `unknown`),
+  and a detail payload whose `updatedDate` predates the one already stored is
+  dropped as a stale copy. `mark_gone` deliberately never retires a `saved`
+  row — the user's decision is marked, not undone — so before `liveness` there
+  was **no** working sale signal for a saved Craigslist listing at all: it
+  could vanish from search and 410 on the web and still read as for sale
+  forever.
 * Craigslist's search feed omits descriptions *and* the posting date; both only
   arrive from the item endpoint, which wants the **uuid** (field 13), not the
   numeric posting id. **Anything sorting on `posted_at` before enrichment is

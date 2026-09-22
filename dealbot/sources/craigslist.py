@@ -55,6 +55,41 @@ F_IMAGES, F_SLUG, F_PRICE_STR, F_UUID = 4, 6, 10, 13
 PATH_FREE, PATH_ALL = "zip", "sss"
 
 
+def _updated_at(payload: dict) -> int | None:
+    """The posting's own version stamp, from a detail payload."""
+    items = (payload.get("data") or {}).get("items") or []
+    if not items or not isinstance(items[0], dict):
+        return None
+    stamp = items[0].get("updatedDate")
+    return stamp if isinstance(stamp, int) else None
+
+
+def _is_stale(payload: dict, listing: Listing) -> bool:
+    """Is this detail payload OLDER than the one already stored?
+
+    Craigslist serves the item endpoint from a cache that does not converge:
+    two fetches of the same posting eight minutes apart returned the seller's
+    pre-edit copy ($150, the original body) and their post-edit copy ($125,
+    reworded). Stored blind, the listing's price ping-ponged between the two
+    for a day and a half -- nine price observations recording a change that
+    never happened, and, because each downward flap clears
+    `PRICE_DROP_THRESHOLD`, four appraisals bought to re-judge a listing whose
+    verdict never moved.
+
+    The payload carries `updatedDate`, so the two copies are distinguishable
+    without guessing: one that predates what we already hold is a stale cache
+    hit and is worth nothing. The previous stamp comes from the listing's own
+    stored `raw`, which is why no column is needed for this.
+
+    Absent on either side means "cannot tell", which lets the payload through:
+    the first detail fetch of a listing has nothing to compare against, and
+    fail-open is the rule everywhere else in the gate.
+    """
+    was = _updated_at({"data": {"items": [(listing.raw or {}).get("detail") or {}]}})
+    now = _updated_at(payload)
+    return was is not None and now is not None and now < was
+
+
 def _fields(item: list) -> dict[int, list]:
     return {e[0]: e[1:] for e in item
             if isinstance(e, list) and e and isinstance(e[0], int)}
@@ -211,7 +246,45 @@ class CraigslistSource(Throttled):
     def detail(self, listing: Listing) -> Listing | None:
         payload = self._get(DETAIL_URL.format(uuid=listing.source_id),
                             {"lang": "en", "cc": "US"})
+        if _is_stale(payload, listing):
+            # A cached copy older than the one we already hold. Not an error,
+            # not evidence of anything -- just nothing new. The caller defers.
+            log.info("stale detail payload for %s; ignored", listing.id)
+            return None
         return self.parse_detail(payload, listing)
+
+    # --- liveness ------------------------------------------------------------
+
+    def liveness(self, listing: Listing) -> str:
+        """`removed`, `listed` or `unknown`, from the posting's own page.
+
+        **The API is not evidence here.** `sapi` serves cached snapshots and
+        keeps serving them after a posting is deleted: the Onkyo receiver that
+        prompted this returned a full HTTP 200 payload, with price and body and
+        photographs, for more than a day after its author took it down -- and
+        two fetches eight minutes apart returned two DIFFERENT versions of it.
+        Meanwhile the public page answered `410 Gone` the whole time.
+
+        So availability is asked of the page, where the status code IS the
+        answer, and a HEAD pays for no body at all. `410` is Craigslist's word
+        for "deleted by its author", which is the only sale signal this source
+        has -- it never states `is_sold` the way Facebook does.
+
+        Anything else is `unknown` and retires nothing. A 403 or a 429 is the
+        site gating us, and reading that as a sale would quietly empty the list
+        of things the user saved.
+        """
+        self._await_slot()
+        resp = self._session.head(listing.url, timeout=self.timeout,
+                                  allow_redirects=True)
+        self._spend_slot()
+        if resp.status_code in (404, 410):
+            return "removed"
+        if resp.status_code == 200:
+            return "listed"
+        log.info("liveness for %s inconclusive: HTTP %d", listing.id,
+                 resp.status_code)
+        return "unknown"
 
     def parse_detail(self, payload: dict, listing: Listing) -> Listing | None:
         items = (payload.get("data") or {}).get("items") or []

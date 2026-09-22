@@ -4,6 +4,7 @@ fixtures/craigslist/ holds a live free-stuff search for Albuquerque (areaId 50)
 and one detail response, both captured 2026-09-08.
 """
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -147,3 +148,101 @@ def test_an_all_markup_body_reads_as_no_description(src, detail_payload,
     payload["data"]["items"][0]["body"] = "<br><br>\n  "
     payload["data"]["items"][0]["attributes"] = []
     assert src.parse_detail(payload, stub_listing).description is None
+
+
+# --- liveness ----------------------------------------------------------------
+#
+# No fixture file here on purpose: `liveness` reads the STATUS CODE and nothing
+# else, so a recorded body would be decoration. The 410 is real -- it is what
+# www.craigslist.org answered for the Onkyo receiver that prompted this, while
+# sapi was still serving that same posting in full.
+
+class _Head:
+    def __init__(self, code): self.status_code = code
+
+
+@pytest.mark.parametrize("code, verdict", [
+    (410, "removed"),      # "deleted by its author" -- the only sale signal
+    (404, "removed"),
+    (200, "listed"),
+    (403, "unknown"),      # being gated is not evidence of a sale
+    (429, "unknown"),
+    (500, "unknown"),
+])
+def test_liveness_reads_the_status_code(src, stub_listing, monkeypatch, code,
+                                        verdict):
+    monkeypatch.setattr(src._session, "head", lambda *a, **k: _Head(code))
+    assert src.liveness(stub_listing) == verdict
+
+
+def test_liveness_asks_the_posting_page_not_the_api(src, stub_listing,
+                                                    monkeypatch):
+    """The API is the thing that lied. Asking it again cannot help."""
+    seen = []
+    monkeypatch.setattr(src._session, "head",
+                        lambda url, **k: (seen.append(url), _Head(200))[1])
+    src.liveness(stub_listing)
+    assert seen == [stub_listing.url]
+    assert "sapi" not in seen[0]
+
+
+def test_liveness_spends_a_request_slot(src, stub_listing, monkeypatch):
+    """Rate limiting lives inside the adapter. A surface that skipped it would
+    be a way to make unpaced requests by accident."""
+    monkeypatch.setattr(src._session, "head", lambda *a, **k: _Head(200))
+    before = src._requests_made
+    src.liveness(stub_listing)
+    assert src._requests_made == before + 1
+
+
+# --- stale cache copies ------------------------------------------------------
+
+def _payload(updated, price):
+    return {"data": {"items": [{"postingUuid": "u", "title": "t",
+                                "updatedDate": updated, "price": price}]}}
+
+
+def test_a_stale_detail_copy_is_ignored_rather_than_stored(src, stub_listing,
+                                                           monkeypatch):
+    """Craigslist's item endpoint serves a cache that does not converge: two
+    fetches minutes apart returned the seller's pre-edit and post-edit copies.
+    Stored blind, the price ping-pongs -- which reads as a price drop, and buys
+    an appraisal, every time it swings down."""
+    held = dict(stub_listing.raw or {})
+    held["detail"] = {"updatedDate": 2000}
+    listing = replace(stub_listing, raw=held)
+
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1000, 150))
+    assert src.detail(listing) is None
+
+
+def test_a_newer_copy_is_taken(src, stub_listing, monkeypatch):
+    held = dict(stub_listing.raw or {})
+    held["detail"] = {"updatedDate": 1000}
+    listing = replace(stub_listing, raw=held)
+
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 125))
+    full = src.detail(listing)
+    assert full is not None and full.price_cents == 12500
+
+
+def test_the_same_copy_again_is_not_stale(src, stub_listing, monkeypatch):
+    """Equal is not older. Every unchanged re-fetch would otherwise be thrown
+    away, and with it the price refresh that `recheck` exists for."""
+    held = dict(stub_listing.raw or {})
+    held["detail"] = {"updatedDate": 2000}
+    listing = replace(stub_listing, raw=held)
+
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 150))
+    assert src.detail(listing) is not None
+
+
+def test_no_stamp_on_either_side_lets_the_payload_through(src, stub_listing,
+                                                          monkeypatch):
+    """FAIL OPEN, like every other filter here. The first detail fetch of a
+    listing has nothing to compare against."""
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(None, 150))
+    assert src.detail(stub_listing) is not None
+
+    monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 150))
+    assert src.detail(stub_listing) is not None

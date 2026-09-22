@@ -340,3 +340,108 @@ def test_grabbing_does_not_retire_it_from_your_own_list(store):
 
     assert store.statuses("mine")[l.id] == "grabbed"
     assert store.statuses("sweep")[l.id] == "gone"
+
+
+# --- a source that can answer directly ---------------------------------------
+#
+# Craigslist's detail payload is not evidence a listing exists: sapi kept
+# serving a deleted posting, in full, for over a day. `liveness` reads the
+# posting page's status code instead, and it is asked FIRST.
+
+class SaysLive(Says):
+    """A source with a `liveness` opinion as well as a detail payload."""
+
+    def __init__(self, verdict, answer=None):
+        super().__init__(answer)
+        self.verdict, self.liveness_calls = verdict, []
+
+    def liveness(self, listing):
+        self.liveness_calls.append(listing.id)
+        if isinstance(self.verdict, Exception):
+            raise self.verdict
+        return self.verdict
+
+
+def test_liveness_is_asked_first_and_settles_it_alone(store):
+    """A deleted posting costs ONE request, not two: there is nothing worth
+    refreshing about a listing that is gone."""
+    l = register(store, make_listing("cl:10"), "saved")
+    src = SaysLive("removed", answer=make_listing("cl:10"))
+
+    r = recheck(store, [("fixture", src)])
+    assert (r.n_checked, r.n_removed) == (1, 1)
+    assert src.liveness_calls == [l.id]
+    assert src.calls == []                       # no detail fetch at all
+    assert _sold_row(store, l.id)["sold_reason"] == "removed"
+
+
+def test_a_source_that_says_listed_is_believed_over_a_missing_payload(store):
+    """THE BUG. Craigslist's item endpoint answering with nothing used to be
+    the source's only sale signal, so a posting that was merely not in the
+    cache read as sold -- and, the other way round, a deleted posting that the
+    cache still held read as for sale. The page's status code outranks both."""
+    l = register(store, make_listing("cl:11"), "saved")
+    src = SaysLive("listed", answer=None)
+
+    r = recheck(store, [("fixture", src)])
+    assert (r.n_checked, r.n_listed) == (1, 1)
+    assert (r.n_sold, r.n_removed) == (0, 0)
+    assert _sold_row(store, l.id)["sold_at"] is None
+    assert store.statuses("h")[l.id] == "saved"
+
+
+def test_a_listed_answer_still_refreshes_the_price(store):
+    l = register(store, make_listing("cl:12", price_cents=15000), "saved")
+    src = SaysLive("listed", answer=lambda x: replace(x, price_cents=12500))
+
+    r = recheck(store, [("fixture", src)])
+    assert r.n_listed == 1
+    assert store.conn.execute(
+        "SELECT price_cents FROM listings WHERE id=?", (l.id,)).fetchone()[0] == 12500
+
+
+def test_an_inconclusive_liveness_retires_nothing(store):
+    """A 403 is the site gating us. Reading that as a sale would quietly empty
+    the list of things the user saved, and `mark_sold` does not come undone."""
+    l = register(store, make_listing("cl:13"), "saved")
+    src = SaysLive("unknown", answer=None)
+
+    r = recheck(store, [("fixture", src)])
+    assert (r.n_unknown, r.n_sold, r.n_removed) == (1, 0, 0)
+    assert _sold_row(store, l.id)["sold_at"] is None
+
+
+def test_a_liveness_failure_fails_open(store):
+    l = register(store, make_listing("cl:14"), "saved")
+    src = SaysLive(ValueError("nonsense"), answer=None)
+
+    r = recheck(store, [("fixture", src)])
+    assert (r.n_checked, r.n_sold, r.n_removed) == (0, 0, 0)
+    assert _sold_row(store, l.id)["sold_at"] is None
+    assert src.calls == []
+
+
+def test_a_gated_source_stops_the_pass_from_the_liveness_call_too(store):
+    for i in range(3):
+        register(store, make_listing(f"cl:2{i}"), "saved")
+    src = SaysLive(SourceBlocked("HTTP 429"), answer=None)
+
+    r = recheck(store, [("fixture", src)])
+    assert (r.n_checked, r.n_removed) == (0, 0)
+    assert "recheck stopped for fixture" in r.error
+    assert len(src.liveness_calls) == 1           # stopped asking after one
+
+
+def test_a_saved_craigslist_listing_can_finally_be_marked(store):
+    """Both halves of why the receiver sat there. `mark_gone` deliberately
+    never retires a saved row -- the user's own decision is marked, not undone
+    -- so vanishing from search said nothing, and the detail payload was the
+    only other evidence. It was wrong."""
+    l = register(store, make_listing("cl:15"), "saved")
+    store.mark_gone("h", "fixture", ["cl:other"], threshold=1)
+    assert store.statuses("h")[l.id] == "saved"   # unchanged, as designed
+
+    recheck(store, [("fixture", SaysLive("removed"))])
+    row = _sold_row(store, l.id)
+    assert row["sold_reason"] == "removed" and row["is_active"] == 0
+    assert store.statuses("h")[l.id] == "saved"   # still on your list, marked

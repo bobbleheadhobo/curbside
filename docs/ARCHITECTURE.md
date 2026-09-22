@@ -320,13 +320,21 @@ Two different facts, deliberately kept apart:
 | | what it means | how |
 |---|---|---|
 | `gone` | stopped **appearing** in results | `mark_gone`, after 3 consecutive misses of that same source — 45 min on the free sweep, 3 h on an hourly want hunt. Reversible: seen again, the status is restored. |
-| `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source: Facebook's item payload carries `is_sold` and `is_live`, and a removed Craigslist posting stops returning a detail payload at all. `sold` is the source saying so; `removed` is only the page no longer resolving. |
+| `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source. Facebook's item payload carries `is_sold` and `is_live`. Craigslist states neither and its item endpoint cannot be trusted to stop answering, so that source is asked through `CraigslistSource.liveness` — a HEAD on the posting's own page, where `410 Gone` is the site's own word for "deleted by its author". `sold` is the source saying so; `removed` is only the page no longer resolving. |
 | `listings.grabbed_at` / `paid_cents` | **you** went and got it | `mark_grabbed`, from the **Grabbed it** button on `/saved`. Also stamps `sold_at` with reason `grabbed`, which is what makes every existing `sold_at IS NULL` guard exclude it: no re-check request and no price alert is ever spent on a thing in your garage. `paid_cents` is nullable and 0 is a different answer -- 0 is free, NULL is "I did not note it". These two columns are the **only** ground truth in the database; everything else about value is the model's claim. `upsert_listing` deliberately does not know them, so no refresh can overwrite a purchase. |
 | `scores.price_unclear` | the $0 is not real | Neither site has a "make me an offer" price, so a seller who wants one puts $0 and says so in the description ("Send me offers please over 50 wrenches"). The model sets this; the card then stops printing FREE, and `route` keeps it out of the free bin -- a price nobody knows cannot be weighed against the trip. It stays `scored` and shows on `/skipped`, marked. The flag decides the bin rather than the score, so the model can still say plainly whether the thing would be worth having. |
 
 The re-check costs requests and no model quota, so it rides along with `once`:
-one detail fetch per bin listing, capped per run, and only for statuses you
-might act on. A `saved` listing is *marked*, never un-saved.
+one request per bin listing, capped per run, and only for statuses you might
+act on. A `saved` listing is *marked*, never un-saved.
+
+**Availability is asked first, and separately from the refresh.** A source with
+a `liveness` method is asked that before anything else, and a `removed` or
+`unknown` answer ends it there — a deleted posting has nothing worth
+refreshing, and a site that is gating us will not answer the second request
+either. Only a `listed` answer buys the detail fetch, which is for the price.
+That order is what fixed the bug below; it also means a sale now costs one
+request instead of two.
 
 It runs at **two speeds**, because the two halves of a bin are not worth the
 same. `saved` is the things you might be about to drive to and
@@ -348,6 +356,14 @@ It fails open, and three things make that true rather than aspirational:
   `is_live` outright when it answers, so nothing is lost by requiring that.
   `parse_detail_html` also raises on a page carrying no product structure at
   all, the same discriminator the search path uses.
+* **A Craigslist detail payload is not evidence of life.** `sapi` serves a
+  cache that does not converge and keeps serving a posting after its author
+  deletes it — a saved receiver came back HTTP 200 in full for over a day past
+  deletion, while the public page answered 410 the whole time. Since
+  `mark_gone` deliberately never retires a `saved` row, that left **no** sale
+  signal at all for a saved Craigslist listing. `liveness` reads the page's
+  status code, which is the only answer that source gives honestly; anything
+  that is not 200/404/410 is `unknown` and retires nothing.
 * **A blocked source stops being asked; the others carry on.** Recheck runs
   last and shares the pass's single request budget, so Facebook is routinely
   spent by the sweep before it. Breaking outright skipped every Craigslist
