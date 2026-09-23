@@ -73,6 +73,20 @@ else that went wrong is a `warning`.** Note there are two standdown phrases and
 fixing one and not the other is the easy mistake — a test greps `run_hunt` for
 both.
 
+**Then the request budget did the same thing.** One budget serves the whole
+pass, so the hunt that runs last is the one starved when it runs out — always
+`want:stacked-ottoman`, which sorts last and is the only hunt ever to record
+`BudgetExhausted`. Recorded as an error, it re-ran six minutes later instead of
+sixty, and one of those retries came back throttled. Running out of **our own**
+politeness budget is not a failure: `BudgetExhausted` is now caught separately
+at the fetch and recorded as `fetch skipped` in `warning`, while the site
+actually refusing to answer still fails loudly as before.
+
+That is only safe because the order rotates. `cli._rotated` advances a
+`pass_rotation` settings row each pass, so a hunt skipped for want of budget
+leads the next one; without it, a warning would mean the last hunt simply never
+fetched. `--dry-run` reads the counter without advancing it.
+
 Units live in `~/.config/systemd/user/`: `curbside.timer` → `curbside.service`,
 plus `curbside-web.service` for the dashboard (bound to localhost).
 

@@ -133,6 +133,38 @@ def _hunts(cfg: config_mod.Config, name: str | None, store=None):
     return hunts
 
 
+def _rotated(hunts, store, advance: bool = True):
+    """The same order, started at a different place each pass.
+
+    One budget serves the whole pass, so whoever goes LAST is whoever gets
+    nothing when it runs out -- and `cfg.hunts` is a fixed order (sweeps, then
+    wants by name), which made that the same hunt every single time.
+    `want:stacked-ottoman` sorts last and was the only hunt in the database
+    ever to record `BudgetExhausted`, three times, while the three ahead of it
+    had never once been short.
+
+    Rotating costs one settings write per pass and makes the shortage take
+    turns. It matters more now that a starved fetch is a warning rather than
+    an error: without it, last would mean never.
+
+    The counter is advanced here rather than derived from the clock so that a
+    pass which does nothing (outside the waking hours) does not silently skip
+    a turn.
+    """
+    hunts = list(hunts)
+    if len(hunts) < 2:
+        return hunts
+    try:
+        n = int(store.get_setting("pass_rotation") or 0)
+    except (TypeError, ValueError):
+        n = 0
+    # `--dry-run` promises to write nothing, and one settings row is still a
+    # write. It reads the current turn and leaves it where it was.
+    if advance:
+        store.set_setting("pass_rotation", str((n + 1) % len(hunts)))
+    return hunts[n % len(hunts):] + hunts[:n % len(hunts)]
+
+
 def cmd_once(args) -> int:
     cfg, store = _open(args)
 
@@ -157,7 +189,8 @@ def cmd_once(args) -> int:
 
     _reset_budgets(sources)
 
-    for hunt in _hunts(cfg, args.hunt, store):
+    for hunt in _rotated(_hunts(cfg, args.hunt, store), store,
+                         advance=not args.dry_run):
         for name, source in sources:
             if args.due and not _is_due(store, hunt, name):
                 continue
@@ -370,7 +403,8 @@ def cmd_run(args) -> int:
             # number of hunts, and unconditionally every ten seconds it stops
             # being a budget at all.
             budget_is_fresh = False
-            for hunt in _hunts(cfg, args.hunt, store):
+            # Same shared budget, same reason to take turns.
+            for hunt in _rotated(_hunts(cfg, args.hunt, store), store):
                 if now < next_due.get(hunt.id, 0):
                     continue
                 if not budget_is_fresh:

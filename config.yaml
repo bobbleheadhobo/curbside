@@ -91,14 +91,19 @@ facebook:
 craigslist:
   area_id: 50                # 50 = albuquerque (its own coords match ours exactly)
   min_interval_seconds: 4    # friendlier than Facebook, but still polite
-  max_requests_per_run: 40
+  # Raised from 40 when the re-check learned to ask the posting's own page
+  # whether it still exists: a listing that IS still there now costs a HEAD
+  # plus the item fetch, so the re-check's share of a pass doubled and it --
+  # running last -- was the part that ran out. A pass at the top of the hour
+  # is ~16 searches, up to 20 enrichments and up to 20 re-checks.
+  max_requests_per_run: 60
 
 recheck:
   # `gone` only ever meant "stopped appearing in results" -- 45 minutes off page
   # one on the free sweep. This asks the source outright whether the things in
   # your bins are still for sale. One detail fetch per listing per interval,
   # no model call, so it costs requests and no quota.
-  # Two speeds. Saved and contacted are the things you might be about to drive
+  # Two speeds. Saved things are the ones you might be about to drive
   # to, and there are only ever a handful, so they are asked about on every
   # pass. `wanted` and `free_find` are candidates you have not decided on and
   # the half that grows to dozens -- at 15 minutes those would be a few hundred
@@ -106,8 +111,12 @@ recheck:
   # something `mark_gone` already half-answers for free.
   enabled: true
   every_hours: 6           # per listing, not per run
-  saved_every_hours: 0.25  # saved + contacted: every pass
-  max_per_run: 10          # keeps it inside the source request budget
+  saved_every_hours: 0.25  # your own list: every pass
+  # Listings, not requests: since `liveness`, a Craigslist listing still on
+  # sale costs TWO (the page HEAD that answers, then the item fetch that
+  # refreshes the price). A deleted one costs one, because there is nothing
+  # left to refresh.
+  max_per_run: 10
 
 discord:
   # Webhooks live in .env (gitignored), not here, so this file stays shareable:

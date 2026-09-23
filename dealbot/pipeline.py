@@ -27,7 +27,8 @@ from .models import (Candidate, Hunt, Listing, Location, RunResult, Score,
 from .notify.base import Notifier
 from .scoring.base import Scorer, TriageResult
 from .scoring.claude_code import ScoringUnavailable
-from .sources.base import Source, SourceBlocked, validate
+from .sources.base import (BudgetExhausted, Source, SourceBlocked,
+                           validate)
 
 log = logging.getLogger("dealbot.pipeline")
 
@@ -243,6 +244,28 @@ def run_hunt(
     # without anyone noticing.
     try:
         raws = list(source.search(hunt))
+    except BudgetExhausted as exc:
+        # OUR standdown, not the site's, and the reason `BudgetExhausted` is a
+        # class of its own rather than a plain `SourceBlocked`. Nothing failed:
+        # the pass simply spent this source's requests on the hunts ahead of
+        # this one.
+        #
+        # It must NOT go in `error`. `last_success_at` counts runs with
+        # `error IS NULL`, so an error makes the hunt due again on the very
+        # next tick -- and the thing it would then do is hammer a source we
+        # had just decided to stop asking. Measured: `want:stacked-ottoman` is
+        # last in the pass and so is always the one starved of Facebook's 25,
+        # and both times it was recorded as an error it re-ran six minutes
+        # later instead of sixty, the second of which came back throttled.
+        # Exactly the cadence collapse a quota standdown caused, arriving
+        # through the request budget instead.
+        #
+        # Being last is what `cli` now rotates away, so a hunt skipped on one
+        # pass goes first on the next rather than never being fetched at all.
+        log.warning("fetch skipped for %s: %s", hunt.id, exc)
+        result.warning = f"fetch skipped: {exc}"
+        store.finish_run(run_id, n_fetched=0, warning=result.warning)
+        return result
     except Exception as exc:                              # noqa: BLE001
         log.exception("fetch failed for %s", hunt.id)
         result.error = f"{type(exc).__name__}: {exc}"

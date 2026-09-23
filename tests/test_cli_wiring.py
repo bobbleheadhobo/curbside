@@ -240,3 +240,43 @@ def test_a_plan_hold_stops_the_judging_and_nothing_else(tmp_path, monkeypatch):
     assert spent == 0                       # the hold cost nothing to observe
     assert ran["recheck"] == 1              # and the sold/price pass still ran
     assert ran["price_drops"] == 1          # as did the price-drop alert
+
+
+# --- taking turns at the front of the pass -----------------------------------
+
+def test_the_pass_order_rotates_so_the_same_hunt_is_not_always_last(store):
+    """One budget serves the whole pass, so LAST is whoever gets nothing when
+    it runs out -- and `cfg.hunts` is a fixed order, which made that the same
+    hunt every time. `want:stacked-ottoman` sorts last and is the only hunt in
+    the live database ever to have recorded `BudgetExhausted`.
+
+    This matters more now that a starved fetch is a warning rather than an
+    error: without rotation, last would mean never.
+    """
+    from dealbot.cli import _rotated
+    hunts = ["sweep", "bookshelf", "pots", "ottoman"]
+
+    seen = [_rotated(hunts, store) for _ in range(5)]
+    assert seen[0] == hunts
+    assert seen[1] == ["bookshelf", "pots", "ottoman", "sweep"]
+    assert seen[3] == ["ottoman", "sweep", "bookshelf", "pots"]
+    assert seen[4] == hunts                       # wraps
+    # Every hunt leads exactly once in a full cycle, and none is ever dropped.
+    assert {tuple(sorted(s)) for s in seen} == {tuple(sorted(hunts))}
+    assert sorted(s[0] for s in seen[:4]) == sorted(hunts)
+
+
+def test_a_dry_run_does_not_advance_the_rotation(store):
+    """`--dry-run` promises to write nothing, and one settings row is a write."""
+    from dealbot.cli import _rotated
+    hunts = ["a", "b", "c"]
+    assert _rotated(hunts, store, advance=False) == hunts
+    assert _rotated(hunts, store, advance=False) == hunts
+    assert store.get_setting("pass_rotation") is None
+
+
+def test_rotation_survives_a_single_hunt_and_a_junk_counter(store):
+    from dealbot.cli import _rotated
+    assert _rotated(["only"], store) == ["only"]
+    store.set_setting("pass_rotation", "not a number")
+    assert _rotated(["a", "b"], store) == ["a", "b"]

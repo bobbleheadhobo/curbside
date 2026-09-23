@@ -1718,3 +1718,59 @@ def test_a_version_stamp_survives_an_index_only_refresh(rig):
     back = store.row_to_listing(store.conn.execute(
         "SELECT * FROM listings WHERE id=?", (thin.id,)).fetchone())
     assert back.source_updated_at == stamp
+
+
+def test_running_out_of_our_own_budget_is_a_warning_not_an_error(rig):
+    """REGRESSION, and the second time this shape has cost real requests.
+
+    `last_success_at` counts runs with `error IS NULL`, so anything in `error`
+    makes the hunt due again on the very NEXT tick. `want:stacked-ottoman`
+    sorts last, is therefore the hunt starved of Facebook's shared 25, and
+    both times that was recorded as an error it re-ran six minutes later
+    instead of sixty -- the second of which came back throttled. Exactly the
+    cadence collapse a quota standdown caused, arriving through the request
+    budget instead.
+
+    Nothing failed. `BudgetExhausted` is a class of its own precisely so this
+    can be told from the site refusing to answer.
+    """
+    from dealbot.sources.base import BudgetExhausted
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Spent:
+        name = "fixture"
+        def search(self, hunt):
+            raise BudgetExhausted("request budget exhausted (25 this run)")
+        def parse(self, raw): return None
+
+    r = run_hunt(store, hunt, Spent(), scorer, notifiers, cfg.location)
+    assert r.error is None
+    assert "fetch skipped" in r.warning
+    row = store.conn.execute(
+        "SELECT error, warning, n_fetched FROM runs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert row["error"] is None and "budget" in row["warning"]
+    assert row["n_fetched"] == 0
+    # And the cadence holds: the hunt counts as having run.
+    assert store.last_success_at(hunt.id, "fixture") is not None
+
+
+def test_a_site_that_will_not_answer_is_still_an_error(rig):
+    """The other half. A gated source must fail LOUDLY -- silently returning
+    zero rows is how these bots die without anyone noticing."""
+    from dealbot.sources.base import SourceBlocked
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Gated:
+        name = "fixture"
+        def search(self, hunt):
+            raise SourceBlocked("no feed data in 566641 bytes")
+        def parse(self, raw): return None
+
+    r = run_hunt(store, hunt, Gated(), scorer, notifiers, cfg.location)
+    assert r.error and "SourceBlocked" in r.error
+    assert store.last_success_at(hunt.id, "fixture") is None
