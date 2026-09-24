@@ -2970,3 +2970,26 @@ def test_rejections_are_grouped_named_and_each_shows_its_own(tmp_path):
     old = client.get(f"/hunt/{hunt.id}?status=gone")
     assert old.status_code == 200
     assert set(_cards(old.text)) == {"A picked one", "A judged one"}
+
+
+def test_every_page_colour_is_a_colour_not_a_grey():
+    """The active tab takes its page's `--tint`, and the inactive tabs are
+    grey. Skipped's tint was slate (#4a5568, saturation 0.17), so on /skipped
+    its tab read as one more inactive icon. A tint has to be a hue, and it has
+    to be readable as the active tab's label on the tab bar."""
+    import colorsys
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    tints = re.findall(r"body\[data-page=(\w+)\]\s*\{--tint:(#[0-9a-fA-F]{6})", css)
+    assert {p for p, _ in tints} >= {"free", "saved", "skipped", "runs",
+                                     "settings", "wants"}
+    for page, colour in tints:
+        r, g, b = (int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        _, _, sat = colorsys.rgb_to_hls(r, g, b)
+        assert sat >= 0.35, f"{page} tint {colour} is a grey (s={sat:.2f})"
+    light = _tokens(css, ":root{")
+    for page, colour in tints[:7]:
+        assert _contrast(colour, light["card"]) >= 4.5 or \
+            _contrast(colour, "#17181b") >= 4.5, page
