@@ -2823,3 +2823,42 @@ def test_the_grey_text_is_readable_on_every_surface_in_both_themes():
                        "bad-soft", "accent-soft"):
                 ratio = _contrast(t[fg], t[bg])
                 assert ratio >= 4.5, f"{start} --{fg} on --{bg}: {ratio:.2f}"
+
+
+def test_runs_all_pages_by_fifty_and_filters_on_the_page(tmp_path):
+    """200 runs as stacked cards were 42,719px on a phone. Fifty a page, a
+    compact line each on a phone, and the hunt filter on the page itself."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    hunt = cfg.hunts[0]
+    for _ in range(60):
+        s.finish_run(s.start_run(hunt, "facebook"), n_fetched=3)
+    page = client.get("/runs/all").text
+    assert page.count('<li class="">') == 50
+    assert "Older runs" in page and "before=" in page
+    older = client.get("/runs/all?before=11").text
+    assert older.count('<li class="">') == 10 and "Older runs" not in older
+    for h in cfg.hunts:
+        assert f'href="/runs/all?hunt={h.id}"' in page
+
+
+def test_runs_shows_five_judged_and_folds_the_rest(tmp_path):
+    """Twelve rows were the largest block on /runs, bigger than the passes."""
+    client, cfg = _client(tmp_path)
+    for n in range(8):
+        _judged(cfg, f"facebook:{n}", f"Thing {n}", "want:bookshelf",
+                "facebook", 5.0)
+    panel = _judging_panel(client)
+    top, _, folded = panel.partition("<details")
+    assert top.count('class="judgedrow"') == 5
+    assert "Show all 8" in folded and folded.count('class="judgedrow"') == 3
+
+
+def test_the_card_says_the_last_pass_as_an_age_like_the_pill(tmp_path):
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.finish_run(s.start_run(cfg.hunts[0], "facebook"))
+    page = client.get("/runs").text
+    assert "Last pass just now" in page

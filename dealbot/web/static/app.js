@@ -286,7 +286,10 @@
     }).then(function (body) {
       if (body && body.ok === false) { toast(body.error, null, null, true); return; }
       return refresh(sel).then(function () {
-        if (note) toast(note);
+        // A server `note` beats the form's own toast: "Saved." over a value
+        // the server clamped would be the same lie as "Saved." over nothing.
+        if (body && body.note) toast(body.note);
+        else if (note) toast(note);
         if (refocus) {
           var el = document.querySelector(sel + " [name=" + refocus + "]");
           if (el) { el.value = ""; el.focus(); }

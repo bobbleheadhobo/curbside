@@ -292,14 +292,27 @@ def test_a_lever_cannot_be_set_somewhere_silly(app):
     a thousand miles should be clamped, not obeyed, and a value that will not
     parse must not be able to stop the timer."""
     client, cfg, store = app
-    client.post("/settings/tuning", data={
+    fetch = {"X-Requested-With": "fetch"}
+    r = client.post("/settings/tuning", headers=fetch, data={
         "min_deal_score": "99", "free_find_min_score": "-4",
-        "max_results": "9999", "radius_miles": "banana"})
+        "max_results": "9999"})
     live = with_store(cfg, store)
     assert live.defaults.min_deal_score == 10.0
     assert live.defaults.free_find_min_score == 0.0
     assert live.defaults.max_results == 50
+    # Clamped, and SAID: it used to toast "Saved." over a number it changed.
+    note = r.json()["note"]
+    assert "The wants score saved as 10, the most it allows." in note
+    assert "Listings per run saved as 50, the most it allows." in note
+
+    # Unparseable is refused and named, never toasted as saved -- and nothing
+    # else in the same post goes in half-way.
+    r = client.post("/settings/tuning", headers=fetch, data={
+        "radius_miles": "banana", "max_image_checks": "3"})
+    assert r.json() == {"ok": False, "error": "The radius has to be a number."}
+    live = with_store(cfg, store)
     assert live.location.radius_miles == cfg.location.radius_miles   # unchanged
+    assert live.scorer.max_image_checks == cfg.scorer.max_image_checks
 
 
 def test_each_limit_says_what_it_does_and_what_it_costs(app):

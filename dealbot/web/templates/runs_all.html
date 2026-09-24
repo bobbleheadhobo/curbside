@@ -9,11 +9,44 @@
   <p class="pagelinks">
     <a class="btn" href="/runs"><svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
       Back to runs</a>
-    {% if hunt_filter %}<a class="btn" href="/runs/all">Every hunt</a>{% endif %}
   </p>
 </div>
 
-<div class="panel" style="margin-bottom:18px">
+{# The filter is on the page. It used to be reachable only by tapping a hunt
+   inside a pass on /runs, with "Every hunt" the only way back out. #}
+<div class="filterchips">
+  <a class="chip" href="/runs/all"{% if not hunt_filter %} aria-current="true"{% endif %}>every hunt</a>
+  {% for h in hunts %}
+  <a class="chip" href="/runs/all?hunt={{ h.id }}"{% if hunt_filter == h.id %} aria-current="true"{% endif %}>{{ h.name }}</a>
+  {% endfor %}
+</div>
+
+{# On a phone, one compact entry per run. The table below stacked each run
+   into a 13-field card, mostly zeros: 200 of them came to 42,719px. The table
+   stays for a desk, where it reads across. #}
+<ol class="panel runlog-list">
+  {% for r in runs %}
+  <li class="{{ 'bad' if r.error }}">
+    <div class="runlog-head">
+      <b class="num">{{ when(r.started_at) }}</b>
+      <span>{{ r.took or 'unfinished' }}</span>
+    </div>
+    <div class="runlog-what">
+      <a href="/runs/all?hunt={{ r.hunt_id }}">{{ r.hunt_id.split(':', 1)[-1] }}</a>
+      &middot; {{ r.source }}</div>
+    <div class="runlog-nums num">{{ r.n_fetched }} found &middot; {{ r.n_new }} new
+      &middot; {{ r.n_scored }} judged
+      {%- if r.n_wanted or r.n_free_find %} &middot; {{ r.n_wanted + r.n_free_find }} picked{% endif %}
+      {%- if r.cost_usd %} &middot; ${{ '%.2f'|format(r.cost_usd) }}{% endif %}</div>
+    {% for n in r.notes %}<span class="runpass-note{{ ' bad' if r.error }}"
+      title="{{ r.error or r.warning }}">{{ n }}</span>{% endfor %}
+  </li>
+  {% else %}
+  <li class="runlog-empty">No runs{{ ' for this hunt' if hunt_filter }} yet.</li>
+  {% endfor %}
+</ol>
+
+<div class="panel runlog-table" style="margin-bottom:18px">
   <div class="wrap"><table class="responsive">
     <thead><tr>
       <th>Started</th><th>Hunt</th><th>Source</th>

@@ -662,8 +662,13 @@ meters, then every hunt with its backlog, then what it is judging, then the
 last ten **passes**. `group_passes` finds a pass without a column: runs inside
 one start the instant the last finished, passes are minutes apart. Each pass is
 a `<details>` whose summary carries its warnings in plain words
-(`plain_warning`); the raw text stays in `title`. The per-run table is
-`/runs/all`, filterable by hunt.
+(`plain_warning`); the raw text stays in `title`. "What it is judging" shows
+five and folds the rest, and the card's footer says the last pass as an age,
+like the pill, with the date in `title`.
+
+**`/runs/all` is one line per run on a phone**, fifty to a page, with the
+hunts as filter chips at the top. The desk keeps the table, which reads
+across; as stacked 13-field cards it came to 42,719px for 200 runs.
 
 **The pause switches live on `/settings`**, in the Running panel beside the
 waking hours. Both of them: *Pause free-stuff searches* (`kind=sweep`) and
@@ -822,7 +827,11 @@ redundant. It is a read of `query_hits`; the poller writes it.
 re-sent all four, so changing the radius also resubmitted three you had not
 touched. The two score bars share a form because they are one decision. Each
 form is its own `data-inplace` target, so saving one does not wipe an edit
-waiting in another. They do not borrow `.addterm`: its input is 15px, and a
+waiting in another. **A value it cannot read is refused and named** ("The
+radius has to be a number."), and one past its range is saved at the edge and
+SAID ("The radius saved as 200 miles, the most it allows."). Both used to toast
+"Saved." -- over nothing, and over a number it had changed. A server `note`
+replaces the form's own toast in `app.js`. They do not borrow `.addterm`: its input is 15px, and a
 form field under 16px makes iOS zoom the page on focus.
 
 **No text under 11px, and grey text clears 4.5:1 on every surface.** The tab

@@ -1323,3 +1323,21 @@ td .kind.hi{color:var(--warn)}
 .tunerow input{flex:1;min-width:0}
 .tunerow button,.tunesave button{flex:none;width:auto;min-height:var(--tap);padding:0 16px}
 .tunesave{display:flex;justify-content:flex-end}
+
+/* --- runs/all: one line per run on a phone, the table at a desk ------------ */
+.runlog-list{list-style:none;margin:0 0 18px;padding:0}
+.runlog-list li{padding:11px 15px;border-bottom:1px solid var(--line-soft)}
+.runlog-list li:last-child{border-bottom:0}
+.runlog-list li.bad{background:var(--bad-soft)}
+.runlog-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.runlog-head b{font-size:14px;font-weight:600}
+.runlog-head span{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.runlog-what{font-size:13px;color:var(--dim);margin-top:2px}
+.runlog-what a{color:var(--fg);font-weight:600}
+.runlog-nums{font-size:12.5px;color:var(--dim);margin-top:1px}
+.runlog-empty{color:var(--dim);font-size:13.5px}
+.runlog-table{display:none}
+@media (min-width:720px){
+  .runlog-list{display:none}
+  .runlog-table{display:block}
+}

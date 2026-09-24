@@ -57,7 +57,9 @@
   </div>
   {% endfor %}
   {% if last_run %}
-  <p class="now-foot">Last pass {{ when(last_run.started_at) }}
+  {# An age, like the pill, which says "5m ago" a few pixels above. The same
+     fact in two formats makes you compare them. The date is in the title. #}
+  <p class="now-foot" title="{{ when(last_run.started_at) }}">Last pass {{ last_ago }}
     {%- if activity.in_flight %} &middot; <b>looking now</b>{% endif %}</p>
   {% endif %}
 </div>
@@ -134,7 +136,7 @@
       {{ activity.now.hunt_id.split(':')[-1] }} at {{ activity.now.source }}.</span>
   </div>
   {% endif %}
-  {% for j in judged %}
+  {% macro judged_row(j) %}
   <div class="judgedrow">
     <a class="grow" href="/listing/{{j.listing_id}}?back=/runs">
       <b>{{ j.title }}</b>
@@ -149,11 +151,21 @@
       <b class="num">{{ '%.1f'|format(j.deal_score) }}</b><span class="num">/10</span></p>
     {% endif %}
   </div>
-  {% else %}
+  {% endmacro %}
+  {# Five, and the rest folded. Twelve rows were about 1,150px, the largest
+     block on the page and bigger than the passes it sits above. #}
+  {% for j in judged[:5] %}{{ judged_row(j) }}{% else %}
   <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
     Nothing judged yet. Listings are collected first and judged when the
     window allows.</div>
   {% endfor %}
+  {% if judged|length > 5 %}
+  <details class="why">
+    <summary>Show all {{ judged|length }}
+      <svg class="i chev" aria-hidden="true"><use href="#i-chev"/></svg></summary>
+    {% for j in judged[5:] %}{{ judged_row(j) }}{% endfor %}
+  </details>
+  {% endif %}
   {% if judged %}
   <p class="settings-note"><b>{{ activity.scored }}</b> judged in the last
     hour. The first pass reads every listing in a batch; an appraisal is one

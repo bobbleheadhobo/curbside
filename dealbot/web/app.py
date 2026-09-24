@@ -609,6 +609,10 @@ def judging_view(state: JudgingState, now: float | None = None) -> dict:
 # How many passes /runs shows; the rest are one tap away on /runs/all.
 PASSES_SHOWN = 10
 
+# Runs per page on /runs/all. It was 200, which on a phone was 42,719px of
+# stacked cards; the older ones are one tap away.
+RUNS_PAGE = 50
+
 # Runs inside one pass start the instant the one before finishes; passes are
 # minutes apart. Anything wider than this is a new pass.
 PASS_GAP_SECONDS = 90
@@ -1492,13 +1496,36 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                      "max_results": max_results,
                      "radius_miles": radius_miles,
                      "max_image_checks": max_image_checks}
-        for key in store.TUNING:
-            raw = submitted.get(key, "")
-            if str(raw).strip():
-                try:
-                    store.set_tuning(key, raw)
-                except (TypeError, ValueError):
-                    continue
+        # Every value is read BEFORE any is written. This used to skip a value
+        # it could not parse and answer success anyway, so typing "abc" gave a
+        # "Saved." toast over a setting that had not changed -- and a number
+        # past the ceiling was clamped without a word, 5000 miles quietly
+        # becoming 200.
+        parsed, errors, notes = {}, [], []
+        for key, (cast, lo, hi, _) in store.TUNING.items():
+            raw = str(submitted.get(key, "")).strip().replace(",", "")
+            if not raw:
+                continue
+            name, unit = TUNING_NAMES[key]
+            try:
+                value = cast(raw)
+            except (TypeError, ValueError):
+                errors.append(f"{name} has to be a "
+                              f"{'whole number' if cast is int else 'number'}.")
+                continue
+            parsed[key] = value
+            if value < lo or value > hi:
+                edge, word = (lo, "least") if value < lo else (hi, "most")
+                notes.append(f"{name} saved as {edge:g}{unit}, the {word} it "
+                             f"allows.")
+        if errors:
+            if request.headers.get("x-requested-with") == "fetch":
+                return {"ok": False, "error": " ".join(errors)}
+            return _answer(request, back)
+        for key, value in parsed.items():
+            store.set_tuning(key, value)
+        if notes and request.headers.get("x-requested-with") == "fetch":
+            return {"ok": True, "note": " ".join(notes)}
         return _answer(request, back)
 
     @app.post("/settings/intervals")
@@ -1828,6 +1855,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             store.set_setting(OVERRIDE_UNTIL, "0")
         return _answer(request, back)
 
+    # What each tuned number is called in a sentence, and its unit.
+    TUNING_NAMES = {"min_deal_score": ("The wants score", ""),
+                    "free_find_min_score": ("The free find score", ""),
+                    "max_results": ("Listings per run", ""),
+                    "radius_miles": ("The radius", " miles"),
+                    "max_image_checks": ("Photos per run", "")}
+
     PERIODS = (("today", "Today"), ("week", "7 days"), ("month", "30 days"),
                ("all", "All time"))
 
@@ -1971,10 +2005,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         hunt_rows = [{"hunt": h, "waiting": backlog.get(h.id, 0),
                       "paused": h.id in off} for h in hunts]
         passes = group_passes(rows)
+        last = _last_run()
         return TEMPLATES.TemplateResponse(request, "runs.html", ctx(
             request, cfg=cfg, sched=sched, judging=judging,
             now_lines=now_lines(judging=judging, paused=paused, hunts=hunts,
-                                sched=sched, last=_last_run()),
+                                sched=sched, last=last),
+            last_ago=ago_words(last["mins"]) if last else "",
             passes=passes[:PASSES_SHOWN], hunt_rows=hunt_rows,
             waiting=sum(backlog.get(h.id, 0) for h in hunts),
             ilabels=dict(INTERVAL_CHOICES),
@@ -1999,13 +2035,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         sql = ("SELECT * FROM runs"
                + (" WHERE " + " AND ".join(where) if where else "")
                + " ORDER BY id DESC LIMIT ?")
-        rows = [dict(r) for r in store.conn.execute(sql, (*args, PAGE_LIMIT))]
+        rows = [dict(r) for r in store.conn.execute(sql, (*args, RUNS_PAGE))]
         for r in rows:
             r["took"] = took(r["started_at"], r["finished_at"])
             r["notes"] = ([plain_error(r["error"])] if r["error"]
                           else plain_warning(r["warning"]))
         return TEMPLATES.TemplateResponse(request, "runs_all.html", ctx(
             request, runs=rows, hunt_filter=hunt,
-            older=rows[-1]["id"] if len(rows) == PAGE_LIMIT else None))
+            older=rows[-1]["id"] if len(rows) == RUNS_PAGE else None))
 
     return app
