@@ -533,12 +533,13 @@ All of this was collected and none of it was visible:
 | `/skipped` | judged, then passed over. `/near` 308-redirects here |
 | `/hunt/<id>` | everything one hunt matched, including rejections and why |
 | `/listing/<id>` | detail, the judgement and every earlier pass, price sparkline |
-| `/runs` | every fetch attempt: counts, cost, errors, and what the plan has left |
-| `/settings` | waking hours, cadences, the tuned limits, and the blocked words |
+| `/runs` | what is true now and the one action each fact needs, the plan, every hunt's backlog, the last ten passes |
+| `/runs/all` | every run, one row each, filterable by hunt |
+| `/settings` | running (hours and both pause switches), every cadence, the tuned limits, the blocked words |
 | `/wants/<name>` | one want: what it looks for, its budget, its cadence |
 
-The runs page carries two **pause switches**: one for the sweeps, one for
-everything. Unlike every other pause here, they stop the *fetching* as well as
+The settings page carries two **pause switches**: one for the sweeps, one for
+everything, and `/runs` offers Resume while either is on. Unlike every other pause here, they stop the *fetching* as well as
 the judging, so nothing at all is collected for a paused hunt. That is
 deliberate — the sweep switch exists to stop spending on free stuff rather than
 to quieten it, and the second one exists for when you want the whole thing to

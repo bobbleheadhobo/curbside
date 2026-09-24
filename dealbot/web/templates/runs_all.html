@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}All runs &middot; Curbside{% endblock %}
+{% block mainclass %}wide{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>All runs</h1>
+  <p>{% if hunt_filter %}Every run of {{ hunt_filter.split(':', 1)[-1] }}, newest first.
+     {%- else %}Every run, newest first.{% endif %}</p>
+  <p class="pagelinks">
+    <a class="btn" href="/runs"><svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+      Back to runs</a>
+    {% if hunt_filter %}<a class="btn" href="/runs/all">Every hunt</a>{% endif %}
+  </p>
+</div>
+
+<div class="panel" style="margin-bottom:18px">
+  <div class="wrap"><table class="responsive">
+    <thead><tr>
+      <th>Started</th><th>Hunt</th><th>Source</th>
+      <th class="n">Fetched</th><th class="n">New</th><th class="n">Kept</th>
+      <th class="n">Scored</th><th class="n">Wanted</th><th class="n">Free</th>
+      <th class="n">Photos</th><th class="n">Cost</th><th class="n">Took</th>
+      <th>Note</th>
+    </tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr class="{{'err' if r.error}}">
+      <td class="lead num" data-label="Started">{{ when(r.started_at) }}</td>
+      <td data-label="Hunt"><a href="/runs/all?hunt={{ r.hunt_id }}">{{ r.hunt_id.split(':', 1)[-1] }}</a></td>
+      <td data-label="Source">{{r.source}}</td>
+      <td class="n num {{'zero' if not r.n_fetched}}" data-label="Fetched">{{r.n_fetched}}</td>
+      <td class="n num {{'zero' if not r.n_new}}" data-label="New">{{r.n_new}}</td>
+      <td class="n num {{'zero' if not r.n_candidates}}" data-label="Kept">{{r.n_candidates}}</td>
+      <td class="n num {{'zero' if not r.n_scored}}" data-label="Scored">{{r.n_scored}}</td>
+      <td class="n num {{'zero' if not r.n_wanted}}" data-label="Wanted">{{r.n_wanted}}</td>
+      <td class="n num {{'zero' if not r.n_free_find}}" data-label="Free">{{r.n_free_find}}</td>
+      <td class="n num {{'zero' if not r.n_image_checks}}" data-label="Photos">{{r.n_image_checks}}</td>
+      <td class="n num" data-label="Cost">${{ '%.4f'|format(r.cost_usd or 0) }}</td>
+      {# From `started_at` and `finished_at`, which were both already recorded
+         and neither of which was ever shown. A row with no finish stamp is
+         either in flight or a process that was killed: it has no duration
+         either way, so it says so rather than printing a zero. #}
+      <td class="n num {{ 'zero' if not r.took }}" data-label="Took"
+        >{{ r.took or 'unfinished' }}</td>
+      {% if r.error %}<td class="errtext span2" data-label="Error" title="{{ r.error }}">{{ r.notes|join(' ') }}</td>
+      {% elif r.warning %}<td class="warntext span2" data-label="Warning" title="{{ r.warning }}">{{ r.notes|join(' ') }}</td>
+      {% else %}<td class="span2 zero empty-note" data-label="Note">&mdash;</td>{% endif %}
+    </tr>
+    {% else %}
+    <tr><td colspan="13" class="nostack">
+      <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
+        <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+        <b>No runs yet</b>
+        <p>Nothing has fetched. Run <code>dealbot once --no-score</code> to
+          test the pipeline without spending anything.</p>
+      </div></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+{% if older %}
+<p class="pagelinks" style="margin-top:14px">
+  <a class="btn" href="/runs/all?{{ 'hunt=' ~ hunt_filter ~ '&' if hunt_filter }}before={{ older }}">Older runs</a>
+</p>
+{% endif %}
+{% endblock %}

@@ -24,13 +24,17 @@
   </p>
 </div>
 
-<div class="panel" id="hours" style="margin-bottom:18px">
-  <h2>Hours</h2>
+{# When it runs, and whether it runs at all. The two pause switches were the
+   first thing on /runs, which is the page the pill opens to explain itself;
+   they are decisions, set rarely, so they live here with the hours. /runs
+   still offers Resume when something is paused. #}
+<div class="panel" id="running" style="margin-bottom:18px">
+  <h2>Running</h2>
   <div class="state-line">
     <svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>
     <span><b>{{ schedule.state_label() }}</b>{% if schedule.tz_name %} &middot; {{ schedule.tz_name }}{% endif %}</span>
   </div>
-  <form method="post" action="/settings/hours" data-inplace="#hours"
+  <form method="post" action="/settings/hours" data-inplace="#running"
         data-toast="Hours saved.">
     <div class="field inline-check">
       <input type="checkbox" id="sched-on" name="enabled" value="1"
@@ -52,31 +56,67 @@
     </div>
     <div class="formactions"><button class="primary">Save hours</button></div>
   </form>
+  {% if sweeps %}
+  <div class="control-row">
+    <span class="who">Free-stuff searches
+      <small>{% if sweeps_paused %}Off. Your wants are still searched.
+        {%- else %}On.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/hunts/toggle" data-inplace="#running">
+        <input type="hidden" name="kind" value="sweep">
+        <input type="hidden" name="enable" value="{{ '1' if sweeps_paused else '0' }}">
+        <input type="hidden" name="back" value="/settings">
+        <button {% if sweeps_paused %}class="primary"{% endif %}>
+          {%- if sweeps_paused %}Resume free-stuff searches
+          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause free-stuff searches{% endif -%}
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  <div class="control-row">
+    <span class="who">All searching
+      <small>{% if all_paused %}Off. Nothing is being collected.
+        {%- else %}{{ hunts|length }} hunt{{ '' if hunts|length == 1 else 's' }}, wants and free stuff.{% endif %}</small></span>
+    <div class="triage-actions">
+      <form method="post" action="/hunts/toggle" data-inplace="#running">
+        <input type="hidden" name="kind" value="all">
+        <input type="hidden" name="enable" value="{{ '1' if all_paused else '0' }}">
+        <input type="hidden" name="back" value="/settings">
+        <button {% if all_paused %}class="primary"{% endif %}>
+          {%- if all_paused %}Resume all searching
+          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause all searching{% endif -%}
+        </button>
+      </form>
+    </div>
+  </div>
 </div>
 
-{% if sweeps %}
-<div class="panel" id="sweep" style="margin-bottom:18px">
-  <h2>Free stuff</h2>
-  {% for s in sweeps %}
-  <form method="post" action="/settings/interval" data-inplace="#sweep"
+{% if cadence %}
+{# Every hunt's cadence, in one place. A want's own editor still has it too,
+   because that is where you are when you create one. #}
+<div class="panel" id="cadence" style="margin-bottom:18px">
+  <h2>How often</h2>
+  <form method="post" action="/settings/intervals" data-inplace="#cadence"
         data-toast="Saved.">
-    <input type="hidden" name="hunt_id" value="{{ s.hunt.id }}">
-    <div class="field">
-      <label class="lbl" for="iv-{{ loop.index }}">How often to sweep</label>
-      <select id="iv-{{ loop.index }}" name="minutes">
+    <input type="hidden" name="back" value="/settings">
+    {% for c in cadence %}
+    <div class="field cadence-row">
+      <label class="lbl" for="iv-{{ loop.index }}">{{ c.hunt.name }}
+        <small>{{ 'Free stuff' if c.hunt.kind == 'sweep' else 'Want' }}
+          {%- if c.paused %} &middot; paused{% endif %}</small></label>
+      <select id="iv-{{ loop.index }}" name="iv:{{ c.hunt.id }}">
         {% for mins, label in intervals %}
         <option value="{{ mins }}"
-          {% if mins == s.hunt.interval_minutes %}selected{% endif %}>{{ label }}</option>
+          {% if mins == c.hunt.interval_minutes %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p class="hint">Free things go fast.{% if s.paused %} Paused right now.{% endif %}</p>
     </div>
-    <div class="formactions"><button>Save</button></div>
+    {% endfor %}
+    <p class="hint cadence-hint">Free things go fast. Priced things sit for days.</p>
+    <div class="formactions"><button class="primary">Save</button></div>
   </form>
-
-  {% endfor %}
 </div>
-
 {% endif %}
 
 {# The four numbers worth a thumb. Each one says what it is currently costing,

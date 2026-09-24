@@ -4,22 +4,11 @@
 {% block content %}
 <div class="pagehead">
   <h1>Runs</h1>
-  {# THREE figures, not four. Four labelled ones do not fit a phone on one
-     line at a readable size, whatever the wording: shortening the labels got
-     it from 64 characters to 42 and it still wrapped on a 360px screen.
-     Spend is the one to go, because /stats now owns money and this page owns
-     health. `runs` stays as the denominator that makes `failed` mean
-     anything. #}
   <p class="stats">
-    <i><b>{{runs|length}}</b> runs</i>
-    {% set failed = runs|selectattr('error')|list|length %}
-    {% if failed %}
-      <i class="hi"><b>{{failed}}</b> failed</i>{% endif %}
-    {% set waiting = backlog.values()|sum %}
-    {% if waiting %}
-      <i class="hi"><b>{{ waiting }}</b> unjudged</i>{% endif %}
+    {% if waiting %}<i class="hi"><b>{{ waiting }}</b> waiting</i>{% endif %}
+    <i><b>{{ activity.scored }}</b> judged this hour</i>
   </p>
-  <p>Every fetch attempt, success or failure.</p>
+  <p>What it is doing right now.</p>
   {# Not a sixth tab: five is what fits across a phone, and this is a page you
      read monthly. /runs is "is it working now", /stats is "is it worth
      running", so this is where you would go looking. #}
@@ -30,71 +19,49 @@
   </p>
 </div>
 
-<div class="panel" style="margin-bottom:18px">
-  <h2>Searching</h2>
-  <div class="control-row">
-    <span class="who">Free-stuff sweeps
-      <small>{% if sweeps_paused %}Off. Want hunts still run.
-        {%- else %}Every {{ (hunts|selectattr('kind','equalto','sweep')|first).interval_minutes }} minutes.{% endif %}</small></span>
-    <div class="triage-actions">
-      <form method="post" action="/hunts/toggle" data-inplace="main">
-        <input type="hidden" name="kind" value="sweep">
-        <input type="hidden" name="enable" value="{{ '1' if sweeps_paused else '0' }}">
-        <input type="hidden" name="back" value="/runs">
-        <button {% if sweeps_paused %}class="primary"{% endif %}>
-          {%- if sweeps_paused %}Resume free-stuff searches
-          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause free-stuff searches{% endif -%}
-        </button>
-      </form>
+{# The pill links here, so this is the rest of its sentence: everything true
+   right now, most actionable first, each with the one action it calls for.
+   `now_lines` orders it the way `health` orders the pill, so the headline and
+   the pill agree. The switches that used to open this page live on
+   /settings; only the action a fact calls for is offered here. #}
+<div class="panel nowcard" id="now" style="margin-bottom:18px">
+  {% for line in now_lines %}
+  <div class="now-line tone-{{ line.tone }}{{ ' lead' if loop.first }}">
+    <div class="now-text"{% if line.raw %} title="{{ line.raw }}"{% endif %}>
+      <b>{{ line.title }}</b>
+      <p>{{ line.text }}</p>
     </div>
-  </div>
-  {# Judging, as opposed to searching. Every other pause here stops the
-     fetching too; these stop only the spending, which is why they get their
-     own row rather than a third switch above. #}
-  <div class="control-row">
-    <span class="who">Judging
-      <small>
-        {%- if quota.override %}Spending anyway for {{ quota.override_mins }} more min.
-        {%- elif quota.paused %}{{ quota.reason }}, {{ quota.mins }} min left.
-          Collecting carries on.
-        {%- elif quota.standdown %}Paused: {{ quota.standdown }}. Collecting carries on.
-        {%- else %}Running. Stands aside when the plan window gets tight.{% endif %}</small></span>
+    {% if line.action %}
     <div class="triage-actions">
+      {% if line.action.href %}
+      <a class="btn" href="{{ line.action.href }}">{{ line.action.label }}</a>
+      {% elif line.action.toggle %}
+      <form method="post" action="/hunts/toggle" data-inplace="main">
+        {% for k, val in line.action.toggle.items() %}
+        <input type="hidden" name="{{ k }}" value="{{ val }}">
+        {% endfor %}
+        <input type="hidden" name="back" value="/runs">
+        <button{% if loop.first %} class="primary"{% endif %}>{{ line.action.label }}</button>
+      </form>
+      {% else %}
       <form method="post" action="/quota/override" data-inplace="main"
-            data-toast="{{ 'Back to normal limits.' if quota.override else 'Judging anyway.' }}">
-        <input type="hidden" name="minutes" value="{{ 0 if quota.override else 120 }}">
+            data-toast="{{ 'Back to normal limits.' if not line.action.override else 'Judging anyway.' }}">
+        <input type="hidden" name="minutes" value="{{ line.action.override }}">
         <input type="hidden" name="back" value="/runs">
-        <button {% if quota.paused and not quota.override %}class="primary"{% endif %}>
-          {%- if quota.override %}Back to normal limits
-          {%- else %}Judge anyway for 2 hours{% endif -%}
-        </button>
+        {# One filled button per card: the lead fact's action. #}
+        <button{% if line.action.override and loop.first %} class="primary"{% endif %}>{{ line.action.label }}</button>
       </form>
+      {% endif %}
     </div>
+    {% endif %}
   </div>
-  <div class="control-row">
-    <span class="who">Everything
-      <small>{% if all_paused %}All {{hunts|length}} off. Nothing is being
-        collected.{% else %}{{hunts|length}} hunt{{ '' if hunts|length == 1 else 's' }},
-        wants and sweeps.{% endif %}</small></span>
-    <div class="triage-actions">
-      <form method="post" action="/hunts/toggle" data-inplace="main">
-        <input type="hidden" name="kind" value="all">
-        <input type="hidden" name="enable" value="{{ '1' if all_paused else '0' }}">
-        <input type="hidden" name="back" value="/runs">
-        <button {% if all_paused %}class="primary"{% endif %}>
-          {%- if all_paused %}Resume all searching
-          {%- else %}<svg class="i" aria-hidden="true"><use href="#i-pause"/></svg>Pause all searching{% endif -%}
-        </button>
-      </form>
-    </div>
-  </div>
+  {% endfor %}
+  {% if last_run %}
+  <p class="now-foot">Last pass {{ when(last_run.started_at) }}
+    {%- if activity.in_flight %} &middot; <b>looking now</b>{% endif %}</p>
+  {% endif %}
 </div>
 
-{# What the plan has left. These numbers exist nowhere but Claude Code's own
-   event stream, so they arrive only when something is judged: the panel dates
-   the reading rather than implying it is live, and a reading that has outlived
-   its window shows no bar at all. Directly under the Judging switch, because
-   this is the rest of that sentence. #}
 <div class="panel" id="usage" style="margin-bottom:18px">
   <h2>Plan usage</h2>
   {% if usage.known %}
@@ -137,10 +104,27 @@
   {% endif %}
 </div>
 
-{# The pill links here to explain itself, and "Judging" is all it has room to
-   say. This is the rest of that sentence: which listings, from which hunt, at
-   which site. Under the switches rather than above them, because a pill
-   reading "Paused" sends you here for the switch. #}
+{# Every hunt, what it is waiting on, and the way into it. This was the last
+   thing on the page, under 200 run cards -- 46,000px down on a phone -- and
+   it is the only place the backlog is broken down by hunt. #}
+<div class="panel" id="hunts" style="margin-bottom:18px">
+  <h2>Hunts</h2>
+  <div class="huntlist">
+    {% for r in hunt_rows %}
+    <a href="/hunt/{{ r.hunt.id }}">
+      <span class="grow"><b>{{ r.hunt.name }}</b>
+        <small>{{ 'Free stuff' if r.hunt.kind == 'sweep' else 'Want' }}
+          &middot; {{ ilabels.get(r.hunt.interval_minutes, 'every %d min' % r.hunt.interval_minutes)|lower }}</small></span>
+      {% if r.paused %}<span class="chip">paused</span>{% endif %}
+      {% if r.waiting %}<span class="chip unk">{{ r.waiting }} waiting</span>{% endif %}
+    </a>
+    {% else %}
+    <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
+      No hunts yet. Add a want from the Wants tab.</div>
+    {% endfor %}
+  </div>
+</div>
+
 <div class="panel" id="judging" style="margin-bottom:18px">
   <h2>What it is judging</h2>
   {% if activity.now %}
@@ -177,69 +161,50 @@
   {% endif %}
 </div>
 
-<div class="panel" style="margin-bottom:18px">
-  <div class="wrap"><table class="responsive">
-    <thead><tr>
-      <th>Started</th><th>Hunt</th><th>Source</th>
-      <th class="n">Fetched</th><th class="n">New</th><th class="n">Cand</th>
-      <th class="n">Scored</th><th class="n">Wanted</th><th class="n">Free</th>
-      <th class="n">Imgs</th><th class="n">Cost</th><th class="n">Took</th>
-      <th>Note</th>
-    </tr></thead>
-    <tbody>
-    {% for r in runs %}
-    <tr class="{{'err' if r.error}}">
-      <td class="lead num" data-label="Started">{{ when(r.started_at) }}</td>
-      <td data-label="Hunt">{{r.hunt_id}}</td>
-      <td data-label="Source">{{r.source}}</td>
-      <td class="n num {{'zero' if not r.n_fetched}}" data-label="Fetched">{{r.n_fetched}}</td>
-      <td class="n num {{'zero' if not r.n_new}}" data-label="New">{{r.n_new}}</td>
-      <td class="n num {{'zero' if not r.n_candidates}}" data-label="Cand">{{r.n_candidates}}</td>
-      <td class="n num {{'zero' if not r.n_scored}}" data-label="Scored">{{r.n_scored}}</td>
-      <td class="n num {{'zero' if not r.n_wanted}}" data-label="Wanted">{{r.n_wanted}}</td>
-      <td class="n num {{'zero' if not r.n_free_find}}" data-label="Free">{{r.n_free_find}}</td>
-      <td class="n num {{'zero' if not r.n_image_checks}}" data-label="Imgs">{{r.n_image_checks}}</td>
-      <td class="n num" data-label="Cost">${{ '%.4f'|format(r.cost_usd or 0) }}</td>
-      {# From `started_at` and `finished_at`, which were both already recorded
-         and neither of which was ever shown. A row with no finish stamp is
-         either in flight or a process that was killed: it has no duration
-         either way, so it says so rather than printing a zero. #}
-      <td class="n num {{ 'zero' if not r.took }}" data-label="Took"
-        >{{ r.took or 'unfinished' }}</td>
-      {% if r.error %}<td class="errtext span2" data-label="Error">{{r.error}}</td>
-      {% elif r.warning %}<td class="warntext span2" data-label="Warning">{{r.warning}}</td>
-      {% else %}<td class="span2 zero empty-note" data-label="Note">&mdash;</td>{% endif %}
-    </tr>
-    {% else %}
-    <tr><td colspan="13" class="nostack">
-      <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
-        <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
-        <b>No runs yet</b>
-        <p>Nothing has fetched. Run <code>dealbot once --no-score</code> to
-          test the pipeline without spending anything.</p>
-      </div></td></tr>
-    {% endfor %}
-    </tbody>
-  </table></div>
-</div>
-
-<div class="panel">
-  <h2>Hunts</h2>
-  <div class="huntlist">
-    {% for h in hunts %}
-    <a href="/hunt/{{h.id}}">
-      <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>{{h.name}}
-      {% if backlog.get(h.id) %}
-      {# Collected and never judged. Every individual run looked healthy while
-         these piled up, which is the one thing this page exists to show. #}
-      <span class="kind">{{ backlog[h.id] }} unjudged</span>
-      {% endif %}
-      <span class="kind">{{ 'paused' if h in paused_hunts else h.kind }}</span>
-    </a>
-    {% else %}
-    <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
-      No hunts configured. Add one to <code>config.yaml</code>.</div>
-    {% endfor %}
+{# One pass is ten runs (five hunts, two sites), and as ten separate cards it
+   could not answer what a budget problem asks: what happened in that PASS.
+   Each pass is one row, its notes said in words, and it opens to the runs
+   inside it. The full per-run log is /runs/all. #}
+<div class="panel" id="passes">
+  <h2>Recent passes</h2>
+  {% for p in passes %}
+  <details class="runpass{{ ' has-bad' if p.failed }}">
+    <summary>
+      <span class="runpass-head">
+        <b class="num">{{ when(p.started_at) }}</b>
+        <span class="runpass-took">{{ p.took or 'unfinished' }}</span>
+      </span>
+      <span class="runpass-sum num">{{ '{:,}'.format(p.fetched) }} found &middot;
+        {{ p.new }} new &middot; {{ p.scored }} judged &middot;
+        {{ p.picked }} picked</span>
+      {% set seen = [] %}
+      {% for n in p.notes if n.text not in seen %}{% set _ = seen.append(n.text) %}
+      <span class="runpass-note{{ ' bad' if n.bad }}">{{ n.text }}</span>
+      {% endfor %}
+    </summary>
+    <ul class="runpass-runs">
+      {% for r in p.runs %}
+      <li>
+        <a href="/runs/all?hunt={{ r.hunt_id }}">{{ r.hunt_id.split(':', 1)[-1] }}</a>
+        <span class="runpass-site">{{ r.source }}</span>
+        <span class="num">{{ r.n_fetched }} found &middot; {{ r.n_new }} new
+          &middot; {{ r.n_scored }} judged</span>
+        {% for n in r.notes %}<span class="runpass-note{{ ' bad' if r.error }}"
+          title="{{ r.error or r.warning }}">{{ n }}</span>{% endfor %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% else %}
+  <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
+    <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+    <b>No runs yet</b>
+    <p>Nothing has fetched. Run <code>dealbot once --no-score</code> to
+      test the pipeline without spending anything.</p>
   </div>
+  {% endfor %}
+  {% if passes %}
+  <p class="now-foot"><a class="btn" href="/runs/all">All runs</a></p>
+  {% endif %}
 </div>
 {% endblock %}

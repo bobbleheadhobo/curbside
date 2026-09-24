@@ -111,7 +111,7 @@ def test_the_test_count_in_claude_md_is_honest():
     # The band is a sanity guard, not the count: it catches a number nobody
     # touched for a year, and gets widened when the suite genuinely grows past
     # it rather than being treated as a ceiling on the suite.
-    assert 250 <= n <= 600, f"CLAUDE.md claims {n} tests, which is far off"
+    assert 250 <= n <= 1000, f"CLAUDE.md claims {n} tests, which is far off"
 
 
 def test_every_requesting_adapter_inherits_the_shared_throttle():

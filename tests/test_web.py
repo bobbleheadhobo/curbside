@@ -172,13 +172,17 @@ def test_thumb_falls_back_to_the_source_url(tmp_path):
     assert r.headers["location"] == "https://img.example/a.jpg"
 
 
-def test_the_runs_page_can_pause_and_resume_sweeps(tmp_path):
+def test_sweeps_pause_from_settings_and_resume_from_runs(tmp_path):
+    """The switch is a decision made rarely, so it lives on /settings with the
+    hours. It used to be the first thing on /runs, which is the page the pill
+    opens to explain itself. /runs offers the way back when it matters."""
     client, cfg = _client(tmp_path)
     from dealbot.db import Store
     s = Store(cfg.db_path)
     sweep = next(h for h in cfg.hunts if h.kind == "sweep")
 
-    assert "pause free-stuff searches" in client.get("/runs").text.lower()
+    assert "pause free-stuff searches" in client.get("/settings").text.lower()
+    assert "pause free-stuff searches" not in client.get("/runs").text.lower()
 
     client.post("/hunts/toggle", data={"kind": "sweep", "enable": "0",
                                        "back": "/free"}, follow_redirects=False)
@@ -224,21 +228,22 @@ def test_the_demo_database_populates_every_view(tmp_path):
     assert "Worth checking" in wants or "needs checking" in wants.lower()
 
 
-def test_the_runs_page_can_pause_everything(tmp_path):
+def test_everything_pauses_from_settings_and_resumes_from_runs(tmp_path):
     """The switch that stops all collecting, wants included. It lives beside the
-    sweep switch on /runs because that is the page you open to ask whether the
-    bot is working."""
+    sweep switch and the hours on /settings; /runs, where the pill sends you,
+    says everything is paused and offers Resume."""
     client, cfg = _client(tmp_path)
     from dealbot.db import Store
     s = Store(cfg.db_path)
 
-    assert "pause all searching" in client.get("/runs").text.lower()
+    assert "pause all searching" in client.get("/settings").text.lower()
     client.post("/hunts/toggle", data={"kind": "all", "enable": "0",
                                        "back": "/runs"}, follow_redirects=False)
     assert s.disabled_hunts() == {h.id for h in cfg.hunts}
 
     page = client.get("/runs").text
     assert "resume all searching" in page.lower()
+    assert "Everything is paused" in page
     # The pill is the only announcement now, and it is on every page.
     for path in ("/", "/free", "/saved", "/runs"):
         body = client.get(path).text
@@ -639,10 +644,11 @@ def test_the_health_ladder_picks_the_most_actionable_true_fact():
     # the state only. A reason cut off mid-word in a phone's top bar is worse
     # than no reason: it reads as broken rather than terse. The reason is in
     # `detail`, and stated in full on the page the pill links to.
-    pause = health(_row(warning="scoring skipped: daily spend ceiling reached"),
-                   [], hunts, _sched(), _act())
+    held = {"held": True, "override": False,
+            "why": "Today's spend reached the $10.00 limit", "resumes": ""}
+    pause = health(_row(), [], hunts, _sched(), _act(), held)
     assert pause["label"] == "Judging paused"
-    assert "daily spend ceiling reached" in pause["detail"]
+    assert "Today's spend reached the $10.00 limit" in pause["detail"]
     # some hunts off beats the clock
     assert health(_row(), hunts[:2], hunts, _sched(open_=False), _act()
                   )["label"] == "2 hunts off"
@@ -956,7 +962,7 @@ def _judged(cfg, lid, title, hunt_id, source, score, model="sonnet"):
 
 def _judging_panel(client):
     page = client.get("/runs").text
-    return page[page.index('id="judging"'):page.index("<th>Started<")]
+    return page[page.index('id="judging"'):page.index('id="passes"')]
 
 
 def _priced_as_free(cfg, lid="facebook:9", status="scored", price_unclear=1,
@@ -1144,7 +1150,8 @@ def test_the_runs_page_shows_how_long_each_run_took(tmp_path):
     s.start_run(hunt, "y")                    # begun, never finished
     s.close()
 
-    page = client.get("/runs").text
+    # The per-run log moved to /runs/all; /runs shows passes.
+    page = client.get("/runs/all").text
     assert ">Took<" in page
     assert "1m 05s" in page
     # A run with no finish stamp has no duration. It says so rather than
@@ -1152,22 +1159,32 @@ def test_the_runs_page_shows_how_long_each_run_took(tmp_path):
     assert "unfinished" in page
 
 
-def test_the_runs_page_agrees_with_the_pill(tmp_path):
-    """The pill links here to explain itself. /runs only knew about the
-    rate-limit pause in `settings`, so a run that stood aside from the plan
-    ceiling lit the pill amber and then said "Running" on the page it sent
-    you to."""
+def test_the_pill_and_runs_ask_the_gate_not_the_last_run(tmp_path):
+    """Both used to read the latest run's warning. A run with nothing to judge
+    records no standdown, so the pill read a green "2m ago" while the plan was
+    at 79% and nothing could be judged, and /runs said "Running" in one panel
+    and "judging stands aside" in the next. They ask `judging_state` now, which
+    is what the scorer itself obeys."""
     from dealbot.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
-    hunt = cfg.hunts[0]
-    s.finish_run(s.start_run(hunt, "x"),
-                 warning="scoring skipped: 5-hour plan window at 72% "
-                         "(ceiling 70%) -- standing aside")
+    s.finish_run(s.start_run(cfg.hunts[0], "x"))       # clean, nothing to judge
+    _record_reading(cfg, five="0.79")                  # but the plan is over
 
     page = client.get("/runs").text
-    assert "5-hour plan window at 72%" in page
-    assert "Running. Stands aside" not in page
+    assert ">Judging paused<" in page                  # the pill
+    assert "Judging is paused" in page                 # the card, agreeing
+    assert "past the 70% mark" in page
+
+    # And the other way round: a stale standdown on the last run, with the
+    # window since rolled, is not a pause.
+    s.finish_run(s.start_run(cfg.hunts[0], "x"),
+                 warning="scoring skipped: 5-hour plan window at 72% "
+                         "(ceiling 70%) -- standing aside")
+    _record_reading(cfg, five="0.30")
+    page = client.get("/runs").text
+    assert ">Judging paused<" not in page
+    assert "Judging is paused" not in page
 
 
 # --- deciding on the detail page closes it --------------------------------
@@ -1290,7 +1307,10 @@ def test_a_hunt_that_found_nothing_still_appears(tmp_path):
     assert rows[0]["saved"] == 0
     page = client.get("/stats").text
     assert "ghost" in page
-    assert "saved nothing" in page, "a barren hunt has to say so"
+    # Judged on PICKED. The note that judged on saved named every hunt on the
+    # page, since nothing is ever marked saved, and a warning that always
+    # fires is furniture.
+    assert "nothing picked" in page, "a barren hunt has to say so"
 
 
 def test_a_deleted_want_keeps_its_spend_on_the_page(tmp_path):
@@ -1300,7 +1320,8 @@ def test_a_deleted_want_keeps_its_spend_on_the_page(tmp_path):
     s = Store(cfg.db_path)
     _spent(s, "want:long-gone", "facebook", 1.25, n_scored=9)
     page = client.get("/stats").text
-    assert "long-gone" in page and "deleted" in page
+    # "removed", the word the want editor uses for the same act.
+    assert "long-gone" in page and "removed" in page
 
 
 def test_a_young_database_does_not_repeat_the_same_figure_three_times(tmp_path):
@@ -1547,33 +1568,49 @@ def test_today_breaks_down_where_the_money_went(tmp_path):
                  n_scored=20, n_wanted=2)
     _spend_today(s, cfg, "sweep:free-nearby", "craigslist", 0.50, n_scored=6)
 
-    page = client.get("/stats").text
-    body = page[page.index("<h2>Today</h2>"):page.index("<h2>Each hunt</h2>")]
+    page = client.get("/stats?period=today").text
+    body = page[page.index("<h2>Each hunt"):page.index("<h2>Fetched to grabbed")]
     assert "tv-stand" in body and "free-nearby" in body
     assert "$2.00" in body and "$0.50" in body
     assert "facebook" in body and "craigslist" in body
 
 
-def test_the_last_seven_days_are_listed_day_by_day(tmp_path):
-    """The bars answer "is today normal". They cannot answer "what did
-    Tuesday cost", which is the question you have the moment one looks tall."""
+def test_what_a_day_cost_is_one_tap_on_its_bar(tmp_path):
+    """The bars answer "is today normal". They could not answer "what did
+    Tuesday cost", which is the question you have the moment one looks tall,
+    so the week used to be listed again underneath as seven cards. Each bar
+    links to its own day instead, and that day gets the whole page."""
     import re
+    from datetime import timedelta
     from dealbot.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spend_today(s, cfg, "want:tv-stand", "facebook", 1.23, n_scored=9)
 
     page = client.get("/stats").text
-    # Its own panel: stacked under the bars it made the spend panel long
-    # enough to push Today off the screen.
-    body = page[page.index("<h2>Last 7 days</h2>"):page.index("<h2>Today</h2>")]
-    # Seven rows whatever the history: a fixed week, silent days included.
-    assert len(re.findall(r'data-label="Day"', body)) == 7
-    assert "$1.23" in body
-    # A day with no run is a GAP, not a zero -- the same rule the bars are
-    # drawn by, because a day off and a day that found nothing differ.
-    assert len(re.findall(r'data-label="Spent"\s*>&mdash;', body)) == 6
-    assert "today" in body
+    days = re.findall(r'<a href="\?day=(\d{4}-\d{2}-\d{2})"', page)
+    assert len(days) == 1, "one bar, for the one day that ran"
+    one = client.get(f"/stats?day={days[0]}").text
+    body = one[one.index("<h2>Each hunt"):one.index("<h2>Fetched to grabbed")]
+    assert "tv-stand" in body and "$1.23" in body
+
+    # A day with no run says so rather than printing zeros.
+    before = (_today_iso(cfg) - timedelta(days=3)).date().isoformat()
+    quiet = client.get(f"/stats?day={before}").text
+    assert "Nothing ran on" in quiet
+
+
+def test_a_week_is_not_listed_twice(tmp_path):
+    """Every breakdown on the page follows one period switch. It used to split
+    spend by stage and by source for today, and again for all time."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    _spend_today(Store(cfg.db_path), cfg, "want:tv-stand", "facebook", 1.0,
+                 n_scored=3)
+    page = client.get("/stats").text
+    assert page.count("<h3>By stage</h3>") == 1
+    assert page.count("<h3>By source</h3>") == 1
+    assert "Last 7 days</h2>" not in page
 
 
 def test_today_ignores_yesterday_evening(tmp_path):
@@ -1590,9 +1627,9 @@ def test_today_ignores_yesterday_evening(tmp_path):
                    ((_today_iso(cfg) - timedelta(hours=2)).isoformat(), run_id))
     s.finish_run(run_id, cost_usd=7.77, n_scored=30)
 
-    page = client.get("/stats").text
-    body = page[page.index("<h2>Today</h2>"):page.index("<h2>Each hunt</h2>")]
-    assert "Nothing spent yet today" in body
+    page = client.get("/stats?period=today").text
+    body = page[page.index("<h2>Each hunt"):page.index("<h2>Fetched to grabbed")]
+    assert "Nothing ran today" in body
     assert "7.77" not in body
     assert "$7.77" in page, "and it still counts towards all time"
 
@@ -2604,3 +2641,125 @@ def test_a_listing_you_own_stops_offering_to_open_the_marketplace(tmp_path):
 
     page = client.get(f"/listing/{l.id}").text
     assert "Open on the marketplace" not in page
+
+
+# --- /runs says what is happening, in words ---------------------------------
+
+def test_a_run_warning_is_said_the_way_a_person_would_say_it():
+    """The journal's words are for grepping. This one, from the live box, was
+    printed on /runs verbatim."""
+    from dealbot.web.app import plain_error, plain_warning
+    said = plain_warning(
+        "detail fetch stopped: BudgetExhausted: request budget exhausted "
+        "(25 this run); scoring skipped: 5-hour plan window at 79% "
+        "(ceiling 70%) -- standing aside")
+    assert said == [
+        "Ran out of requests before opening every listing.",
+        "Not judged: the 5-hour plan window is at 79%, past the 70% mark."]
+    assert plain_warning("fetch skipped: request budget exhausted (4 "
+                         "searches, 0 of 25 left this run)") == [
+        "Skipped. The pass had used up its requests."]
+    assert plain_warning("1 detail fetches failed") == [
+        "1 listing could not be opened."]
+    assert plain_error("SourceBlocked: no feed data in 566641 bytes -- "
+                       "almost certainly throttled").startswith(
+        "The site sent a page with no listings")
+    # Something it does not recognise is shown as it is, not swallowed.
+    assert plain_warning("something new") == ["something new"]
+
+
+def _run(id, start, end, hunt="want:a", source="facebook", **kw):
+    row = {"id": id, "hunt_id": hunt, "source": source, "started_at": start,
+           "finished_at": end, "error": None, "warning": None, "n_fetched": 10,
+           "n_new": 1, "n_scored": 1, "n_wanted": 0, "n_free_find": 0,
+           "cost_usd": 0.01}
+    row.update(kw)
+    return row
+
+
+def test_runs_are_grouped_into_the_passes_that_made_them():
+    """One pass is ten runs, each starting as the last finished; passes are
+    minutes apart. No pass column is needed to tell them apart."""
+    from dealbot.web.app import group_passes
+    rows = [
+        _run(1, "2026-09-24T17:00:00+00:00", "2026-09-24T17:01:00+00:00"),
+        _run(2, "2026-09-24T17:01:00+00:00", "2026-09-24T17:02:30+00:00",
+             source="craigslist", warning="fetch skipped: request budget "
+                                          "exhausted (25 this run)"),
+        _run(3, "2026-09-24T17:15:00+00:00", "2026-09-24T17:16:00+00:00",
+             error="HTTP 403 for https://x"),
+    ]
+    passes = group_passes(list(reversed(rows)))     # as the page reads them
+    assert [len(p["runs"]) for p in passes] == [1, 2], "newest pass first"
+    newest, older = passes
+    assert newest["failed"] == 1
+    assert newest["notes"][0]["text"] == "The site answered 403."
+    assert older["fetched"] == 20 and older["took"] == "2m 30s"
+    assert older["notes"][0]["text"] == "Skipped. The pass had used up its requests."
+
+
+def test_the_status_card_leads_with_what_the_pill_says(tmp_path):
+    """The pill opens /runs, which used to open on three switches. The top of
+    it is now the rest of the pill's sentence, each fact with the one action
+    it calls for."""
+    from dealbot.web.app import now_lines
+    hunts = _hunts()
+    for h in hunts:
+        h.kind = "want"
+    held = {"held": True, "override": False, "raw": "r",
+            "why": "The 5-hour plan window is at 79%, past the 70% mark",
+            "resumes": "Resumes in 12m."}
+    running = {"held": False, "override": False, "why": "", "resumes": "",
+               "raw": ""}
+
+    lines = now_lines(judging=held, paused=[], hunts=hunts, sched=_sched(),
+                      last=None)
+    assert lines[0]["title"] == "Judging is paused"
+    assert lines[0]["action"] == {"override": 120,
+                                  "label": "Judge anyway for 2 hours"}
+    assert "Resumes in 12m. Still collecting." in lines[0]["text"]
+
+    off = now_lines(judging=running, paused=hunts, hunts=hunts, sched=_sched(),
+                    last=None)
+    assert off[0]["title"] == "Everything is paused"
+    assert off[0]["action"]["label"] == "Resume all searching"
+
+    fine = now_lines(judging=running, paused=[], hunts=hunts, sched=_sched(),
+                     last=None)
+    assert [l["title"] for l in fine] == ["Working"]
+
+
+def test_runs_puts_the_hunts_above_the_log(tmp_path):
+    """The hunt list, the only per-hunt view of the backlog, was 46,000px down
+    the page on a phone, under 200 run cards. The log is ten passes now, with
+    the rest one tap away."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    for _ in range(3):
+        s.finish_run(s.start_run(cfg.hunts[0], "facebook"))
+    page = client.get("/runs").text
+    assert page.index('id="now"') < page.index('id="hunts"') \
+        < page.index('id="passes"')
+    assert 'href="/runs/all"' in page
+    assert client.get("/runs/all").status_code == 200
+    only = client.get(f"/runs/all?hunt={cfg.hunts[0].id}").text
+    assert "Every run of" in only
+
+
+def test_every_cadence_is_set_in_one_place(tmp_path):
+    """The sweep's cadence was on /settings and each want's on its own editor.
+    One form now sets them all; a field for a hunt that does not exist is
+    ignored rather than written."""
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    form = {f"iv:{h.id}": "120" for h in cfg.hunts}
+    form["iv:want:nobody"] = "15"
+    r = client.post("/settings/intervals", data=form, follow_redirects=False)
+    assert r.status_code == 303
+    from dealbot.config import with_store
+    assert {h.interval_minutes for h in with_store(cfg, s).hunts} == {120}
+    assert s.get_setting("hunt_interval:want:nobody") is None
+    page = client.get("/settings").text
+    assert page.count('name="iv:') == len(cfg.hunts)

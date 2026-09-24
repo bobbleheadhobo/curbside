@@ -261,6 +261,7 @@ INPLACE = [
     ("/hunts/toggle", {"kind": "sweep", "enable": "0"}),
     ("/settings/hours", {"enabled": "1", "start": "12:00", "end": "20:00"}),
     ("/settings/interval", {"hunt_id": SWEEP, "minutes": "60"}),
+    ("/settings/intervals", {f"iv:{SWEEP}": "60"}),
     ("/settings/exclude", {"hunt_id": SWEEP, "term": "firewood"}),
     ("/wants/archive", {"name": "tv-stand", "restore": "1"}),
     ("/triage", {"hunt_id": SWEEP, "listing_id": "fixture:probe",

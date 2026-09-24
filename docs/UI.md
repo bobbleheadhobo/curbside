@@ -59,9 +59,10 @@ dealbot/web/
     hunt.html       /hunt/<id>  everything one hunt matched, with rejections
     listing.html    /listing/<id>  detail, scores, price sparkline
     error.html      404 / 400 / 500, in the normal shell
-    runs.html       /runs    the Searching panel, every fetch attempt, the hunts
+    runs.html       /runs    what is true now, the plan, the hunts, recent passes
+    runs_all.html   /runs/all  every run, one row each, filterable by hunt
     stats.html      /stats   what it costs and what each hunt found for it
-    settings.html   /settings  waking hours, sweep cadence, limits, blocked words
+    settings.html   /settings  running (hours, pauses), cadences, limits, blocked words
     want_form.html  /wants/new and /wants/<name>  add or edit one want
   static/
     app.css         ALL the CSS. Two themes, one file, no build step
@@ -341,9 +342,11 @@ reason is worse than no reason: it reads as a broken interface rather than a
 terse one.
 
 **So the label states the STATE, and the reason lives one tap away.** That is
-honest only because `/runs` now says it in full — it used to read "Running"
-while this pill went amber, and fixing that contradiction is what earns the
-short label. The full reason is also in the pill's `title`, which is a
+honest only because `/runs` now says it in full, and says the SAME thing: the
+pill and the status card both read `judging_state`, the gate the scorer itself
+obeys. The pill used to read the latest run's warning instead, and a run with
+nothing to judge records none, so it showed a green "2m ago" while `/runs` said
+judging was held at 79%. The full reason is also in the pill's `title`, which is a
 desktop-only convenience and never the only place a fact appears.
 
 ## The page-head stat line has a length budget
@@ -359,8 +362,9 @@ Shortening the wording was not enough on its own, and the screenshot that came
 back proved it: 64 characters became 42 and still wrapped on a 360px screen.
 **Three labelled figures is what actually fits.** So `/runs` lost one
 entirely, and the right one to lose was spend, because `/stats` now owns money
-and `/runs` owns health. `runs` stayed as the denominator that makes `failed`
-mean anything.
+and `/runs` owns health. It now shows two: what is waiting to be judged, and
+what was judged this hour. The run count went too: "200 runs" was the query's
+LIMIT, not a fact about anything.
 
 The wording cuts stand on their own merit as well: two labels were restating
 their own heading. `/runs` said "fetch attempts" under a heading reading Runs,
@@ -567,7 +571,7 @@ rather than taking a tab from a page read daily. A test asserts it stays out
 of the tab bar.
 
 **It answers a different question from `/runs`.** `/runs` is "is it working
-right now" — the pause switches, the backlog, the last hundred fetch attempts.
+right now": what is true, the backlog per hunt, the recent passes.
 `/stats` is "is it worth running", which wants months rather than minutes.
 Merging them was considered and rejected: one page carrying both horizons
 means every number needs a qualifier.
@@ -647,16 +651,40 @@ flagged amber, next to confirmed matches rather than hidden; under it, it stays
 let it be filtered out of Wants: a 9.0 unconfirmed listing is worth the five
 seconds it takes to look at the photos.
 
-**Judging has its own row on `/runs`, separate from the two pause switches.**
-Every other pause here stops the fetching as well; the quota guards stop only
-the spending, and the health pill says "Judging paused" and links here. The row
-states what is stopping it and offers the override.
+**`/runs` opens on what is true, not on switches.** The pill links here, and
+the page used to open on three switches, then a meter, then 200 run cards at
+about 230px each: 46,000px on a phone, with the list of hunts at the very
+bottom. The top is now a status card built by `now_lines`: every fact true
+right now, most actionable first in the same order as the pill's ladder, each
+with the ONE action it calls for (*Judge anyway* when judging is held, *Resume*
+when something is paused). Only the lead fact's button is filled. Then the plan
+meters, then every hunt with its backlog, then what it is judging, then the
+last ten **passes**. `group_passes` finds a pass without a column: runs inside
+one start the instant the last finished, passes are minutes apart. Each pass is
+a `<details>` whose summary carries its warnings in plain words
+(`plain_warning`); the raw text stays in `title`. The per-run table is
+`/runs/all`, filterable by hunt.
 
-**The pause switches live on `/runs`.** Both of them: *Pause free-stuff
-searches* (`kind=sweep`) and *Pause all searching* (`kind=all`). They used to
-sit on `/free`, which was the wrong page. `/runs` is where you go to ask
-whether the bot is working, so it is where you answer it. `.control-row` is the
-same component as `.triage-row`; the row was generalised rather than copied.
+**The pause switches live on `/settings`**, in the Running panel beside the
+waking hours. Both of them: *Pause free-stuff searches* (`kind=sweep`) and
+*Pause all searching* (`kind=all`). They were on `/free` first, then first on
+`/runs`. They are decisions made rarely, so they sit with the other controls,
+and `/runs` offers Resume whenever one is on. `.control-row` is the same
+component as `.triage-row`; the row was generalised rather than copied.
+
+**Every hunt's cadence is one list on `/settings`**, one form, saved by
+`/settings/intervals`. The sweep's cadence used to be there and each want's on
+its own editor, so "how often" had two homes. The want editor keeps its
+dropdown, because that is where you are when you create one.
+
+**`/stats` has one period switch.** Today, 7 days, 30 days or all time drives
+the per-hunt table and the breakdown beneath it. The page used to split spend
+by stage and by source twice and list the week as seven cards under a chart of
+the same week. Each chart bar links to its own day (`?day=`), which is what the
+week list existed to answer. Saved and dismissed are counts of what you did,
+with no date, so they appear against all time only. A hunt that spent over $1
+and picked nothing says so on its own row; the note that did this on SAVED
+named every hunt, since nothing is ever marked saved.
 
 **The health pill is the only announcement of a pause, and it is on every
 page.** There used to be a banner as well; it said what the pill says, took a

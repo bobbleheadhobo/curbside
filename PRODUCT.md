@@ -79,7 +79,9 @@ The lists are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   `/skipped` judged and passed over (renamed from `/near`, which read as
   "near me"; the old URL redirects). Plus per-hunt views, a listing detail page, and runs.
 - **`/settings` exists, added 2026-09-10 at the user's request.** It carries the
-  waking hours, each hunt's cadence, the wants list with add / edit / remove,
+  waking hours and both pause switches (moved from `/runs` on 2026-09-24, which
+  now opens on what is true rather than on controls), every hunt's cadence in
+  one list, the wants list with add / edit / remove,
   the blocked-word list, and four tuning levers: the wants bar, the free-finds
   bar, how many listings to judge per run, and the radius. Every other knob
   stays in `config.yaml` on purpose — the source rate limits in particular,

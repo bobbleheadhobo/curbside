@@ -1175,7 +1175,25 @@ class Store:
                FROM scores s JOIN listings l ON l.id = s.listing_id
                ORDER BY s.id DESC LIMIT ?""", (int(limit),))]
 
-    def spend_by_hunt(self, since: str | None = None) -> list[dict[str, Any]]:
+    @staticmethod
+    def _window(col: str, since: str | None, until: str | None
+                ) -> tuple[str, tuple]:
+        """A WHERE clause bounding `col` to [since, until), either end open.
+
+        One helper because /stats asks the same question of five methods, and
+        a day view needs the upper bound none of them had.
+        """
+        parts, args = [], []
+        if since:
+            parts.append(f"{col} >= ?")
+            args.append(since)
+        if until:
+            parts.append(f"{col} < ?")
+            args.append(until)
+        return ("WHERE " + " AND ".join(parts) if parts else ""), tuple(args)
+
+    def spend_by_hunt(self, since: str | None = None,
+                      until: str | None = None) -> list[dict[str, Any]]:
         """What each hunt cost and what it actually found.
 
         The outcome columns are the point. A want's cost means nothing on its
@@ -1190,8 +1208,7 @@ class Store:
         subquery also keeps a hunt with runs and no matches at zero rather than
         dropping it, and those are precisely the rows worth reading.
         """
-        where = "WHERE r.started_at >= ?" if since else ""
-        args = (since,) if since else ()
+        where, args = self._window("r.started_at", since, until)
         return [dict(r) for r in self.conn.execute(
             f"""SELECT r.hunt_id,
                        SUM(r.cost_usd) usd, SUM(r.n_fetched) fetched,
@@ -1206,14 +1223,15 @@ class Store:
                 FROM runs r {where}
                 GROUP BY r.hunt_id ORDER BY usd DESC""", args)]
 
-    def spend_by_source(self, since: str | None = None) -> list[dict[str, Any]]:
-        where = "WHERE started_at >= ?" if since else ""
-        args = (since,) if since else ()
+    def spend_by_source(self, since: str | None = None,
+                        until: str | None = None) -> list[dict[str, Any]]:
+        where, args = self._window("started_at", since, until)
         return [dict(r) for r in self.conn.execute(
             f"SELECT source, SUM(cost_usd) usd, SUM(n_fetched) fetched "
             f"FROM runs {where} GROUP BY source ORDER BY usd DESC", args)]
 
-    def spend_by_stage(self, since: str | None = None) -> dict[str, float]:
+    def spend_by_stage(self, since: str | None = None,
+                       until: str | None = None) -> dict[str, float]:
         """Appraisal, the image pass, and everything else.
 
         The first two are attributed on the score row. The third is the
@@ -1224,10 +1242,10 @@ class Store:
         # Two windows, two columns: a score is dated by `scored_at` and a run
         # by `started_at`. They agree because a score is written inside the run
         # that paid for it.
+        where, args = self._window("scored_at", since, until)
         rows = {r["model"]: r["usd"] for r in self.conn.execute(
-            "SELECT model, COALESCE(SUM(cost_usd), 0) usd FROM scores "
-            + ("WHERE scored_at >= ? " if since else "")
-            + "GROUP BY model", (since,) if since else ())}
+            f"SELECT model, COALESCE(SUM(cost_usd), 0) usd FROM scores {where} "
+            "GROUP BY model", args)}
         # The three shapes a `scores.model` takes, and where each is written:
         # "<model>:triage" in pipeline._triage_scores, "<model>+images" in
         # ClaudeCodeScorer.resolve_with_images, and the bare model name for an
@@ -1240,10 +1258,10 @@ class Store:
         triage = sum(v for k, v in rows.items() if k.endswith(":triage"))
         appraisal = sum(v for k, v in rows.items()
                         if not k.endswith(("+images", ":triage")))
+        where, args = self._window("started_at", since, until)
         total = self.conn.execute(
-            "SELECT COALESCE(SUM(cost_usd), 0) t FROM runs"
-            + (" WHERE started_at >= ?" if since else ""),
-            (since,) if since else ()).fetchone()["t"]
+            f"SELECT COALESCE(SUM(cost_usd), 0) t FROM runs {where}",
+            args).fetchone()["t"]
         return {"appraisal": appraisal, "images": images,
                 "other": max(0.0, total - appraisal - images - triage) + triage,
                 "total": total}
@@ -1315,7 +1333,8 @@ class Store:
                  AND s.est_value_cents IS NOT NULL""").fetchone()
         return dict(r)
 
-    def dearest_since(self, since: str, limit: int = 5) -> list[dict[str, Any]]:
+    def dearest_since(self, since: str | None, limit: int = 5,
+                      until: str | None = None) -> list[dict[str, Any]]:
         """The individual listings that cost the most, newest window first.
 
         The most literal answer to "what did I spend money on", and the one
@@ -1331,8 +1350,11 @@ class Store:
             """SELECT s.listing_id, s.hunt_id, s.cost_usd, s.deal_score,
                       s.images_checked, l.title, l.price_cents
                FROM scores s JOIN listings l ON l.id = s.listing_id
-               WHERE s.scored_at >= ? AND s.cost_usd > 0
-               ORDER BY s.cost_usd DESC LIMIT ?""", (since, int(limit)))]
+               WHERE s.cost_usd > 0
+                 AND (? IS NULL OR s.scored_at >= ?)
+                 AND (? IS NULL OR s.scored_at < ?)
+               ORDER BY s.cost_usd DESC LIMIT ?""",
+            (since, since, until, until, int(limit)))]
 
     def first_run_at(self) -> str | None:
         """So the page can say how much history it is talking about instead of

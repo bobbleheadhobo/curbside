@@ -189,6 +189,75 @@ def read_plan_usage(store: Store, cfg: ScorerConfig,
     return PlanUsage(tuple(windows), recorded_at, stale)
 
 
+@dataclass(frozen=True)
+class JudgingState:
+    """Whether judging may run right now, and if not, what is stopping it.
+
+    `kind` is "running", "override", "ceiling", "plan" or "rate_limit".
+    `reason` is the gate's own sentence, exactly what a run records in its
+    warning when it stands aside. `until` is when the hold lifts by itself, in
+    epoch seconds, when that is known.
+    """
+    kind: str
+    reason: str = ""
+    until: float | None = None
+
+    @property
+    def held(self) -> bool:
+        return self.kind not in ("running", "override")
+
+
+def judging_state(store: Store, cfg: ScorerConfig, *, now: float | None = None,
+                  spent_extra: float = 0.0) -> JudgingState:
+    """THE judging gate, read only. `check_available` enforces it and the
+    dashboard draws it, so the two cannot disagree.
+
+    They did. The pill decided "Judging paused" from the latest run's warning,
+    and a run with nothing to judge records none, so it read a green "2m ago"
+    while the plan was at 79% and judging was held; /runs said "Running" in one
+    panel and "judging stands aside" in the next. The other direction was just
+    as possible: a window that reset after the last run left the pill amber
+    over a bot free to judge.
+
+    Order matters and is `check_available`'s: an override lifts everything
+    below it, and the first hold found is the one reported. Connectivity is not
+    here: it is a probe, not a state anything can read.
+    """
+    now = time.time() if now is None else now
+    override = _as_number(store.get_setting(OVERRIDE_UNTIL))
+    if override is not None and now < override:
+        return JudgingState("override", until=override)
+
+    limit = cfg.daily_cost_limit_usd
+    if limit > 0:
+        # The user's midnight, not UTC's. UTC midnight is 6pm in Albuquerque,
+        # inside the waking window on every day of the year, so this counter
+        # used to reset mid-evening and hand the bot a second full allowance.
+        tz = _tz(cfg.timezone)
+        start = local_day_start(tz, datetime.fromtimestamp(now, timezone.utc))
+        spent = store.cost_since(start.isoformat()) + spent_extra
+        if spent >= limit:
+            return JudgingState(
+                "ceiling",
+                f"daily spend ceiling reached (${spent:.2f} of ${limit:.2f})",
+                (start + timedelta(days=1)).timestamp())
+
+    for window in read_plan_usage(store, cfg, now).blocking:
+        return JudgingState(
+            "plan",
+            f"{window.label} plan window at {window.used*100:.0f}% "
+            f"(ceiling {window.ceiling*100:.0f}%) -- standing aside",
+            window.resets_at)
+
+    until = _as_number(store.get_setting(PAUSE_UNTIL))
+    if until is not None and now < until:
+        reason = store.get_setting(PAUSE_REASON, "rate limit")
+        return JudgingState(
+            "rate_limit",
+            f"paused ({reason}), {(until - now) / 60:.0f} min remaining", until)
+    return JudgingState("running")
+
+
 class ScoringUnavailable(RuntimeError):
     """Scoring cannot run right now. Fetching continues regardless -- it costs no
     quota -- so listings accumulate as `new` and get judged when this clears.
@@ -288,32 +357,16 @@ class ClaudeCodeScorer:
             return False
 
     def check_available(self) -> None:
-        if self.overridden():
-            # Still the connectivity probe: that one is not a budget, it is the
-            # 10 minutes of retry backoff a `claude -p` burns with no network.
-            if not api_reachable():
-                raise ScoringUnavailable("api.anthropic.com unreachable")
-            return
-
-        limit = self.cfg.daily_cost_limit_usd
-        if limit > 0:
-            # The user's midnight, not UTC's. UTC midnight is 6pm in
-            # Albuquerque, inside the waking window on every day of the year,
-            # so this counter used to reset mid-evening and hand the bot a
-            # second full allowance for the rest of it.
-            today = local_day_start(_tz(self.cfg.timezone)).isoformat()
-            spent = self.store.cost_since(today) + self._spent_this_process
-            if spent >= limit:
-                raise ScoringUnavailable(
-                    f"daily spend ceiling reached (${spent:.2f} of ${limit:.2f})")
-
-        self._check_utilization()
-
-        until = self.store.get_setting(PAUSE_UNTIL)
-        if until and time.time() < float(until):
-            reason = self.store.get_setting(PAUSE_REASON, "rate limit")
-            mins = (float(until) - time.time()) / 60
-            raise ScoringUnavailable(f"paused ({reason}), {mins:.0f} min remaining")
+        # The holds live in `judging_state`, which the dashboard reads too.
+        # This process's own spend is added here because the runs table cannot
+        # see a run still in flight.
+        state = judging_state(self.store, self.cfg,
+                              spent_extra=self._spent_this_process)
+        if state.held:
+            raise ScoringUnavailable(state.reason)
+        # Still the connectivity probe, override or not: it is not a budget,
+        # it is the 10 minutes of retry backoff a `claude -p` burns with no
+        # network.
         if not api_reachable():
             raise ScoringUnavailable("api.anthropic.com unreachable")
 

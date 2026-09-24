@@ -45,7 +45,8 @@
   <p class="panel-note">
     About ${{ '%.2f'|format(per_day) }} a day: roughly
     ${{ '%.0f'|format(per_day * 30) }} a month at this rate.
-    Amber marks a day when most runs stood aside on quota.
+    Tap a day to see what it went on. Amber marks a day when most runs
+    stood aside on quota.
     {# Worth saying once: the ceiling and this page now agree on when a day
        starts, and it is the user's midnight. It used to be UTC, which here is
        6pm. #}
@@ -53,165 +54,88 @@
   </p>
 </div>
 
-{# Its own panel. The bars answer "is today normal"; this answers "what did
-   Tuesday cost", which is a different question asked at a different moment,
-   and stacking the two made the first panel long enough to push Today off the
-   screen. #}
-<div class="panel" style="margin-bottom:18px">
-  <h2>Last 7 days</h2>
-  <div class="wrap"><table class="responsive">
-    <thead><tr><th>Day</th><th class="n">Spent</th><th class="n">Judged</th>
-      <th class="n">Runs</th></tr></thead>
-    <tbody>
-    {% for d in week_days %}
-    <tr>
-      <td class="lead" data-label="Day">{{ d.label }}{% if d.today %}
-        <small>today</small>{% endif %}</td>
-      {# A day with no run is a gap, not a zero: a day off and a day that found
-         nothing are different facts. Same rule the bars are drawn by. #}
-      <td class="n num {{ 'zero' if not d.usd }}" data-label="Spent"
-        >{% if d.usd is none %}&mdash;{% else %}${{ '%.2f'|format(d.usd) }}{% endif %}</td>
-      <td class="n num {{ 'zero' if not d.scored }}" data-label="Judged"
-        >{% if d.usd is none %}&mdash;{% else %}{{ d.scored or 0 }}{% endif %}</td>
-      <td class="n num {{ 'zero' if not d.runs }}" data-label="Runs"
-        >{% if d.usd is none %}&mdash;{% else %}{{ d.runs }}{% endif %}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table></div>
-</div>
+{# One window drives everything from here down. It used to break spend down
+   by stage and by source twice, list the week as seven cards under a chart of
+   the same week, and give each hunt one row for today and another for all
+   time. A bar in the chart opens its own day. #}
+<nav class="statperiods" aria-label="Period">
+  {% for key, name in periods %}
+  <a href="/stats?period={{ key }}"{% if key == period %} aria-current="page"{% endif %}>{{ name }}</a>
+  {% endfor %}
+  {% if period == 'day' %}<a href="/stats?period=week" aria-current="page"
+    title="Back to the week">{{ period_label }} &times;</a>{% endif %}
+</nav>
 
 <div class="panel" style="margin-bottom:18px">
-  <h2>Today</h2>
-  {# What the figure above it actually went on. Same shape as the all-time
-     table so the two read the same way, plus the individual listings that
-     cost the most: an image pass runs about 15x a text appraisal, so one
-     photo-checked junk post shows up here straight away. #}
-  {% if today.hunts %}
-  <div class="wrap"><table class="responsive">
-    <thead><tr><th>Hunt</th><th class="n">Spent</th><th class="n">Judged</th>
-      <th class="n">Picked</th></tr></thead>
-    <tbody>
-    {% for h in today.hunts %}
-    <tr>
-      <td class="lead" data-label="Hunt">{{h.name}}</td>
-      <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd) }}</td>
-      <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored}}</td>
-      <td class="n num {{'zero' if not h.binned}}" data-label="Picked">{{h.binned}}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table></div>
-
-  <div class="splits">
-    <div class="split">
-      <h3>By stage</h3>
-      {# In the order the money is spent, which is what "by stage" says. The
-         cheap batch that sifts a page of listings used to be called "triage",
-         a word the user did not recognise -- the same reason the listing page
-         says "Your call". #}
-      <dl>
-        <dt>First pass <small>(derived)</small></dt>
-        <dd class="num">${{ '%.2f'|format(today.stages.other) }}</dd>
-        <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(today.stages.appraisal) }}</dd>
-        <dt>Photo checks</dt><dd class="num">${{ '%.2f'|format(today.stages.images) }}</dd>
-      </dl>
-    </div>
-    <div class="split">
-      <h3>By source</h3>
-      <dl>
-        {% for s in today.sources %}
-        <dt>{{s.source}}</dt><dd class="num">${{ '%.2f'|format(s.usd) }}</dd>
-        {% else %}<dt>Nothing yet</dt><dd class="num">&mdash;</dd>{% endfor %}
-      </dl>
-    </div>
-    <div class="split">
-      {# "Dearest judged" was British for "cost the most" on a page of dollar
-         figures, where it read as a price floor or as a superlative about
-         affection. Say the thing. #}
-      <h3>Cost the most</h3>
-      {% if today.dearest %}
-      <ol class="dearest">
-        {% for d in today.dearest %}
-        <li>
-          <a href="/listing/{{d.listing_id}}?back=/stats">{{ d.title }}</a>
-          <span class="num">${{ '%.3f'|format(d.cost_usd) }}</span>
-          {% if d.images_checked %}
-          <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>{% endif %}
-        </li>
-        {% endfor %}
-      </ol>
-      {# Appraisal only: the first pass is billed per batch and written to its
-         score row as 0, so these are a floor rather than the whole cost. #}
-      <p class="hint">Appraisal only. The first pass is billed per batch.</p>
-      {% else %}
-      <p class="hint">Nothing judged yet.</p>
-      {% endif %}
-    </div>
-  </div>
-  {% else %}
-  <p class="panel-note">Nothing spent yet today.
-    {% if asleep %}The bot is asleep.{% endif %}</p>
-  {% endif %}
-</div>
-
-<div class="panel" style="margin-bottom:18px">
-  <h2>Each hunt</h2>
+  <h2>Each hunt &middot; {{ period_label }}</h2>
   {# The outcome columns are the point. A cost on its own says nothing: the
-     same $4 is cheap or pure waste depending on whether anything came back. #}
+     same $4 is cheap or pure waste depending on whether anything came back.
+     Saved and dismissed are counts of what you did, which has no date, so
+     they are shown against all time only. #}
+  {% set all_time = period == 'all' %}
   <div class="wrap"><table class="responsive">
     <thead><tr>
-      <th>Hunt</th><th class="n">Spent</th><th class="n">Fetched</th>
-      <th class="n">Judged</th><th class="n">Picked</th><th class="n">Saved</th>
-      <th class="n">Dismissed</th><th class="n">Per judged</th>
-      <th class="n">Per save</th>
+      <th>Hunt</th><th class="n">Spent</th>
+      {% if all_time %}<th class="n">Fetched</th>{% endif %}
+      <th class="n">Judged</th><th class="n">Picked</th>
+      {% if all_time %}<th class="n">Saved</th><th class="n">Dismissed</th>{% endif %}
+      <th class="n">Per judged</th>
+      {% if all_time %}<th class="n">Per save</th>{% endif %}
     </tr></thead>
     <tbody>
     {% for h in by_hunt %}
+    {# Money that bought nothing to look at. Judged on PICKED, not saved: the
+       note that did this on saved named every hunt on the page, because
+       nothing is ever marked saved, and a warning that always fires is
+       furniture. #}
+    {% set barren = (h.usd or 0) > 1 and not h.binned %}
     <tr>
       <td class="lead" data-label="Hunt">{{h.name}}
-        {% if not h.live %}<span class="kind">deleted</span>{% endif %}</td>
+        {% if not h.live %}<span class="kind">removed</span>{% endif %}
+        {% if barren %}<span class="kind hi">nothing picked</span>{% endif %}</td>
       <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd or 0) }}</td>
-      <td class="n num" data-label="Fetched">{{ '{:,}'.format(h.fetched or 0) }}</td>
+      {% if all_time %}<td class="n num" data-label="Fetched">{{ '{:,}'.format(h.fetched or 0) }}</td>{% endif %}
       <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored or 0}}</td>
       <td class="n num {{'zero' if not h.binned}}" data-label="Picked">{{h.binned or 0}}</td>
+      {% if all_time %}
       <td class="n num {{'zero' if not h.saved}}" data-label="Saved">{{h.saved}}</td>
       <td class="n num {{'zero' if not h.dismissed}}" data-label="Dismissed">{{h.dismissed}}</td>
+      {% endif %}
       <td class="n num" data-label="Per judged">
         {%- if h.per_scored %}${{ '%.3f'|format(h.per_scored) }}{% else %}&mdash;{% endif %}</td>
+      {% if all_time %}
       <td class="n num" data-label="Per save">
         {%- if h.per_save %}${{ '%.2f'|format(h.per_save) }}{% else %}&mdash;{% endif %}</td>
+      {% endif %}
     </tr>
     {% else %}
     <tr><td colspan="9" class="nostack">
       <div class="empty" style="border:0;box-shadow:none;background:transparent;padding:44px 20px">
         <svg class="i" aria-hidden="true"><use href="#i-runs"/></svg>
+        {% if not spend.all.runs %}
         <b>Nothing has run yet</b>
         <p>Costs appear here after the first pass.</p>
+        {% else %}
+        <b>Nothing ran {{ 'on ' ~ period_label if period == 'day' else ('today' if period == 'today' else 'in this period') }}</b>
+        <p>{% if period == 'today' and asleep %}The bot is asleep.{% else %}Pick a longer period above.{% endif %}</p>
+        {% endif %}
       </div></td></tr>
     {% endfor %}
     </tbody>
   </table></div>
-  {% set barren = by_hunt|selectattr('saved','equalto',0)|selectattr('usd','gt',1.0)|list %}
-  {% if barren %}
-  <p class="panel-note hi">
-    {% for h in barren %}{{h.name}} has spent
-      ${{ '%.2f'|format(h.usd) }} and saved nothing.
-      {% endfor %}Worth rewording or slowing down in
-    <a href="/settings">settings</a>.
-  </p>
-  {% endif %}
 </div>
 
+{% if by_hunt %}
 <div class="panel" style="margin-bottom:18px">
-  <h2>Where it goes</h2>
+  <h2>Where it went &middot; {{ period_label }}</h2>
   <div class="splits">
     <div class="split">
       <h3>By stage</h3>
+      {# In the order the money is spent, which is what "by stage" says. The
+         cheap batch that sifts a page of listings used to be called "triage",
+         a word the user did not recognise. Derived, and labelled so: it is
+         what the runs cost that no score row claimed. #}
       <dl>
-        {# Derived, and labelled so: it is what the runs cost that no score
-           row claimed. The first pass is saved with a zero cost on its
-           score, so this remainder is what it actually came to. #}
         <dt>First pass <small>(derived)</small></dt>
         <dd class="num">${{ '%.2f'|format(stages.other) }}</dd>
         <dt>Appraisal</dt><dd class="num">${{ '%.2f'|format(stages.appraisal) }}</dd>
@@ -227,11 +151,33 @@
       </dl>
     </div>
     <div class="split">
+      {# "Dearest judged" was British for "cost the most" on a page of dollar
+         figures, where it read as a price floor. Say the thing. #}
+      <h3>Cost the most</h3>
+      {% if dearest %}
+      <ol class="dearest">
+        {% for d in dearest %}
+        <li>
+          <a href="/listing/{{d.listing_id}}?back=/stats">{{ d.title }}</a>
+          <span class="num">${{ '%.3f'|format(d.cost_usd) }}</span>
+          {% if d.images_checked %}
+          <svg class="i" aria-hidden="true"><use href="#i-camera"/></svg>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {# Appraisal only: the first pass is billed per batch and written to its
+         score row as 0, so these are a floor rather than the whole cost. #}
+      <p class="hint">Appraisal only. The first pass is billed per batch.</p>
+      {% else %}
+      <p class="hint">Nothing judged in this period.</p>
+      {% endif %}
+    </div>
+    {% if period == 'all' %}
+    <div class="split">
       <h3>Prompt cache</h3>
       {# CLAUDE.md says prefix stability is money and that rebuilding the
-         dismissal block per run would cost ~3x forever. Until now that claim
-         was not checkable from anywhere. If this figure falls, the bill
-         climbs and nothing else looks wrong. #}
+         dismissal block per run would cost ~3x forever. If this figure falls,
+         the bill climbs and nothing else looks wrong. #}
       <dl>
         <dt>Read from cache</dt>
         <dd class="num">{% if cache_pct is not none %}{{ '%.1f'|format(cache_pct) }}%
@@ -240,11 +186,13 @@
         <dt>Output</dt><dd class="num">{{ '{:,}'.format(tokens.output) }}</dd>
       </dl>
     </div>
+    {% endif %}
   </div>
 </div>
+{% endif %}
 
 <div class="panel">
-  <h2>Fetched to grabbed</h2>
+  <h2>Fetched to grabbed &middot; all time</h2>
   {# The gate's leverage, in one row. A scraper that has stopped returning
      anything or a gate that has stopped holding both show up here first. #}
   <div class="funnel">

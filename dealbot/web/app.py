@@ -8,6 +8,7 @@ explain is a tool you stop opening.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import replace
@@ -25,7 +26,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .. import config as config_mod
 from .. import schedule as schedule_mod
 from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL,
-                                   PlanUsage, read_plan_usage)
+                                   JudgingState, PlanUsage, judging_state,
+                                   read_plan_usage)
 from ..config import Config
 from ..db import Store
 from ..filters import matches_any
@@ -216,7 +218,8 @@ def _sparkline(history: list[tuple[str, int | None]], w: int = 160,
             f'vector-effect="non-scaling-stroke" points="{coords}"/></svg>')
 
 
-def _daybars(days: list[dict], ceiling: float, w: int = 300, h: int = 44) -> str:
+def _daybars(days: list[dict], ceiling: float, w: int = 300, h: int = 44,
+             chosen: date | None = None) -> str:
     """Inline SVG of daily spend, drawn the way `_sparkline` is: by hand, in
     house colours, with no library to load on a phone.
 
@@ -249,8 +252,20 @@ def _daybars(days: list[dict], ceiling: float, w: int = 300, h: int = 44) -> str
         runs = d.get("runs") or 0
         fill = ("var(--warn)" if runs and (d.get("degraded") or 0) / runs >= 0.5
                 else "var(--accent)")
-        out.append(f'<rect x="{i * slot + 1:.1f}" y="{h - bh:.1f}" '
-                   f'width="{bar:.1f}" height="{bh:.1f}" rx="1.5" fill="{fill}"/>')
+        # Each day is a link to its own figures, with a hit area the full
+        # height of the chart: a $0.40 day draws a bar two pixels tall, and
+        # nobody can tap that.
+        when = date.fromisoformat(d["day"])
+        name = f"{when:%a} {when.day} {when:%b}: ${usd:.2f}"
+        dim = (' opacity=".35"' if chosen is not None and when != chosen
+               else "")
+        out.append(f'<a href="?day={d["day"]}" aria-label="{name}">'
+                   f'<title>{name}</title>'
+                   f'<rect x="{i * slot:.1f}" y="0" width="{slot:.1f}" '
+                   f'height="{h}" fill="transparent"/>'
+                   f'<rect x="{i * slot + 1:.1f}" y="{h - bh:.1f}" '
+                   f'width="{bar:.1f}" height="{bh:.1f}" rx="1.5" '
+                   f'fill="{fill}"{dim}/></a>')
     return (f'<svg width="100%" height="{h}" viewBox="0 0 {w} {h}" '
             f'preserveAspectRatio="none" role="img" '
             f'aria-label="daily spend">{"".join(out)}</svg>')
@@ -495,6 +510,229 @@ def ago_words(minutes: float | None) -> str:
     return f"{mins // 1440}d ago"
 
 
+# --- saying what happened, in words ------------------------------------------
+#
+# The runs table stores what the pipeline wrote, which is written for the
+# journal: "detail fetch stopped: BudgetExhausted: request budget exhausted (25
+# this run); scoring skipped: 5-hour plan window at 79% (ceiling 70%) --
+# standing aside". The page says what that means. The raw text stays in the
+# database and in each row's `title`, because it is what you grep the journal
+# for.
+
+_PLAN = re.compile(r"(\S+) plan window at (\d+)% \(ceiling (\d+)%\)")
+_CEILING = re.compile(r"daily spend ceiling reached \(\$([\d.]+) of \$([\d.]+)\)")
+_RATE = re.compile(r"paused \((.+?)\)")
+_FAILED = re.compile(r"(\d+) detail fetch(?:es)? failed")
+
+
+def plain_reason(reason: str | None) -> str:
+    """Why judging stood aside, as a phrase to put in a sentence."""
+    text = str(reason or "").strip()
+    if m := _PLAN.search(text):
+        return (f"the {m[1]} plan window is at {m[2]}%, past the {m[3]}% "
+                f"mark")
+    if m := _CEILING.search(text):
+        return f"today's spend reached the ${float(m[2]):.2f} limit"
+    if m := _RATE.search(text):
+        return f"Claude asked it to wait ({m[1]})"
+    if "unreachable" in text:
+        return "there was no connection to Claude"
+    return text or "something stopped it"
+
+
+def plain_warning(warning: str | None) -> list[str]:
+    """Each clause of a run's warning, as a sentence a person would say."""
+    out = []
+    for clause in str(warning or "").split("; "):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if clause.startswith("fetch skipped"):
+            out.append("Skipped. The pass had used up its requests.")
+        elif clause.startswith("detail fetch stopped"):
+            out.append("Ran out of requests before opening every listing."
+                       if "BudgetExhausted" in clause or "budget" in clause
+                       else "The site stopped answering part way through.")
+        elif m := _FAILED.match(clause):
+            n = int(m[1])
+            out.append(f"{n} listing{'' if n == 1 else 's'} could not be "
+                       f"opened.")
+        elif clause.startswith("scoring skipped"):
+            out.append(f"Not judged: {plain_reason(clause)}.")
+        elif clause.startswith("scoring interrupted"):
+            out.append(f"Judging stopped part way: {plain_reason(clause)}.")
+        else:
+            out.append(clause)
+    return out
+
+
+def plain_error(error: str | None) -> str:
+    """A failed fetch, said plainly. Unknown ones are shown as they are."""
+    text = str(error or "")
+    low = text.lower()
+    if "throttl" in low or "no feed data" in low or "no items key" in low:
+        return "The site sent a page with no listings. Probably throttled."
+    if low.startswith("parsed 0 of"):
+        return "Fetched listings but could not read any of them."
+    if "surfaces gated" in low:
+        return "The site refused every way in."
+    if m := re.search(r"HTTP (\d{3})", text):
+        return f"The site answered {m[1]}."
+    if "timeout" in low or "timed out" in low:
+        return "The site took too long to answer."
+    if "connection" in low or "unreachable" in low:
+        return "Could not reach the site."
+    return text
+
+
+def judging_view(state: JudgingState, now: float | None = None) -> dict:
+    """`judging_state`, in words, for the pill, the status card and the plan
+    panel. They all read this, which is what stops them contradicting each
+    other."""
+    now = time.time() if now is None else now
+    if state.kind == "override":
+        mins = max(0, int(((state.until or now) - now) / 60))
+        return {"held": False, "override": True, "kind": state.kind,
+                "why": f"Past the usual limits for {mins} more min.",
+                "resumes": "", "raw": ""}
+    if not state.held:
+        return {"held": False, "override": False, "kind": state.kind,
+                "why": "", "resumes": "", "raw": ""}
+    why = plain_reason(state.reason)
+    left = until_words((state.until or 0) - now) if state.until else ""
+    return {"held": True, "override": False, "kind": state.kind,
+            "why": why[:1].upper() + why[1:],
+            "resumes": f"Resumes {left}." if left else "",
+            "raw": state.reason}
+
+
+# How many passes /runs shows; the rest are one tap away on /runs/all.
+PASSES_SHOWN = 10
+
+# Runs inside one pass start the instant the one before finishes; passes are
+# minutes apart. Anything wider than this is a new pass.
+PASS_GAP_SECONDS = 90
+
+
+def group_passes(rows: list[dict]) -> list[dict]:
+    """Runs, newest first, grouped into the passes that made them.
+
+    One `dealbot once` is ten runs (five hunts, two sites), and read as ten
+    separate cards it could not answer the question a budget problem raises:
+    what happened in that PASS. There is no pass column to group by and none
+    is needed, because the loop is sequential -- a pass is a run of rows each
+    starting as the last one finished.
+    """
+    passes: list[dict] = []
+    prev_end = None
+    for r in sorted(rows, key=lambda r: r["id"]):
+        start = _parse_ts(r["started_at"])
+        if (not passes or start is None or prev_end is None
+                or (start - prev_end).total_seconds() > PASS_GAP_SECONDS):
+            passes.append({"runs": []})
+        passes[-1]["runs"].append(r)
+        prev_end = _parse_ts(r["finished_at"]) or start
+    out = []
+    for p in reversed(passes):
+        runs = p["runs"]
+        first, last = runs[0], runs[-1]
+        notes = []
+        for r in runs:
+            r["notes"] = ([plain_error(r["error"])] if r["error"]
+                          else plain_warning(r.get("warning")))
+            for text in r["notes"]:
+                notes.append({"text": text, "bad": bool(r["error"])})
+        out.append({
+            "started_at": first["started_at"],
+            "took": took(first["started_at"], last["finished_at"]),
+            "unfinished": any(not r["finished_at"] for r in runs),
+            "runs": list(reversed(runs)),
+            "hunts": len({r["hunt_id"] for r in runs}),
+            "sources": len({r["source"] for r in runs}),
+            "fetched": sum(r["n_fetched"] or 0 for r in runs),
+            "new": sum(r["n_new"] or 0 for r in runs),
+            "scored": sum(r["n_scored"] or 0 for r in runs),
+            "picked": sum((r["n_wanted"] or 0) + (r["n_free_find"] or 0)
+                          for r in runs),
+            "cost": sum(r["cost_usd"] or 0 for r in runs),
+            "failed": sum(1 for r in runs if r["error"]),
+            "notes": notes,
+        })
+    return out
+
+
+def _parse_ts(raw) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def now_lines(*, judging: dict, paused: list, hunts: list, sched,
+              last) -> list[dict]:
+    """What is true right now, most actionable first, each with the one action
+    it calls for. The top of /runs, and the rest of what the pill has room to
+    say.
+
+    The pill links here, and this page used to open on three switches, a meter
+    and 200 raw log entries: the answer to "what is it doing" was in three
+    places, one of which said "Running" while another said judging was held.
+    The order follows `health`, so the headline here and the pill agree.
+    """
+    lines = []
+    all_off = bool(hunts) and len(paused) == len(hunts)
+    if all_off:
+        lines.append({"tone": "warn", "title": "Everything is paused",
+                      "text": "Nothing is being collected.",
+                      "action": {"toggle": {"kind": "all", "enable": "1"},
+                                 "label": "Resume all searching"}})
+    if last is not None and last["error"]:
+        lines.append({"tone": "bad", "title": "The last fetch failed",
+                      "text": f"{plain_error(last['error'])} It tries again "
+                              f"next pass.", "raw": last["error"]})
+    if judging["held"]:
+        lines.append({"tone": "warn", "title": "Judging is paused",
+                      "text": " ".join(t for t in (
+                          f"{judging['why']}.", judging["resumes"],
+                          "Still collecting.") if t),
+                      "raw": judging["raw"],
+                      "action": {"override": 120,
+                                 "label": "Judge anyway for 2 hours"}})
+    elif judging["override"]:
+        lines.append({"tone": "ok", "title": "Judging anyway",
+                      "text": judging["why"],
+                      "action": {"override": 0,
+                                 "label": "Back to normal limits"}})
+    if paused and not all_off:
+        if any(h.kind == "sweep" for h in paused):
+            lines.append({"tone": "warn",
+                          "title": "Free-stuff searches are paused",
+                          "text": "Your wants are still searched.",
+                          "action": {"toggle": {"kind": "sweep",
+                                                "enable": "1"},
+                                     "label": "Resume free-stuff searches"}})
+        for h in paused:
+            if h.kind == "sweep":
+                continue
+            lines.append({"tone": "warn", "title": f"{h.name} is paused",
+                          "text": "Not searched for.",
+                          "action": {"toggle": {"hunt_id": h.id,
+                                                "enable": "1"},
+                                     "label": "Resume"}})
+    if not sched.is_open() and not all_off:
+        lines.append({"tone": "idle",
+                      "title": "Asleep until "
+                               + schedule_mod.fmt_clock(sched.start_minute),
+                      "text": "Nothing runs outside the waking hours.",
+                      "action": {"href": "/settings#running",
+                                 "label": "Change hours"}})
+    if not lines:
+        lines.append({"tone": "ok", "title": "Working",
+                      "text": "Searching and judging normally."})
+    return lines
+
+
 def plan_usage_view(usage: PlanUsage, now: float | None = None) -> dict:
     """The plan windows, shaped for the meters on /runs.
 
@@ -561,11 +799,12 @@ def _safe_back(back: str) -> str:
     return cleaned
 
 
-def health(row, paused, hunts, sched, activity) -> dict:
+def health(row, paused, hunts, sched, activity, judging=None) -> dict:
     """The state of the bot itself, on every page, in one pill.
 
-    Pure: `row` is the latest `runs` row (or None) and `activity` is
-    `Store.run_activity()`. It lives out here
+    Pure: `row` is the latest `runs` row (or None), `activity` is
+    `Store.run_activity()` and `judging` is `judging_view(...)`. It lives out
+    here
     because the ORDER below has been wrong twice, and a precedence
     ladder that can only be exercised through HTTP is one nobody tests
     every branch of.
@@ -600,13 +839,14 @@ def health(row, paused, hunts, sched, activity) -> dict:
         return {"state": "bad", "label": "Fetch failing",
                 "detail": f"{detail} — {row['error']}"}
 
-    # 2b. Fetched fine, stood aside from the plan quota. This used to be
-    #     written to `error` and special-cased back out again here -- which
-    #     fixed the pill while leaving `last_success_at` reading it as a
-    #     failure, so the cadence collapsed to the timer period. It is a
-    #     warning now, at the source.
-    reason = standdown_reason(row["warning"]) if row is not None else None
-    if reason:
+    # 2b. Judging is held. Asked of the GATE (`judging_state`), not read off
+    #     the latest run's warning, which is what this used to do: a run with
+    #     nothing to judge records no standdown, so the pill read a green
+    #     "2m ago" while the plan was at 79% and nothing could be judged; and
+    #     a window that rolled after the last run left it amber over a bot
+    #     free to judge. The gate is what the scorer obeys, so it is what the
+    #     pill says.
+    if judging is not None and judging.get("held"):
         # The label says the STATE and nothing else. "Judging paused: plan
         # 72%" is 24 characters in a pill that has to share a phone's top bar
         # with the brand and the settings gear, and it was being cut off
@@ -616,8 +856,10 @@ def health(row, paused, hunts, sched, activity) -> dict:
         # The why is one tap away and stated in full: that is what the pill
         # links to, and /runs used to contradict it by reading "Running" while
         # this went amber. Fixing that is what makes a short label honest.
+        resumes = f" {judging['resumes']}" if judging.get("resumes") else ""
         return {"state": "warn", "label": "Judging paused",
-                "detail": f"{reason}. Collecting normally. {detail}"}
+                "detail": f"{judging['why']}.{resumes} Collecting normally. "
+                          f"{detail}"}
 
     # 3. Some hunts off. Indefinite, and only you can undo it.
     if paused:
@@ -714,12 +956,19 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     def _schedule():
         return schedule_mod.load(store, base_cfg.schedule)
 
-    def _health(paused, hunts, sched, activity) -> dict:
-        return health(store.conn.execute(
+    def _last_run():
+        return store.conn.execute(
             "SELECT started_at, error, warning,"
             " (julianday('now') - julianday(started_at))"
-            " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone(),
-            paused, hunts, sched, activity)
+            " * 1440 AS mins FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+
+    def _judging() -> dict:
+        # `base_cfg.scorer`: the ceilings are config, not something the
+        # dashboard tunes. Read only -- see `judging_state`.
+        return judging_view(judging_state(store, base_cfg.scorer))
+
+    def _health(paused, hunts, sched, activity, judging, last) -> dict:
+        return health(last, paused, hunts, sched, activity, judging)
 
     def ctx(request: Request, **kw):
         # Every page carries the paused state. A bot that has been switched off
@@ -737,7 +986,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # states the same figures underneath the list they describe. Two calls
         # would be two answers to one question, a second apart.
         activity = store.run_activity()
+        # Once per request, and handed to everything that states it: the pill
+        # and the status card on /runs used to answer this separately.
+        judging = kw.pop("judging", None) or _judging()
+        last = _last_run()
         return {"request": request, "hunts": hunts, "activity": activity,
+                "judging": judging, "last_run": last,
                 # Passed rather than registered as a Jinja filter: the filter
                 # table lives on a module-level Environment, so binding a
                 # timezone into it would make one app's clock another's.
@@ -749,7 +1003,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 "paused_hunts": paused,
                 "all_paused": all_paused,
                 "bin_counts": _counts(),
-                "health": _health(paused, hunts, sched, activity),
+                "health": _health(paused, hunts, sched, activity, judging,
+                                  last),
                 "schedule": sched,
                 "sweeps_paused": bool(sweeps)
                                  and all(h.id in off for h in sweeps),
@@ -1192,9 +1447,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             # number here goes stale the moment a want is added.
             "combos": len([h for h in cfg.hunts if h.id not in off]) * len(cfg.sources),
         }
+        # Every hunt's cadence in one list. The sweep's was here and each
+        # want's was on its own editor, so "how often does it search" had two
+        # answers in two places.
+        cadence = [{"hunt": h, "paused": h.id in off} for h in cfg.hunts]
         return TEMPLATES.TemplateResponse(request, "settings.html", ctx(
             request, cfg=cfg, sched=sched, n_wants=len(store.wants()),
-            sweeps=sweeps,
+            sweeps=sweeps, cadence=cadence,
             intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
             err=err, tuning=tuning,
             start=schedule_mod.fmt_hhmm(sched.start_minute),
@@ -1241,6 +1500,26 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 except (TypeError, ValueError):
                     continue
         return _answer(request, back)
+
+    @app.post("/settings/intervals")
+    async def save_intervals(request: Request):
+        """Every hunt's cadence from one form, as `iv:<hunt_id>` fields.
+
+        Only hunts that exist are written: the field names come from the
+        browser, and a settings row for a hunt that is not there is a row
+        nothing will ever read.
+        """
+        form = await request.form()
+        live = {h.id for h in _live().hunts}
+        for key, value in form.items():
+            if not key.startswith("iv:") or key[3:] not in live:
+                continue
+            try:
+                minutes = int(str(value))
+            except ValueError:
+                continue
+            store.set_hunt_interval(key[3:], _clean_interval(minutes))
+        return _answer(request, str(form.get("back") or "/settings"))
 
     @app.post("/settings/interval")
     def save_interval(request: Request, hunt_id: str = Form(...),
@@ -1532,35 +1811,6 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 store.archive_matches(f"want:{name}")
         return _answer(request, back)
 
-    def _quota_state() -> dict:
-        """What is stopping the judging, and whether the user has overridden it.
-
-        Fetching is unaffected by any of this -- it costs no quota -- so this
-        panel is only ever about the judging half.
-        """
-        now = time.time()
-        def _ts(key):
-            try:
-                return float(store.get_setting(key) or 0)
-            except (TypeError, ValueError):
-                return 0.0
-        until, override = _ts(PAUSE_UNTIL), _ts(OVERRIDE_UNTIL)
-        # The pill links here to explain itself, so this row has to know about
-        # BOTH ways the judging stops. It only knew about the rate-limit pause
-        # in `settings`, so a run that stood aside from the plan ceiling lit
-        # the pill amber and then told you, on the page it sent you to, that
-        # judging was "Running".
-        last = store.conn.execute(
-            "SELECT warning FROM runs ORDER BY id DESC LIMIT 1").fetchone()
-        return {
-            "paused": until > now,
-            "reason": store.get_setting(PAUSE_REASON, "rate limit"),
-            "mins": int((until - now) / 60) if until > now else 0,
-            "override": override > now,
-            "override_mins": int((override - now) / 60) if override > now else 0,
-            "standdown": standdown_reason(last["warning"]) if last else None,
-        }
-
     @app.post("/quota/override")
     def quota_override(request: Request, minutes: int = Form(120),
                        back: str = Form("/runs")):
@@ -1578,8 +1828,11 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             store.set_setting(OVERRIDE_UNTIL, "0")
         return _answer(request, back)
 
+    PERIODS = (("today", "Today"), ("week", "7 days"), ("month", "30 days"),
+               ("all", "All time"))
+
     @app.get("/stats")
-    def stats(request: Request):
+    def stats(request: Request, period: str = "week", day: str = ""):
         """What it costs, and what it found for the money.
 
         A separate page from /runs on purpose. /runs answers "is it working
@@ -1616,15 +1869,34 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                       else now.astimezone()).utcoffset().total_seconds() // 60)
         by_day = store.spend_by_day(30, offset)
         days = _fill_days(by_day, min(30, max(history_days, 1)), offset)
-        # The same week the bars draw, said in figures. A bar chart answers
-        # "is this normal"; it cannot answer "what did Tuesday cost", which is
-        # the question you have when today's number looks high. Newest first:
-        # today is the row you came for.
-        week_days = []
-        for d in reversed(_fill_days(by_day, 7, offset)):
-            day = date.fromisoformat(d["day"])
-            week_days.append({**d, "label": f"{day:%a} {day.day} {day:%b}",
-                              "today": d["day"] == days[-1]["day"]})
+
+        # ONE window drives everything below the spend panel. The page used to
+        # break spend down by stage and by source twice (today, then all
+        # time), list the week as seven cards under a chart of the same week,
+        # and give each hunt a row for today and another for all time.
+        #
+        # A chart cannot answer "what did Tuesday cost", which is why the week
+        # was listed; each bar links to its day instead (`day=`), so the
+        # question has an answer without a second copy of the week.
+        tz = sched.tz
+        chosen_day = None
+        if day:
+            try:
+                chosen_day = date.fromisoformat(day)
+            except ValueError:
+                chosen_day = None
+        if chosen_day is not None:
+            local = datetime(chosen_day.year, chosen_day.month, chosen_day.day,
+                             tzinfo=tz) if tz else datetime(
+                chosen_day.year, chosen_day.month, chosen_day.day).astimezone()
+            since = local.astimezone(timezone.utc).isoformat()
+            until = (local + timedelta(days=1)).astimezone(timezone.utc).isoformat()
+            period, label = "day", f"{chosen_day:%a} {chosen_day.day} {chosen_day:%b}"
+        else:
+            if period not in dict(PERIODS):
+                period = "week"
+            since, until = windows[period], None
+            label = dict(PERIODS)[period]
 
         # A run rate, from the shorter of a week and what we actually have.
         # Annualising four days of a new bot would be a made-up number stated
@@ -1634,7 +1906,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
 
         hunts = {h.id: h for h in cfg.hunts}
         by_hunt = []
-        for row in store.spend_by_hunt():
+        for row in store.spend_by_hunt(since, until):
             hunt = hunts.get(row["hunt_id"])
             by_hunt.append({
                 **row,
@@ -1647,46 +1919,28 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 "per_save": (row["usd"] / row["saved"]) if row["saved"] else None,
             })
 
-        # What today's money actually went on. Same shape as the all-time
-        # table, scoped to the day, plus the individual listings that cost the
-        # most -- an image pass runs about 15x a text appraisal, so one
-        # photo-checked junk post shows up immediately.
-        today = {
-            "hunts": [{**r,
-                       "name": (hunts[r["hunt_id"]].name if r["hunt_id"] in hunts
-                                else r["hunt_id"].split(":", 1)[-1])}
-                      for r in store.spend_by_hunt(day_iso)],
-            "stages": store.spend_by_stage(day_iso),
-            "sources": store.spend_by_source(day_iso),
-            "dearest": store.dearest_since(day_iso, 5),
-            "started": day_start,
-        }
-
         tokens = store.token_totals()
         billed = tokens["input"] + tokens["cached"]
         return TEMPLATES.TemplateResponse(request, "stats.html", ctx(
-            request, spend=spend, days=days, week_days=week_days,
-            bars=_daybars(days, ceiling),
+            request, spend=spend, days=days,
+            bars=_daybars(days, ceiling, chosen=chosen_day),
             ceiling=ceiling, per_day=per_day, history_days=history_days,
-            by_hunt=by_hunt, by_source=store.spend_by_source(),
-            stages=store.spend_by_stage(), funnel=store.funnel(),
+            period=period, period_label=label, periods=PERIODS,
+            by_hunt=by_hunt, by_source=store.spend_by_source(since, until),
+            stages=store.spend_by_stage(since, until), funnel=store.funnel(),
+            dearest=store.dearest_since(since, 5, until),
             calibration=store.calibration(),
-            today=today, asleep=not sched.is_open(), tz_name=sched.tz_name,
+            asleep=not sched.is_open(), tz_name=sched.tz_name,
             tokens=tokens,
             cache_pct=(tokens["cached"] / billed * 100) if billed else None))
 
-    @app.get("/runs")
-    def runs(request: Request):
-        rows = [dict(r) for r in store.conn.execute(
-            "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
-        for r in rows:
-            r["took"] = took(r["started_at"], r["finished_at"])
+    def _judged_recently():
         # What the pill is talking about. It has room for "Judging" and a
         # clock, and nothing else -- so the listings themselves, and which
         # hunt and which site each came from, live on the page it links to.
-        judged = []
+        out = []
         for j in store.judged_recently(12):
-            judged.append({
+            out.append({
                 **j,
                 "hunt": j["hunt_id"].split(":", 1)[-1],
                 # A first-pass drop is a score of 0.0 with a `:triage` model.
@@ -1694,12 +1948,64 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                 # what the number alone would read as.
                 "dropped": (j["model"] or "").endswith(":triage"),
             })
+        return out
+
+    @app.get("/runs")
+    def runs(request: Request):
+        """Is it working, and what is it doing. In that order.
+
+        This page opened on three switches, then a meter, then 200 run cards
+        about 230px each -- 46,000px on a phone, with the list of hunts at the
+        very bottom. The pill links here to explain itself, so the top is now
+        the explanation: what is true, and the one action each fact calls for.
+        The switches live on /settings; the full log is /runs/all.
+        """
+        cfg, sched = _live(), _schedule()
+        judging = _judging()
+        off = store.disabled_hunts()
+        hunts = cfg.hunts
+        paused = [h for h in hunts if h.id in off]
+        rows = [dict(r) for r in store.conn.execute(
+            "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
+        backlog = store.unjudged_counts()
+        hunt_rows = [{"hunt": h, "waiting": backlog.get(h.id, 0),
+                      "paused": h.id in off} for h in hunts]
+        passes = group_passes(rows)
         return TEMPLATES.TemplateResponse(request, "runs.html", ctx(
-            request, runs=rows, quota=_quota_state(), judged=judged,
-            # What the plan has left, next to the switch that overrides it.
-            # `base_cfg` rather than `_live()`: the ceilings are config, not
-            # one of the things the dashboard is allowed to tune.
-            usage=plan_usage_view(read_plan_usage(store, base_cfg.scorer)),
-            backlog=store.unjudged_counts()))
+            request, cfg=cfg, sched=sched, judging=judging,
+            now_lines=now_lines(judging=judging, paused=paused, hunts=hunts,
+                                sched=sched, last=_last_run()),
+            passes=passes[:PASSES_SHOWN], hunt_rows=hunt_rows,
+            waiting=sum(backlog.get(h.id, 0) for h in hunts),
+            ilabels=dict(INTERVAL_CHOICES),
+            judged=_judged_recently(),
+            # What the plan has left, next to the sentence it explains.
+            usage=plan_usage_view(read_plan_usage(store, base_cfg.scorer))))
+
+    @app.get("/runs/all")
+    def runs_all(request: Request, hunt: str = "", before: int = 0):
+        """Every run, one row each, for when a pass needs taking apart.
+
+        Filtered by hunt from the hunt rows on /runs, and paged by id so the
+        page stays one query however long the table grows.
+        """
+        where, args = [], []
+        if hunt:
+            where.append("hunt_id = ?")
+            args.append(hunt)
+        if before > 0:
+            where.append("id < ?")
+            args.append(before)
+        sql = ("SELECT * FROM runs"
+               + (" WHERE " + " AND ".join(where) if where else "")
+               + " ORDER BY id DESC LIMIT ?")
+        rows = [dict(r) for r in store.conn.execute(sql, (*args, PAGE_LIMIT))]
+        for r in rows:
+            r["took"] = took(r["started_at"], r["finished_at"])
+            r["notes"] = ([plain_error(r["error"])] if r["error"]
+                          else plain_warning(r["warning"]))
+        return TEMPLATES.TemplateResponse(request, "runs_all.html", ctx(
+            request, runs=rows, hunt_filter=hunt,
+            older=rows[-1]["id"] if len(rows) == PAGE_LIMIT else None))
 
     return app

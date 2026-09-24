@@ -736,3 +736,64 @@ def test_a_want_hunt_never_pays_to_snapshot_its_dismissals(tmp_path):
     assert scorer._negative_examples(want) == ()
     assert store.get_setting("negatives:want:x") is None, "no write either"
     store.close()
+
+
+# --- one gate, read by the scorer and the dashboard alike ------------------
+
+def _over_plan(store, used="0.79", ahead=3600):
+    import time
+    from datetime import datetime, timezone
+    from dealbot.scoring.claude_code import RESET_5H, UTIL_5H, UTIL_AT
+    store.set_setting(UTIL_5H, used)
+    store.set_setting(RESET_5H, str(time.time() + ahead))
+    store.set_setting(UTIL_AT, datetime.now(timezone.utc).isoformat())
+
+
+def test_the_gate_the_dashboard_reads_is_the_one_the_scorer_obeys(scorer,
+                                                                  monkeypatch):
+    """The pill and /runs used to decide "judging paused" from the latest
+    run's warning, and disagreed with the scorer both ways. `judging_state` is
+    now the only place the holds live: check_available raises exactly what it
+    says."""
+    from dealbot.scoring.claude_code import judging_state
+    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    s, store = scorer
+    assert judging_state(store, s.cfg).kind == "running"
+    s.check_available()                               # nothing held, no raise
+
+    _over_plan(store)
+    state = judging_state(store, s.cfg)
+    assert state.held and state.kind == "plan" and state.until
+    with pytest.raises(ScoringUnavailable) as exc:
+        s.check_available()
+    assert str(exc.value) == state.reason
+    assert "5-hour plan window at 79% (ceiling 70%)" in state.reason
+
+
+def test_an_override_lifts_every_hold_and_says_until_when(scorer):
+    import time
+    from dealbot.scoring.claude_code import OVERRIDE_UNTIL, judging_state
+    s, store = scorer
+    _over_plan(store)
+    store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
+    state = judging_state(store, s.cfg)
+    assert state.kind == "override" and not state.held
+
+
+def test_the_spend_ceiling_is_reported_before_the_plan(scorer):
+    """Same order as check_available always had: the first hold found is the
+    one named."""
+    from dataclasses import replace
+    from dealbot.scoring.claude_code import judging_state
+    s, store = scorer
+    _over_plan(store)
+    cfg = replace(s.cfg, daily_cost_limit_usd=0.5)
+    state = judging_state(store, cfg, spent_extra=0.75)
+    assert state.kind == "ceiling"
+    assert "daily spend ceiling reached ($0.75 of $0.50)" == state.reason
+    assert state.until and state.until > time_now()
+
+
+def time_now():
+    import time
+    return time.time()
