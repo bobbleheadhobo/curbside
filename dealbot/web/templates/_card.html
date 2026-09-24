@@ -239,7 +239,7 @@
       <input type="hidden" name="listing_id" value="{{i.id}}">
       <input type="hidden" name="status" value="{{s}}">
       <input type="hidden" name="back" value="{{back}}">
-      <button title="{% if s == 'saved' %}Move to Saved{% elif s == 'dismissed' %}Take it out of this bin, and teach the hunt not to send things like it{% endif %}">
+      <button title="{% if s == 'saved' %}Move to Saved{% elif s == 'dismissed' %}Take it off your picks, and teach the hunt not to send things like it{% endif %}">
         {% if s == 'saved' %}<svg class="i" aria-hidden="true"><use href="#i-saved"/></svg>Save
         {% elif s == 'dismissed' %}<svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Dismiss
         {% else %}{{s}}{% endif %}

@@ -98,7 +98,7 @@
           {%- elif photos.binned %}
             The model asked for a look and the image budget ran out.
           {%- else %}
-            The model asked for a look. It was not headed for a bin on its text score, so no photographs were bought.
+            The model asked for a look. It was not going to be picked on its text score, so no photographs were bought.
           {%- endif %}</span>
       {% else %}
         <svg class="i" aria-hidden="true"><use href="#i-noimg"/></svg>
@@ -368,7 +368,7 @@
     {% endif %}
     {% if matches %}
     <p class="triage-help">
-      <b>Save</b> moves it to Saved. <b>Dismiss</b> takes it out of the bin and
+      <b>Save</b> moves it to Saved. <b>Dismiss</b> takes it off your picks and
       teaches the hunt: dismissed titles become examples of what you do not want
       in its next prompt. Either one closes this page.
     </p>

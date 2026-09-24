@@ -52,25 +52,29 @@ Price and photo are the first gate; the model's reasoning is read only once
 those two look good. That ordering is the core interaction to design for —
 judgement is progressive disclosure, not front-matter.
 
-Live scale (2026-09-09): 790 listings, 126 runs, and per bin —
+Live scale (2026-09-09): 790 listings, 126 runs, and per list —
 6 wanted, 21 free finds, 184 scored, 164 filtered, 241 new, 180 gone.
-Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
+The lists are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
 
 ## Capabilities and Constraints
 
-- **One listing appears in exactly one bin.** `hunt_matches` stays per
-  (hunt, listing) so triage state is independent, but the bin views pick one
+- **One listing appears on exactly one list.** `hunt_matches` stays per
+  (hunt, listing) so triage state is independent, but the list views pick one
   row per listing by what you already decided: saved outranks wanted outranks
   free find. Confirmed 2026-09-10 after the same item showed twice.
-- **The free bin only ever holds free things.** Only the sweep fills it; a want
+- **Free finds only ever holds free things.** Only the sweep fills it; a want
   hunt that meets an unrelated bargain leaves it `scored`. Seven of the ten
-  entries in that bin were priced items from want hunts, one of them a $40
+  entries on that list were priced items from want hunts, one of them a $40
   entertainment centre wearing a green tv-stand chip under a tab called
   "Free finds".
 - **The word "triage" does not appear in the interface.** The user did not
   recognise it. It survives as the endpoint name and in these documents, where
   the audience is whoever maintains this.
-- **Four bins are fixed destinations** and the user has confirmed they stay
+- **Nor does "bin".** "Binned" reads as thrown away, which is the opposite of
+  what it meant. The interface says a listing was **picked**, and Wants and
+  Free finds hold your **picks** (2026-09-24). The code keeps its old names
+  (`BIN_STATUSES`, `ONE_BIN`); these documents say picks or lists.
+- **Four lists are fixed destinations** and the user has confirmed they stay
   with their current meanings: `/` wants, `/free` free finds, `/saved`,
   `/skipped` judged and passed over (renamed from `/near`, which read as
   "near me"; the old URL redirects). Plus per-hunt views, a listing detail page, and runs.
@@ -103,7 +107,7 @@ Bins are small; the archive is not. `PAGE_LIMIT` caps every view at 200.
   estimated value and nothing else can check one. The button confirms the figure
   rather than assuming the asking price, because a haggled purchase filed at the
   asking price is a calibration point that lies.
-- **A price drop on something in a bin is announced**, added 2026-09-11. The
+- **A price drop on something on a list is announced**, added 2026-09-11. The
   baseline is the price you were last told, so each real drop announces once.
 - **Collected-but-never-judged is visible on `/runs`.** Every individual run
   looked healthy while a third of what arrived was silently discarded.
@@ -172,7 +176,7 @@ smuggling in a point of view.
 **Amended 2026-09-10: one accent was too few.** The user found the result
 bland, so each destination now owns a hue (`--tint`): wants blue, free green,
 saved violet, skipped slate, runs teal, settings amber. It is still colour with
-a job — it says which bin you are in — and semantic green/amber/red keep their
+a job — it says which list you are on — and semantic green/amber/red keep their
 own meanings and are never borrowed for it. The score is a filled pill rather
 than a coloured digit. Both themes must define every hue.
 

@@ -27,7 +27,7 @@ pipeline is provably fine and a Facebook change is a one-file repair.
 |---|---|---|
 | **P0** | config, schema, pipeline, gate, fixture source, dashboard, stub scorer | **done** |
 | **P2** | `claude -p` scorer — triage + appraise, three-way match | **done** |
-| **P2.5** | two bins; model-requested image pass | **done** |
+| **P2.5** | two lists of picks; model-requested image pass | **done** |
 | **P1** | live Facebook + Craigslist sources, two-stage fetch | **done** |
 | **P3** | dismissal learning, price-drop / stale flags, sparkline, rejection view | **done** |
 | P4 | Discord notifications — two channels | next |
@@ -163,16 +163,16 @@ titled "Free" with no description would waste the one chance to score it.
 and an item page — so the parser is testable with no network. When the adapter
 breaks, those tests say whether it was us or Facebook.
 
-## Two bins
+## Two lists of picks
 
 The dashboard sorts finds by **why they are there**, not by how sure we are:
 
 - **Wants** (`/`) — matches for something on your list. Unverified matches sit
-  here too, flagged, rather than in a bin of their own: a 9.0 unconfirmed TV
+  here too, flagged, rather than on a list of their own: a 9.0 unconfirmed TV
   stand belongs next to a 9.0 confirmed one.
 - **Free finds** (`/free`) — nothing on your list, but worth collecting anyway.
 
-That second bin exists because `worth_grabbing` is a **separate axis** from
+That second list exists because `worth_grabbing` is a **separate axis** from
 `match`. Without it the sweep can only ever return things you already thought to
 ask for, which defeats the point of trawling free listings at all. It is also
 where the first version quietly failed: triage was told to keep anything "worth

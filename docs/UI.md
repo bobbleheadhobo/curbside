@@ -6,7 +6,7 @@ you are changing what it looks like.
 ## Get a database to work against, first
 
 **Do not develop against `data/dealbot.db`.** A timer writes to it every fifteen
-minutes, its bins hold a handful of rows, nothing has ever been saved, and half
+minutes, its lists hold a handful of rows, nothing has ever been saved, and half
 the views render empty. You will design against the wrong thing and fight a
 moving target.
 
@@ -87,7 +87,7 @@ as a stage label and got the same reaction, so the cheap batched sift is
 `"<model>:triage"`, and the internal noun is unchanged — this is what the
 interface calls it, not what the code calls it. `tests/test_web.py` pins it.
 
-**One listing, one bin.** `ONE_BIN` in `app.py` is appended to every bin query
+**One listing, one list.** `ONE_BIN` in `app.py` is appended to every list query
 *and* to the counts behind them. Keep those two together: the counts drifting
 from the cards is how "12 waiting" ends up over ten of them.
 
@@ -155,7 +155,7 @@ boundary is that it messages nobody. It was removed when `grabbed` arrived, so
 the number of statuses stayed where it was. Do not add it back.
 
 **`grabbed` is not a `/triage` status.** It carries a figure and it clears the
-listing out of every other hunt's bin, so it has its own endpoint: POST
+listing off every other hunt's list, so it has its own endpoint: POST
 `/grabbed` with `hunt_id`, `listing_id`, `paid` (dollars, blank allowed) and
 `undo`. The button reveals a pre-filled price field rather than acting on the
 first tap, and **that is deliberate**: recording the asking price for a haggled
@@ -240,7 +240,7 @@ there lands everywhere. It takes
 `(item, back_url, actions, show_status, block, grab)`. `back_url` is where the
 triage buttons return to; `actions` are the triage statuses offered inline
 (`['saved','dismissed']`, and `['dismissed']` on `/saved`); `show_status` is off
-everywhere but the hunt views, since the bins are named after their status;
+everywhere but the hunt views, since the lists are named after their status;
 `block` adds the *Never show me* control, sweep cards only; `grab` adds
 **Grabbed it** and the price row, `/saved` only.
 
@@ -259,9 +259,9 @@ a free or priced listing reads needed both files and only ever got one. `was` is
 the caller's argument because the card and the detail page derive the old price
 differently.
 
-**Template context.** Every view gets `bin_counts` — the per-bin totals behind
-the nav pips, deduplicated the same way the bins themselves are. There is no
-separate `counts` on the bin pages; three of them used to pass one *in addition*
+**Template context.** Every view gets `bin_counts` — the per-list totals behind
+the nav pips, deduplicated the same way the lists themselves are. There is no
+separate `counts` on the list pages; three of them used to pass one *in addition*
 to `bin_counts`, computing the identical three queries twice per page load. The
 hunt view has its own `counts`, which is a different thing: per-status totals for
 that one hunt.
@@ -285,7 +285,7 @@ SQL. The ones the card actually reads:
 | `unknowns` `requirements` `red_flags` | decoded lists; `requirements` is `[{req, met, evidence}]` |
 | `images_checked` | whether the model looked at photos |
 | `status` `filter_reason` | `filter_reason` only on hunt views |
-| `price_unclear` | the seller put $0 and asked for money in the words; the price renders as "price unclear" and never as FREE, and `route` keeps the listing out of the free bin, so it surfaces on `/skipped` |
+| `price_unclear` | the seller put $0 and asked for money in the words; the price renders as "price unclear" and never as FREE, and `route` keeps the listing out of Free finds, so it surfaces on `/skipped` |
 | `grabbed_at` / `paid_cents` | you went and got it. The card marks the photograph **yours** and states what you paid; the listing page adds the date. **NULL, 0 and a figure are three different answers** and none may render as another: 0 is free, NULL is "I did not note it down" and prints nothing at all. A forgotten figure shown as free would be a lie in the one table that can check the model |
 | `sold_at` `sold_reason` | off the market. `sold` is the source saying so, `removed` only the page no longer resolving, so the badge says *gone* for the second |
 
@@ -468,7 +468,7 @@ judgement rests on rather than a fault.
 **And "did not get to" has two causes, which the page blamed as one.** The
 sentence read "the image budget ran out", true of 7 of those 169. The other 162
 were never offered a photograph: stage 5b buys them only for a listing `route`
-would ALREADY bin on its text score, so they are turned down long before
+would ALREADY pick on its text score, so they are turned down long before
 `max_image_checks` is consulted. The replacement sentence names that test
 rather than a reason it can fail -- "it scored too low" would be wrong for a
 want hunt, which declines a non-match whatever it scored. Naming the budget there was not just
@@ -643,7 +643,7 @@ photographs. A listing with no *photograph* never reaches a card at all.
 listing plausibly matches but something could not be verified from the text.
 It is routed by score exactly like `yes`: over `min_deal_score` it sits in Wants
 flagged amber, next to confirmed matches rather than hidden; under it, it stays
-`scored` and appears in `/skipped`. Do not give it a bin of its own, and do not
+`scored` and appears in `/skipped`. Do not give it a list of its own, and do not
 let it be filtered out of Wants: a 9.0 unconfirmed listing is worth the five
 seconds it takes to look at the photos.
 
@@ -752,7 +752,7 @@ wraps (8pm to 6am is 10 hours, not 14), and `start == end`, which is all day
 rather than zero.
 
 **Settings is a gear in the top bar, not a sixth tab.** Five tabs is what fits
-across a phone. Hours and wants are set once a month; the bins are skimmed
+across a phone. Hours and wants are set once a month; the lists are skimmed
 daily. If you add another destination, it goes in the top bar too.
 
 **A want's name is frozen once it exists.** It is the hunt id, the URL of that
@@ -832,7 +832,7 @@ anchor: `.card-open` is an overlay stretched across `.card-main`, and the title
 sits above it on `z-index` with the `#i-open` icon after it, which is the only
 thing saying that one tap leaves the app. It opens in a new tab — on a phone
 that is usually the Marketplace or Craigslist app, and navigating away would
-lose your place in the bin. `tests/test_web.py` fails if the anchors ever nest.
+lose your place in the list. `tests/test_web.py` fails if the anchors ever nest.
 
 **Swipe right to save, left to dismiss.** Same directions the buttons sit in,
 same colours the verdict badge uses, so the gesture is the buttons rather than

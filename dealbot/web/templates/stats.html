@@ -90,14 +90,14 @@
   {% if today.hunts %}
   <div class="wrap"><table class="responsive">
     <thead><tr><th>Hunt</th><th class="n">Spent</th><th class="n">Judged</th>
-      <th class="n">Binned</th></tr></thead>
+      <th class="n">Picked</th></tr></thead>
     <tbody>
     {% for h in today.hunts %}
     <tr>
       <td class="lead" data-label="Hunt">{{h.name}}</td>
       <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd) }}</td>
       <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored}}</td>
-      <td class="n num {{'zero' if not h.binned}}" data-label="Binned">{{h.binned}}</td>
+      <td class="n num {{'zero' if not h.binned}}" data-label="Picked">{{h.binned}}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -162,7 +162,7 @@
   <div class="wrap"><table class="responsive">
     <thead><tr>
       <th>Hunt</th><th class="n">Spent</th><th class="n">Fetched</th>
-      <th class="n">Judged</th><th class="n">Binned</th><th class="n">Saved</th>
+      <th class="n">Judged</th><th class="n">Picked</th><th class="n">Saved</th>
       <th class="n">Dismissed</th><th class="n">Per judged</th>
       <th class="n">Per save</th>
     </tr></thead>
@@ -174,7 +174,7 @@
       <td class="n num" data-label="Spent">${{ '%.2f'|format(h.usd or 0) }}</td>
       <td class="n num" data-label="Fetched">{{ '{:,}'.format(h.fetched or 0) }}</td>
       <td class="n num {{'zero' if not h.scored}}" data-label="Judged">{{h.scored or 0}}</td>
-      <td class="n num {{'zero' if not h.binned}}" data-label="Binned">{{h.binned or 0}}</td>
+      <td class="n num {{'zero' if not h.binned}}" data-label="Picked">{{h.binned or 0}}</td>
       <td class="n num {{'zero' if not h.saved}}" data-label="Saved">{{h.saved}}</td>
       <td class="n num {{'zero' if not h.dismissed}}" data-label="Dismissed">{{h.dismissed}}</td>
       <td class="n num" data-label="Per judged">
@@ -252,7 +252,7 @@
         ('Fetched', funnel.fetched, 'index rows read'),
         ('Past the gate', funnel.candidates, 'worth paying for'),
         ('Judged', funnel.scored, 'cost money'),
-        ('Reached a bin', funnel.binned, 'shown to you'),
+        ('Picked', funnel.binned, 'shown to you'),
         ('Saved', funnel.saved, 'you kept'),
         ('Grabbed', funnel.grabbed, 'you own')] %}
     <div class="step">

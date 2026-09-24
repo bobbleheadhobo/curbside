@@ -244,13 +244,13 @@ from "silently broken", so it is no longer the caller's to remember.
   all: of the 51 collected, the titles run *"Gone"*, *"Free junk metal
   removal"*, *"I need HELP please"*, *"Anyone willing to donate bikes for
   kids"*. Wanted-ads and noise. Eight were appraised for $0.20 and not one ever
-  reached a bin. Two reasons are recorded so the hunt page can tell an empty
+  was picked. Two reasons are recorded so the hunt page can tell an empty
   post (`nothing_to_judge`) from a photoless one (`no_photo`).
 
   Missing **text** is deliberately not disqualifying. On Facebook a bare
   listing usually means the seller let the photos do the talking, and those
   score *better* than the ones with words — 5.65 average against 4.89, 9 of 17
-  above 7, one of them in the wants bin. Those listings carry an amber
+  above 7, one of them in Wants. Those listings carry an amber
   *no description* badge on the card instead, because the judgement rests
   entirely on the photographs.
 
@@ -298,7 +298,7 @@ from "silently broken", so it is no longer the caller's to remember.
   │             unknowns, deal_score, worth_grabbing, est_value
   ↓
   ├─ IMAGES     1 more call, where the model set needs_images AND the text
-  │             score already puts the listing in a bin. An image pass costs
+  │             score already makes it a pick. An image pass costs
   │             about twice a text appraisal, and two thirds were being spent
   │             confirming that 3/10 listings are indeed poor. Its value is at
   │             the top: a 9 that photos reveal to be junk saves a wasted trip.
@@ -330,7 +330,7 @@ the listing              volatile
 `prompts/rubric.md` is read **once per process**, so editing it mid-run cannot
 split the cache. Missing or empty falls back to the built-in default.
 
-## 5. Routing — two bins, two bars
+## 5. Routing — two lists, two bars
 
 ```
 match = yes or unknown,       score ≥ 7.0                  → wants
@@ -342,36 +342,36 @@ everything else                                            → filed, still sear
 All of that is `pipeline.route(score, hunt, listing)`, returning `"wanted"`,
 `"free_find"` or `None`. **One function, because it used to be two.** The image
 pass needs the same question answered before spending on photos — it only pays
-for listings that would already reach a bin — and it asked with its own boolean
+for listings that would already be picked — and it asked with its own boolean
 copy of these conditions, kept in step with the routing by a comment. Nothing
 breaks visibly when two copies disagree; you simply buy image passes for
 listings nobody will be shown, or skip them on listings people will see.
 
-**Only a sweep fills the free bin.** A want hunt that met an unrelated bargain
-used to route it there too: seven of the ten entries in the live bin were
+**Only a sweep fills Free finds.** A want hunt that met an unrelated bargain
+used to route it there too: seven of the ten entries in the live list were
 priced items from want hunts, including a $40 entertainment centre carrying a
 green tv-stand chip in a tab called "Free finds". The sweep is free-only by
-construction, so this makes the bin's name true. A want hunt's non-matches stay
+construction, so this makes the list's name true. A want hunt's non-matches stay
 `scored` and are still findable in `/skipped`.
 
-**And a listing appears in exactly one bin.** `hunt_matches` remains per
+**And a listing appears on exactly one list.** `hunt_matches` remains per
 (hunt, listing) — independent triage state is worth keeping — but the views
 pick one row per listing: saved outranks wanted outranks free find, ties inside
-a bin going to the first hunt by name so the choice is stable between loads.
+a list going to the first hunt by name so the choice is stable between loads.
 
 `unknown` lands in **wants**, flagged — a 9.0 unconfirmed TV stand belongs next
 to a confirmed one. `deal_score` is judged *as if* unknowns resolve favourably,
-so one threshold serves both bins and the match field carries the uncertainty.
+so one threshold serves both lists and the match field carries the uncertainty.
 
 **"A bargain" only bites on things that cost money.** `worth_grabbing` asks
 whether a sensible person would collect this at this price, which for a fairly
 priced thing is a low bar — a $140 chair the model valued at $160 cleared it and
 was announced in a tab called free finds. A priced listing now needs
 `est_value ≥ 1.4 × price` (`FREE_FIND_VALUE_MULTIPLE`); free listings and ones
-the model would not value pass untouched. In the live bin the genuine finds ran
+the model would not value pass untouched. In the live list the genuine finds ran
 3–5×, the filler sat at 1.1–1.2×.
 
-### Leaving a bin
+### Leaving a list
 
 Two different facts, deliberately kept apart:
 
@@ -380,10 +380,10 @@ Two different facts, deliberately kept apart:
 | `gone` | stopped **appearing** in results | `mark_gone`, after 3 consecutive misses of that same source — 45 min on the free sweep, 3 h on an hourly want hunt. Reversible: seen again, the status is restored. |
 | `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source. Facebook's item payload carries `is_sold` and `is_live`. Craigslist states neither and its item endpoint cannot be trusted to stop answering, so that source is asked through `CraigslistSource.liveness` — a HEAD on the posting's own page, where `410 Gone` is the site's own word for "deleted by its author". `sold` is the source saying so; `removed` is only the page no longer resolving. |
 | `listings.grabbed_at` / `paid_cents` | **you** went and got it | `mark_grabbed`, from the **Grabbed it** button on `/saved`. Also stamps `sold_at` with reason `grabbed`, which is what makes every existing `sold_at IS NULL` guard exclude it: no re-check request and no price alert is ever spent on a thing in your garage. `paid_cents` is nullable and 0 is a different answer -- 0 is free, NULL is "I did not note it". These two columns are the **only** ground truth in the database; everything else about value is the model's claim. `upsert_listing` deliberately does not know them, so no refresh can overwrite a purchase. Undo restores the row to whatever it was (`status_before_gone`), since the button is on the listing page too and the row acted on may be `wanted` or `free_find`. |
-| `scores.price_unclear` | the $0 is not real | Neither site has a "make me an offer" price, so a seller who wants one puts $0 and says so in the description ("Send me offers please over 50 wrenches"). The model sets this; the card then stops printing FREE, and `route` keeps it out of the free bin -- a price nobody knows cannot be weighed against the trip. It stays `scored` and shows on `/skipped`, marked. The flag decides the bin rather than the score, so the model can still say plainly whether the thing would be worth having. |
+| `scores.price_unclear` | the $0 is not real | Neither site has a "make me an offer" price, so a seller who wants one puts $0 and says so in the description ("Send me offers please over 50 wrenches"). The model sets this; the card then stops printing FREE, and `route` keeps it out of Free finds -- a price nobody knows cannot be weighed against the trip. It stays `scored` and shows on `/skipped`, marked. The flag decides the list rather than the score, so the model can still say plainly whether the thing would be worth having. |
 
 The re-check costs requests and no model quota, so it rides along with `once`:
-one request per bin listing, capped per run, and only for statuses you might
+one request per listing on Wants, Free finds or Saved, capped per run, and only for statuses you might
 act on. A `saved` listing is *marked*, never un-saved.
 
 **Availability is asked first, and separately from the refresh.** A source with
@@ -394,16 +394,16 @@ either. Only a `listed` answer buys the detail fetch, which is for the price.
 That order is what fixed the bug below; it also means a sale now costs one
 request instead of two.
 
-It runs at **two speeds**, because the two halves of a bin are not worth the
-same. `saved` is the things you might be about to drive to and
+It runs at **two speeds**, because what is on those lists is not all worth
+the same. `saved` is the things you might be about to drive to and
 there are only ever a handful, so they are asked about on **every pass** —
 `grabbed` is in neither list, because the `sold_at` stamp already excludes it —
 `recheck.saved_every_hours: 0.25`. `wanted` and `free_find` are candidates
 nobody has decided on and the half that grows to dozens, so they stay at
 **6 hours**: at the saved pace they would be a few hundred item-page fetches a
 day at a site that throttles silently, to learn something `mark_gone` already
-half-answers for free. The faster half is queued **first**, so a full candidate
-bin can never spend the per-run cap before your own list is reached.
+half-answers for free. The faster half is queued **first**, so a full list of
+candidates can never spend the per-run cap before your own list is reached.
 
 It fails open, and three things make that true rather than aspirational:
 
@@ -426,7 +426,7 @@ It fails open, and three things make that true rather than aspirational:
   last and shares the pass's single request budget, so Facebook is routinely
   spent by the sweep before it. Breaking outright skipped every Craigslist
   listing queued behind it.
-* **A listing in two bins is asked about once.** The queue is one row per
+* **A listing on two lists is asked about once.** The queue is one row per
   (hunt, listing). Seeing a sold listing again does not resurrect it, in either the
 upsert or the miss counter: Facebook keeps showing sold items in search.
 
@@ -436,8 +436,8 @@ Most bad listings cost a wasted trip. The **advance-fee** scam costs money: a
 valuable thing is offered free or far under its worth, delivery is offered for a
 fee, you pay the fee and nothing comes. It was found in the live data doing
 exactly what it is designed to do — a free washer and dryer, "like new",
-"delivery all depends on you", scored **9.0 with no red flags** and sat in the
-free-finds bin. The image pass then *raised* its confidence, because the
+"delivery all depends on you", scored **9.0 with no red flags** and sat in
+Free finds. The image pass then *raised* its confidence, because the
 photographs were real, as they usually are.
 
 The rubric now names the pattern, and keys on the **combination** rather than on
@@ -493,9 +493,9 @@ rebuilding the block per run would change the cached prefix per run — costing
 
 ## 8a. Price drops on things you already care about
 
-The re-check pass refreshes the price of everything in a bin — saved things
-every pass, candidates every six hours — and for a long time nothing read it. Alerts only fired when a listing *entered*
-a bin, so a saved $200 credenza falling to $120 said nothing at all — with
+The re-check pass refreshes the price of everything on a list — saved things
+every pass, candidates every six hours — and for a long time nothing read it. Alerts only fired when a listing was
+*first picked*, so a saved $200 credenza falling to $120 said nothing at all — with
 every observation needed to notice it already on disk.
 
 `announce_price_drops` closes that. It costs no quota and no requests: the
@@ -556,12 +556,12 @@ mediocre" -- but a bar you can never see over cannot be calibrated. If good
 things keep appearing there, 7.0 is too high. It was called "near misses" at
 `/near` until that read as "near me", which is the one thing it never meant.
 
-**Photos are cached locally** for listings that reach a bin, at 512px and around
+**Photos are cached locally** for listings that are picked, at 512px and around
 34KB each. Facebook's image URLs carry an expiry token and die after roughly
 four days -- 225 of 619 listings with photos are Facebook -- so a browsing UI
 built on the source URLs would rot a third of its images every week. `/thumb/<id>`
 serves the local copy and falls back to the source while one exists.
-`dealbot prune-thumbs` drops copies for listings no longer in a bin or triaged.
+`dealbot prune-thumbs` drops copies for listings no longer on a list or triaged.
 That download is the same `images.fetch_downscaled` the vision pass uses, so the
 hardening around a stranger's URL — byte cap enforced while reading,
 content-type check, timeout, re-encode through Pillow — exists once.
@@ -570,16 +570,16 @@ content-type check, timeout, re-encode through Pillow — exists once.
 `busy_timeout=10000`), and WAL readers never block, so a page load is unaffected
 by a run in flight — *as long as it does not write*. It no longer does.
 
-The three bin queries are one query with the WHERE clause swapped, built by
+The three list queries are one query with the WHERE clause swapped, built by
 `_queue_sql(where)`. They were previously derived from each other with
 `str.replace`, which is a **silent** no-op when the needle stops matching:
 editing the literal `"WHERE m.status = ?"` would have produced a valid query
 against the wrong rows, with nothing raised anywhere.
 
-Two indexes carry those views. The bin queries filter on `status` *alone*, with
+Two indexes carry those views. The list queries filter on `status` *alone*, with
 no `hunt_id`, so the composite `ix_matches_status(hunt_id, status)` never
 applied to them; and the one-row-per-listing subquery matches on `listing_id`,
-the second column of the primary key. Every bin page therefore scanned
+the second column of the primary key. Every list page therefore scanned
 `hunt_matches` and sorted once per candidate row — quadratic in a table nothing
 is ever deleted from. `ix_matches_bin(status)` and `ix_matches_listing(listing_id)`
 fixed that: on the live database the tab counts went 6.6x faster and the card
@@ -643,10 +643,10 @@ exactly what surfacing `max_image_checks` (destination `scorer`) cost.
 `max_image_checks` is the image budget: how many listings per hunt per run may
 have their photographs looked at, at `images_per_check` photos each. **It is
 not the reason most unmet image requests go unmet.** An image pass is only
-bought for a listing `route` would already put in a bin, so a low-scoring
+bought for a listing `route` would already pick, so a low-scoring
 listing that asks to be seen is declined by that test and never reaches the
 budget at all. Raising the number buys looks only when one batch holds several
-bin-bound listings at once.
+listings about to be picked.
 
 **Seeding writes nothing on a read.** Both seed calls run inside `with_store`,
 which the dashboard calls *per request*, so they must be no-ops once a database
@@ -678,4 +678,4 @@ from one geometry so the browser tab and the home-screen tile cannot drift.
 - **`worth_grabbing` runs conservative** — a free piano scored 2.0. Tune it in
   `prompts/rubric.md`.
 - **No search over the archive.** 800+ listings and the only ways in are the
-  bins and the per-hunt views, both capped at 200.
+  lists and the per-hunt views, both capped at 200.

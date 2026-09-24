@@ -1775,7 +1775,7 @@ def test_the_budget_is_only_blamed_when_the_budget_was_the_reason(tmp_path):
 
     second = tmp_path / "b"; second.mkdir()
     under, _ = _asked_and_not_looked(second, 1.0)
-    assert "not headed for a bin on its text score" in under, (
+    assert "not going to be picked on its text score" in under, (
         "and NOT 'it scored too low' -- a want hunt declines a non-match "
         "whatever it scored, so the sentence has to name the test, not one "
         "of the several things that can fail it")
@@ -2508,7 +2508,7 @@ def test_a_deleted_want_can_still_explain_itself(tmp_path):
     s.archive_want("bookcase")
 
     body = client.get("/listing/x:9").text
-    assert "not headed for a bin on its text score" in body
+    assert "not going to be picked on its text score" in body
     assert "did not get one" not in body, (
         "the hunt is archived, not gone: it can still be asked")
 

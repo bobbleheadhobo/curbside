@@ -183,7 +183,7 @@ run_hunt(store, hunt, source, scorer, notifiers, location):
   6c. cross-source duplicates
   7. TRIAGE                    one batched call, coarse keep/drop
   8. APPRAISE                  one call each, survivors only
-  9. IMAGES                    where needs_images AND route() would bin it
+  9. IMAGES                    where needs_images AND route() would pick it
  10. ROUTE                     route() -> wants / free finds / filed
  11. notifiers, thumbnails, finish_run
 ```
@@ -289,10 +289,10 @@ is terminal for surfacing but productive as training signal.
 
 Read-only over the same SQLite file; the only writes are triage actions.
 
-Four bins, sorted by *why* a listing is there rather than by how sure we are:
+Four lists, sorted by *why* a listing is there rather than by how sure we are:
 
 - **Wants** (`/`) — matches for something on your list, `status = wanted`.
-  Unverified matches sit here too, flagged amber, not in a bin of their own.
+  Unverified matches sit here too, flagged amber, not on a list of their own.
   Photo, title, price (old price struck through if dropped), distance, age,
   state chips, score. The model's reasoning, requirements and unknowns fold into
   a disclosure, because the photo and price are what you decide on first.
@@ -370,8 +370,8 @@ what the gate would have admitted.
  "red_flags": [...], "est_value_usd": n, "condition": "...", "reasoning": "..."}
 ```
 
-Routing into two bins, sorted by WHY a listing is there rather than by how sure
-we are. Certainty is shown inside a card, not as a bin of its own — a 9.0
+Routing into two lists of picks, sorted by WHY a listing is there rather than by how sure
+we are. Certainty is shown inside a card, not as a list of its own — a 9.0
 unconfirmed TV stand belongs next to a 9.0 confirmed one.
 
 ```
@@ -381,15 +381,15 @@ match == no and worth_grabbing and the hunt is a SWEEP
 otherwise                                                      -> scored (filed)
 ```
 
-Two thresholds, because the bins answer different questions. "Is this the TV
+Two thresholds, because the two lists answer different questions. "Is this the TV
 stand I want" clears a high bar (7.0) because you will drive across town for it;
 "is this free thing worth a look" is browsing (5.0). Holding both to 7.0 meant a
 free working treadmill scored 5 and was never shown, which is the whole point of
-the second bin.
+the second list.
 
-Only a sweep fills the free bin. A want hunt that met an unrelated bargain used
+Only a sweep fills Free finds. A want hunt that met an unrelated bargain used
 to route it there too, which put seven priced items into a tab named for free
-things. A listing also appears in exactly one bin: saved outranks wanted
+things. A listing also appears on exactly one list: saved outranks wanted
 outranks free find.
 
 `worth_grabbing` is an axis independent of `match`, and it is the half of the
@@ -426,7 +426,7 @@ re-litigate affordability and blend that back into the match decision.
   is stated in 5 of 104 listings, so 49% of its judgements come back `unknown`
   and $2.17 of $5.63 of all appraisal spend went on them. Every want-hunt
   dismissal so far was an unconfirmed width. Either the requirement becomes
-  something checkable or the bin is accepted as a "go and look at the photos"
+  something checkable or the list is accepted as a "go and look at the photos"
   queue.
 - **Dismissal learning is wired but unproven**, and measurably wrong on want
   hunts: 31 listings share the title "tv stand", so dismissing one teaches that

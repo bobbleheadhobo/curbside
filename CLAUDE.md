@@ -13,6 +13,11 @@ The shape, in one line:
 > what survives, and route by *why* something is interesting rather than by how
 > certain we are.
 
+A **pick** is a listing the bot puts in front of you: the Wants and Free finds
+lists. Say "picked", not "binned", which reads as thrown away. The code still
+calls them bins (`BIN_STATUSES`, `ONE_BIN`, `ix_matches_bin`), so a grep for
+either word finds the same thing.
+
 ## Where things are
 
 ```
@@ -401,7 +406,7 @@ kill an entire run, fetch included. All of that lives in **one** place —
 `ClaudeCodeScorer._score_from` — because the text pass and the image pass both
 build a `Score` from the same schema, and when they each spelled it out a field
 wired into only the first would vanish from image-checked listings. Those are by
-design the *high-scoring* ones headed for a bin, so nothing would look broken.
+design the *high-scoring* ones about to be picked, so nothing would look broken.
 
 **Dismissal learning is for the SWEEP only.** The block says "do not surface
 things like these again" followed by titles and no reason, because no reason is
@@ -421,7 +426,7 @@ is `Store.overruled` -- the dashboard says so on that want's row and sends you
 there. Counted **per want**: two disagreements on one want is a pattern, while
 three spread across three wants is three separate disagreements and says
 nothing about any of them. Not a rate: every hunt here sits at 97-100% dismissed, because that is
-how a bin gets emptied, and `want:bookshelf` had 36 dismissals with NONE over
+how your picks get cleared, and `want:bookshelf` had 36 dismissals with NONE over
 the bar. Saving the want resets the baseline, because rewriting it is the
 acknowledgement.
 
@@ -479,11 +484,11 @@ columns and so would have been legal in SCHEMA, but they sit in `_migrate` with
 it: every index in one place is a rule you cannot get wrong, and an existing
 database picks them up on its next open either way.
 
-**Indexes are not optional here, because nothing is ever deleted.** The bin
-views filter on `status` ALONE, with no `hunt_id`, so the composite
+**Indexes are not optional here, because nothing is ever deleted.** The views
+of your picks filter on `status` ALONE, with no `hunt_id`, so the composite
 `ix_matches_status(hunt_id, status)` never applied to them; and the
 one-row-per-listing subquery in `ONE_BIN` matches on `listing_id`, the *second*
-column of the primary key. Every bin page therefore scanned `hunt_matches` and
+column of the primary key. Every one of those pages therefore scanned `hunt_matches` and
 sorted, once per candidate row — quadratic in a table that only grows. Adding a
 query that filters on a new column means adding its index too.
 
@@ -493,8 +498,8 @@ query that filters on a new column means adding its index too.
   `feed_units` key is the discriminator and its absence must raise. **The item
   page needs the same guard** (`marketplace_product_details` /
   `marketplace_listing_title`): without it a throttled detail fetch reads as
-  "this listing is gone", and the re-check pass retired saved listings out of
-  every bin, permanently. A missing Facebook payload is now `unknown`, never
+  "this listing is gone", and the re-check pass retired saved listings off
+  every list, permanently. A missing Facebook payload is now `unknown`, never
   `removed` — that source states `is_sold` and `is_live` when it answers at all.
 * `Sec-Fetch-*` headers are mandatory on Facebook or you get a bodyless 400.
 * **Craigslist's `sapi` item endpoint is not evidence a posting exists.** It
@@ -558,7 +563,7 @@ query that filters on a new column means adding its index too.
 * A `claude -p` launched with no network does not fail fast; it burns ~10
   minutes of retry backoff. Hence the connectivity preflight.
 * Facebook image URLs expire in ~4 days. Thumbnails are cached locally for
-  anything in a bin. That download and the vision pass's are the SAME
+  anything picked. That download and the vision pass's are the SAME
   function — `images.fetch_downscaled` — so the hardening (size cap enforced
   while reading, content-type check, timeout, re-encode through Pillow) has one
   implementation rather than two kept in step by hand.
@@ -572,7 +577,7 @@ query that filters on a new column means adding its index too.
   state; notes inside it get a left rule. Six amber things in one panel is six
   things with no emphasis, and that is what it looked like.
 * **`max_image_checks` is a backstop, not the gate.** Stage 5b buys photographs
-  only for a listing `route` would ALREADY bin on its text score, so one that
+  only for a listing `route` would ALREADY pick on its text score, so one that
   scores poorly and asks to be seen is declined long before the budget is
   consulted: 162 of 169 unmet requests, against the budget's 7. It is on
   `/settings` so it can be set to **0**, not because raising it does much. The
@@ -580,7 +585,7 @@ query that filters on a new column means adding its index too.
   96% of the time and named the one number a reader might go and change in
   response. `app.headed_for_a_bin` calls `route` rather than re-deriving it.
 * **`str.replace` on a SQL string is a silent no-op when the needle misses.**
-  The bin queries were built by replacing text in each other; editing the
+  The queries behind those lists were built by replacing text in each other; editing the
   literal `"WHERE m.status = ?"` would have produced a perfectly valid query
   against the wrong rows, with nothing raised. They come from `_queue_sql(where)`
   now. Never build SQL by substring surgery on another query.

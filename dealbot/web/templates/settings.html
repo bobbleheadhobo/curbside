@@ -113,8 +113,8 @@
       <input type="text" inputmode="numeric" id="t-img" name="max_image_checks"
              value="{{ tuning.max_image_checks }}">
       <p class="hint">When the words are not enough the model asks to see the
-        pictures. That costs about twice a judgement, so only listings already
-        headed for a bin get a look, up to {{ tuning.max_image_checks }} per
+        pictures. That costs about twice a judgement, so only listings it would
+        already pick get a look, up to {{ tuning.max_image_checks }} per
         hunt per run at {{ tuning.images_per_check }} photos each.
         {%- if tuning.looked %} {{ tuning.looked }} have had one.{% endif %}
         Set it to 0 to never look.</p>
