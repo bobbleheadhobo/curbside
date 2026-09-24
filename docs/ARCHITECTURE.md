@@ -475,7 +475,7 @@ fails if either loses it.
 | case | handled by |
 |---|---|
 | Same listing, later run | primary key `source:source_id`, upserted |
-| Same listing, several queries in one run | in-run `seen` set |
+| Same listing, several queries in one run | `pipeline.parse_unique`, which also records which terms found it |
 | Same item cross-posted to both sources | `dup_key` (needs coordinates, so post-enrichment) |
 | Same item reposted by its seller | `image_key` (the photo's id + coordinates) |
 | Same listing matched by several hunts | **deliberately not merged** — independent triage state per hunt |
@@ -605,7 +605,13 @@ A want's **price cap of 0 means free ones only** — `over_price` drops anything
 dearer, so the cap is how you say "I want one of these, but only if someone is
 giving it away". Every want needs **at least one search term**: without one it
 has no hunt, and only the free sweep sees it, which searches "free" rather than
-the thing you asked for. The terms can be drafted by the *Suggest terms* button
+the thing you asked for. It may have **at most six** (`models.MAX_QUERIES`),
+because each is a request per source on every run whether or not it finds
+anything. The editor shows the count against that cap, and, per term, how many
+listings it has found, how many no other current term found, and how many of
+those cleared the bar (`query_hits`, written each run by
+`pipeline.parse_unique`). A term whose finds all repeat another's is a request
+per run buying nothing. The terms can be drafted by the *Suggest terms* button
 on the want editor; that is the only thing the dashboard ever spends quota on,
 it spends none unless the button is pressed, and it runs on `suggest_model`
 (sonnet — see `ScorerConfig` for why the cheaper-looking model costs more).

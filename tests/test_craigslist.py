@@ -216,6 +216,22 @@ def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
     assert len(asked) == 1
 
 
+def test_every_result_says_which_term_found_it(src, search_payload,
+                                               monkeypatch):
+    """A listing two terms both find comes back under each, so the pipeline
+    can tell a term that finds things of its own from one that only ever
+    repeats another. Deduplicating here, across terms, would hide exactly
+    that."""
+    monkeypatch.setattr(src, "_get", lambda *a, **k: search_payload)
+    want = type("H", (), {"queries": ("bookshelf", "bookcase"),
+                          "max_price_cents": 15000})()
+    raws = list(src.search(want))
+    per_term = len(src.parse_search(search_payload))
+    assert len(raws) == 2 * per_term
+    assert {r.query for r in raws[:per_term]} == {"bookshelf"}
+    assert {r.query for r in raws[per_term:]} == {"bookcase"}
+
+
 # --- stale cache copies ------------------------------------------------------
 
 def _payload(updated, price):

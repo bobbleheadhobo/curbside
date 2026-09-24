@@ -118,7 +118,10 @@ class Source(Protocol):
     by it -- so two sources sharing a name would retire each other's listings.
 
     `search` yields whatever the cheap index gives you, and MUST raise rather
-    than return an empty list when the site withholds data. Facebook answers a
+    than return an empty list when the site withholds data. Dedupe within one
+    search term only, and tag each result with `query`: a listing two terms
+    find comes back twice, and the pipeline merges the copies and counts them
+    to learn which terms earn their request. Facebook answers a
     throttled request with HTTP 200 and a full-size page containing nothing;
     read as "no results" that looks exactly like a quiet day, forever.
 

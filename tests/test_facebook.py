@@ -156,6 +156,18 @@ def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
     assert asked == [] and src._requests_made == 21
 
 
+def test_every_result_says_which_term_found_it(src, monkeypatch):
+    """Same as Craigslist's: repeats across terms are kept, tagged, for the
+    pipeline to merge and count."""
+    html = (HTML / "category-free-abq.html").read_text(errors="replace")
+    monkeypatch.setattr(src, "_get", lambda url: html)
+    hunt = type("H", (), {"queries": ("dresser", "chest of drawers")})()
+    raws = list(src.search(hunt))
+    per_term = len(src.parse_search_html(html))
+    assert per_term and len(raws) == 2 * per_term
+    assert [r.query for r in raws].count("chest of drawers") == per_term
+
+
 def test_a_price_drop_to_free_is_not_lost_in_enrichment(src):
     """REGRESSION: `detail_price or search_price` treats 0 as falsy, so a seller
     dropping to free kept showing the old price -- defeating the free sweep and

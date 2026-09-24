@@ -776,6 +776,20 @@ on the description enforces the one input the drafting actually needs. Every
 failure — no scorer, quota paused, unparseable output — comes back as the form,
 intact, with a note.
 
+**A want has at most six search terms, and the form says so before the save
+does.** Each term is a search on both sites on every run, out of a Facebook
+budget of 25 a pass shared by every hunt. The count under the field
+(`#f-queries-cost`) is rendered by the server and kept current by `app.js` as
+pills come and go, red (`overcap`) past the cap: red because it counts against
+the form. *Suggest terms* stops at the cap, and does not spend at all on a list
+that is already full. A want saved before the cap existed keeps working; its
+editor simply shows it over.
+
+**"What each term finds" is how you decide which to cut.** Per term: found,
+found by no other term, and of those how many made the bar. "No other term"
+means the terms the want has now, so a deleted term cannot make a kept one look
+redundant. It is a read of `query_hits`; the poller writes it.
+
 **The price cap of 0 is a real answer.** It means free ones only, because
 `over_price` drops anything dearer than the cap. It used to be refused as a
 mistake, which left "free only" with no way to say it except leaving the search

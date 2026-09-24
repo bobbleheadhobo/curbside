@@ -46,9 +46,17 @@
         placeholder="tv stand&#10;media console&#10;credenza">{{ v.queries or '' }}</textarea>
       <button class="btn suggest" name="action" value="suggest">
         <svg class="i" aria-hidden="true"><use href="#i-sparkle"/></svg>Suggest terms</button>
-      <p class="hint">The words a seller would use &mdash; which are often not
+      <p class="hint">The words a seller would use, which are often not
         yours. Write what you are looking for above, then let it draft these.
         At least one is needed.</p>
+      {# The cost of a term is invisible otherwise, and it is paid on every run
+         for as long as the want exists. app.js keeps the count current as
+         pills come and go. #}
+      {% set nterms = (v.queries or '').split('\n')|map('trim')|select|list|length %}
+      <p class="hint termcost{{ ' overcap' if nterms > max_queries }}"
+         id="f-queries-cost" data-max="{{ max_queries }}">
+        <b>{{ nterms }}</b> of {{ max_queries }} terms. Each one searches both
+        sites on every run.</p>
     </div>
 
     <div class="field">
@@ -75,6 +83,28 @@
     </div>
   </form>
 </div>
+
+{% if stored and stored.want.queries %}
+{# Which terms earn their request. A term only ever finding what another term
+   also found is a search on every run buying nothing, and without this the
+   only way to trim was guessing. `only` counts against the terms the want has
+   NOW, so a deleted term cannot make a remaining one look redundant. #}
+<div class="panel termyield" style="margin-top:18px">
+  <h2>What each term finds</h2>
+  {% for q in stored.want.queries %}
+  {% set y = yields.get(q) %}
+  <div class="control-row">
+    <span class="who">{{ q }}
+      <small>{% if y %}{{ y.found }} found &middot; {{ y.only }} only by this term
+        {%- if y.only %} &middot; {{ y.good }} made the bar{% endif %}
+        {%- else %}Nothing found yet.{% endif %}</small></span>
+  </div>
+  {% endfor %}
+  <p class="hint">{% if counted_since %}Counted since {{ when(counted_since) }}.
+    Give a new term a week or two.{% else %}Counting starts on its next
+    search.{% endif %}</p>
+</div>
+{% endif %}
 
 {% if stored %}
 {% set hid = stored.hunt_id %}

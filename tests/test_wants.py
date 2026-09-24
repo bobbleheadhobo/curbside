@@ -852,3 +852,129 @@ def test_the_nudge_is_about_one_want_not_about_you(app):
     assert "Tighten what it asks for" not in body
     for n in ("one", "two", "three"):
         assert store.overruled(f"want:{n}", 7.0) == 1
+
+
+# --- a search term is a standing charge ---------------------------------------
+#
+# Each term is one request per source on every run of the want, paid whether or
+# not it finds anything, out of a Facebook budget of 25 a pass shared by every
+# hunt. So the list is capped, its cost is on the form, and each term's record
+# is on the editor, because trimming by guesswork is how a want ends up with
+# four brand searches that may find nothing the plain one does not.
+
+def test_a_term_past_the_cap_is_refused_and_nothing_typed_is_lost(app):
+    from dealbot.models import MAX_QUERIES
+    client, _, store = app
+    terms = "\n".join(f"term {i}" for i in range(MAX_QUERIES + 1))
+    r = client.post("/wants/save", data={
+        "name": "receiver", "description": "a receiver with wifi",
+        "max_price": "150", "queries": terms, "requires": "wifi"})
+    assert r.status_code == 400
+    assert f"At most {MAX_QUERIES}" in error_in(r.text)
+    assert store.get_want("receiver") is None
+    assert "a receiver with wifi" in r.text and f"term {MAX_QUERIES}" in r.text
+
+    ok = "\n".join(f"term {i}" for i in range(MAX_QUERIES))
+    r = client.post("/wants/save", data={
+        "name": "receiver", "description": "a receiver with wifi",
+        "max_price": "150", "queries": ok})
+    assert store.get_want("receiver") is not None
+
+
+def test_a_full_list_does_not_pay_to_draft_more(tmp_path):
+    """Anything drafted would be thrown away, so nothing is spent drafting."""
+    from dealbot.models import MAX_QUERIES
+    scorer = _FakeScorer()
+    client, _, _ = _app_with(tmp_path, scorer)
+    r = client.post("/wants/save", headers={"X-Requested-With": "fetch"}, data={
+        "name": "bookcase", "description": "a wide bookcase",
+        "queries": "\n".join(f"t{i}" for i in range(MAX_QUERIES)),
+        "action": "suggest"})
+    assert r.json()["ok"] is False and "Remove one" in r.json()["error"]
+    assert scorer.calls == []
+
+
+def test_drafting_stops_at_the_cap(tmp_path):
+    """Typed terms first, drafted ones after, and never more than a save would
+    accept -- otherwise the button hands back a form that cannot be saved."""
+    from dealbot.models import MAX_QUERIES
+    typed = [f"t{i}" for i in range(MAX_QUERIES - 1)]
+    client, _, _ = _app_with(tmp_path, _FakeScorer(("a", "b", "c")))
+    r = client.post("/wants/save", headers={"X-Requested-With": "fetch"}, data={
+        "name": "bookcase", "description": "a wide bookcase",
+        "queries": "\n".join(typed), "action": "suggest"})
+    assert r.json()["queries"] == typed + ["a"]
+
+
+def test_the_form_says_what_the_terms_cost(app):
+    """A want saved before the cap keeps working, and its editor says it is
+    over rather than waiting for the save to refuse it."""
+    from dealbot.models import MAX_QUERIES
+    client, _, store = app
+    store.save_want(Want("receiver", "d", 15000,
+                         tuple(f"t{i}" for i in range(MAX_QUERIES + 1))))
+    page = client.get("/wants/receiver").text
+    assert re.search(rf'termcost overcap"[^>]*>\s*<b>{MAX_QUERIES + 1}</b> of '
+                     rf'{MAX_QUERIES} terms', page)
+
+    store.save_want(Want("lamp", "d", 5000, ("lamp",)))
+    page = client.get("/wants/lamp").text
+    assert "overcap" not in page and f"<b>1</b> of {MAX_QUERIES} terms" in page
+
+
+def test_the_editor_says_what_each_term_has_found(app):
+    client, cfg, store = app
+    store.save_want(Want("receiver", "d", 15000,
+                         ("AV receiver", "Denon receiver", "Onkyo receiver")))
+    store.record_query_hits("want:receiver", {
+        "AV receiver": {"x:1", "x:2", "x:3"},
+        "Denon receiver": {"x:1", "x:4"},        # x:4 is a find of its own
+        "Onkyo receiver": {"x:2"},               # nothing the others missed
+    })
+    store.conn.commit()
+    page = client.get("/wants/receiver").text
+    assert "What each term finds" in page
+    rows = dict(re.findall(r'class="who">([^<]+?)\s*<small>(.*?)</small>',
+                           page, re.S))
+    assert "3 found &middot; 1 only by this term" in rows["AV receiver"]
+    assert "2 found &middot; 1 only by this term" in rows["Denon receiver"]
+    assert "1 found &middot; 0 only by this term" in rows["Onkyo receiver"]
+    assert "Counted since" in page
+
+
+def test_a_term_you_removed_cannot_make_another_look_redundant(tmp_path):
+    """"Only by this term" is measured against the terms the want has NOW.
+    A deleted term is not searched any more, so what it once found is not
+    being found by anything else."""
+    store = Store(tmp_path / "t.db")
+    store.record_query_hits("want:w", {"kept": {"x:1"}, "deleted": {"x:1"}})
+    y = store.query_yield("want:w", ["kept"], bar=7.0)
+    assert y["kept"]["only"] == 1
+
+
+def test_made_the_bar_is_the_hunts_own_bar(tmp_path):
+    """Found only by one term AND judged good enough to show you, by the
+    hunt's latest score. That is the number that says a term is worth its
+    request, rather than merely busy."""
+    from datetime import datetime, timezone
+    from conftest import make_listing
+    from dealbot.models import Score
+    store = Store(tmp_path / "t.db")
+    for n in (1, 2, 3):
+        store.upsert_listing(make_listing(lid=f"x:{n}", title=f"receiver {n}"))
+    store.record_query_hits("want:w", {"a": {"x:1", "x:2", "x:3"}})
+
+    def score(lid, s, match="yes"):
+        store.save_score(Score(
+            listing_id=lid, hunt_id="want:w", model="m",
+            scored_at=datetime.now(timezone.utc), match=match, deal_score=s,
+            est_value_cents=None, condition=None, matched_want=None,
+            worth_grabbing=False, unknowns=(), requirements=(), red_flags=(),
+            reasoning=""), priced_at_cents=None)
+
+    score("x:1", 8.0)
+    score("x:2", 9.0, match="no")      # a good price on the wrong thing
+    score("x:3", 9.0)
+    score("x:3", 4.0)                  # judged again, lower: the latest counts
+    y = store.query_yield("want:w", ["a"], bar=7.0)["a"]
+    assert (y["found"], y["only"], y["good"]) == (3, 3, 1)

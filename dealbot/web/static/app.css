@@ -667,6 +667,11 @@ tr.err td:first-child{box-shadow:inset 1px 0 0 var(--bad)}
 .field:last-child{border-bottom:0}
 .field>label,.field .lbl{font-size:13.5px;font-weight:600}
 .field .hint{margin:0;font-size:12.5px;line-height:1.5;color:var(--dim)}
+/* A term count past the cap is refused on save: red, because it counts
+   against the form, and said before the save rather than after it. */
+.field .hint.termcost{margin-top:6px}
+.field .hint.termcost.overcap{color:var(--bad)}
+.termyield .hint{margin:10px 0 0;font-size:12.5px;line-height:1.5;color:var(--dim)}
 .field .hint code{
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
 input[type=text],input[type=number],input[type=time],textarea,select{

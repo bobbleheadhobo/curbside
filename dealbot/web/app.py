@@ -29,7 +29,7 @@ from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL,
 from ..config import Config
 from ..db import Store
 from ..filters import matches_any
-from ..models import WANT_NAME_RE, Listing, Want, slugify_want
+from ..models import MAX_QUERIES, WANT_NAME_RE, Listing, Want, slugify_want
 from ..pipeline import route
 from ..thumbs import ThumbnailStore
 
@@ -1342,9 +1342,18 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         cfg = _live()
         hunt_id = stored.hunt_id if stored else None
         hunt = next((h for h in cfg.hunts if h.id == hunt_id), None)
+        # What each term has found, judged at this hunt's own bar. A read: the
+        # table is written by the poller, never by a page.
+        yields = {}
+        if stored and stored.want.queries:
+            bar = hunt.min_deal_score if hunt else cfg.defaults.min_deal_score
+            yields = store.query_yield(hunt_id, stored.want.queries, bar)
         return TEMPLATES.TemplateResponse(request, "want_form.html", ctx(
             request, cfg=cfg, stored=stored, error=error,
-            intervals=INTERVAL_CHOICES,
+            intervals=INTERVAL_CHOICES, max_queries=MAX_QUERIES,
+            yields=yields,
+            counted_since=min((y["since"] for y in yields.values()),
+                              default=None),
             # What was just posted wins over the stored hunt: pressing
             # "Suggest terms" is a round trip through this form, and it used to
             # quietly reset a cadence you had just chosen.
@@ -1407,6 +1416,11 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # they should be read and edited by the person who will live with them,
         # before they are committed to. Nothing is spent unless this is pressed.
         if action == "suggest":
+            # Full already: drafting could only be thrown away, so do not pay
+            # for it.
+            if len(_lines(queries)) >= MAX_QUERIES:
+                return fail(f"Already {MAX_QUERIES} terms. Remove one to "
+                            "make room.")
             drafted = _draft_queries(slug, description, _lines(requires))
             if not drafted:
                 msg = ("Could not draft search terms just now. "
@@ -1422,6 +1436,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             merged = list(_lines(queries))
             seen = {t.lower() for t in merged}
             for t in drafted:
+                if len(merged) >= MAX_QUERIES:
+                    break
                 if t.lower() not in seen:
                     seen.add(t.lower())
                     merged.append(t)
@@ -1456,6 +1472,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         if not _lines(queries):
             return fail("Give it at least one search term, or press "
                         "Suggest terms.")
+        # Each term is a request per source on every run, paid whether or not
+        # it finds anything, out of a Facebook budget of 25 a pass shared with
+        # every other hunt. See `models.MAX_QUERIES`.
+        if len(_lines(queries)) > MAX_QUERIES:
+            return fail(f"At most {MAX_QUERIES} search terms. Each one searches "
+                        "both sites on every run.")
 
         store.save_want(Want(
             name=slug, description=description.strip(),

@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
@@ -197,12 +198,15 @@ class FacebookSource(Throttled):
         return urls
 
     def search(self, hunt: Hunt) -> Iterator[RawListing]:
-        seen: set[str] = set()
         queries = hunt.queries or ("",)
         self._reserve(len(queries))
         for query in queries:
             surfaces = self._surfaces(query)
             results, failures = None, []
+            # Deduplicated per TERM, not across them: a listing two terms both
+            # find comes back twice, tagged, and the pipeline keeps one. The
+            # repeat is how it learns which terms find nothing the others miss.
+            seen: set[str] = set()
             for url in surfaces:
                 try:
                     results = self.parse_search_html(self._get(url), seen)
@@ -218,7 +222,7 @@ class FacebookSource(Throttled):
                 raise SourceBlocked(
                     f"all {len(surfaces)} surfaces gated for {query!r} "
                     f"({'; '.join(failures)})")
-            yield from results
+            yield from (replace(r, query=query or None) for r in results)
 
     def parse(self, raw: RawListing) -> Listing | None:
         p = raw.payload

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from html import unescape
 from typing import Any, Iterator
@@ -176,14 +177,16 @@ class CraigslistSource(Throttled):
         queries = [""] if free_only else list(hunt.queries or [""])
         self._reserve(len(queries))
 
-        seen: set[str] = set()
         for query in queries:
             params = {"batch": f"{self.area_id}-0-360-0-0", "cc": "US",
                       "lang": "en", "searchPath": path}
             if query:
                 params["query"] = query
             payload = self._get(SEARCH_URL, params)
-            yield from self.parse_search(payload, seen)
+            # Per term, like Facebook's: the pipeline dedupes across terms and
+            # counts the repeats to learn which terms earn their request.
+            yield from (replace(r, query=query or None)
+                        for r in self.parse_search(payload, set()))
 
     def parse_search(self, payload: dict, seen: set[str] | None = None,
                      now: datetime | None = None) -> list[RawListing]:

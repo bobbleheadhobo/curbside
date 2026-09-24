@@ -25,6 +25,14 @@ def normalize_title(title: str) -> str:
 
 # --- configuration-shaped types ---------------------------------------------
 
+# The most search terms one want may have. Each term is one request per source
+# per run, paid whether or not it finds anything, and Facebook allows 25 a
+# pass for everything -- terms, descriptions and re-checks together. Six is
+# the top of the range "Suggest terms" drafts, so a hand-edited list cannot
+# quietly grow past what the tool itself would propose.
+MAX_QUERIES = 6
+
+
 @dataclass(frozen=True)
 class Want:
     """Something Joey actually wants. `queries` cast the net for a targeted
@@ -122,6 +130,11 @@ class RawListing:
     source_id: str
     payload: dict[str, Any]
     fetched_at: datetime
+    # The search term that found it. The same listing comes back once per term
+    # that finds it, and the pipeline keeps one copy: the repeats are how it
+    # knows which terms are pulling their weight. None for a source that has
+    # no terms to speak of.
+    query: str | None = None
 
 
 # `_600x450` on Craigslist, and everything after "?" on Facebook: one is the

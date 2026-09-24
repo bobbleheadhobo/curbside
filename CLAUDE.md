@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 584 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 594 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -246,8 +246,10 @@ fetched. Adding a fifth want with seven queries took Facebook from 16 searches
 (9 slots left for detail) to 23 of 25 (2 left) — and that shortfall lands on
 the whole pass, not on the new want. Count the queries against
 `max_requests_per_run` before adding a want, and prefer trimming queries to
-raising Facebook's 25: that number is set for never tripping a silent throttle,
-and being wrong about it is invisible.
+raising Facebook's 25. A want may have at most `models.MAX_QUERIES` (6), and its
+editor shows what each term has found that no other term did, so trim by that
+rather than by guesswork. Facebook's 25 is set for never tripping a silent
+throttle, and being wrong about it is invisible.
 
 **A "day" is the user's day, in one place.** `schedule.local_day_start` is
 that place, and both the daily spend ceiling and `/stats` call it. It was UTC

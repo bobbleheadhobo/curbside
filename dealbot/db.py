@@ -194,6 +194,20 @@ CREATE TABLE IF NOT EXISTS wants (
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
+
+-- Which search term found which listing, for each hunt. Every term costs one
+-- request per source per run whether or not it finds anything, and without
+-- this there was no way to tell a term that earns that from one whose every
+-- find another term also made. One row per (hunt, term, listing), so it grows
+-- with the listings rather than with the runs.
+CREATE TABLE IF NOT EXISTS query_hits (
+  hunt_id    TEXT NOT NULL,
+  query      TEXT NOT NULL,
+  listing_id TEXT NOT NULL,
+  first_at   TEXT NOT NULL,
+  last_at    TEXT NOT NULL,
+  PRIMARY KEY (hunt_id, query, listing_id)
+);
 """
 
 
@@ -462,6 +476,53 @@ class Store:
         return UpsertResult(listing.id, False, changed, previous, False,
                             first_seen=row["first_seen"],
                             source_updated_at=row["source_updated_at"])
+
+    def record_query_hits(self, hunt_id: str,
+                          hits: Mapping[str, Iterable[str]]) -> None:
+        """Note which term found which listing this run. See `query_yield`."""
+        now = _now()
+        self.conn.executemany(
+            """INSERT INTO query_hits (hunt_id, query, listing_id, first_at, last_at)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT (hunt_id, query, listing_id)
+               DO UPDATE SET last_at = excluded.last_at""",
+            [(hunt_id, q, lid, now, now)
+             for q, ids in hits.items() for lid in ids])
+
+    def query_yield(self, hunt_id: str, queries: Sequence[str],
+                    bar: float) -> dict[str, dict]:
+        """Per search term: how many listings it has found, how many of those
+        no OTHER current term found, and how many of those cleared the bar.
+
+        "Other" means the terms the want has now. A term you deleted found
+        things too, but it is not searched any more, so its finds cannot make
+        a remaining term look redundant.
+
+        `since` is when the term's first find was recorded. A term added
+        yesterday with nothing to its name has not had a fair chance yet, and
+        the editor has to be able to say so.
+        """
+        if not queries:
+            return {}
+        marks = ",".join("?" * len(queries))
+        rows = self.conn.execute(
+            f"""WITH h AS (SELECT query, listing_id, first_at FROM query_hits
+                           WHERE hunt_id = ? AND query IN ({marks})),
+                    n AS (SELECT listing_id, COUNT(*) AS terms FROM h
+                          GROUP BY listing_id)
+               SELECT h.query, COUNT(*) AS found, MIN(h.first_at) AS since,
+                      SUM(n.terms = 1) AS only,
+                      SUM(n.terms = 1 AND s.match IN ('yes', 'unknown')
+                          AND s.deal_score >= ?) AS good
+               FROM h JOIN n USING (listing_id)
+               LEFT JOIN scores s ON s.id = (
+                   SELECT MAX(id) FROM scores
+                   WHERE hunt_id = ? AND listing_id = h.listing_id)
+               GROUP BY h.query""",
+            (hunt_id, *queries, bar, hunt_id)).fetchall()
+        return {r["query"]: {"found": r["found"], "only": r["only"] or 0,
+                             "good": r["good"] or 0, "since": r["since"]}
+                for r in rows}
 
     def listing(self, listing_id: str) -> Listing | None:
         """One listing as stored: whatever the search feed last said, plus

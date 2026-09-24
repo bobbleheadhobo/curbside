@@ -38,7 +38,7 @@ from ..config import ScorerConfig
 from ..schedule import local_day_start
 from ..connectivity import api_reachable
 from ..db import Store
-from ..models import Candidate, Hunt, Score
+from ..models import MAX_QUERIES, Candidate, Hunt, Score
 from .base import (APPRAISE_INSTRUCTION, SUGGEST_INSTRUCTION, SUGGEST_SYSTEM,
                    TRIAGE_INSTRUCTION, TriageResult, build_system_prompt,
                    load_rubric, render_listing, render_want_for_suggestion)
@@ -517,7 +517,7 @@ class ClaudeCodeScorer:
     # How many drafted terms are worth having. Each one is a whole search
     # against two sources on every tick of that want's cadence, so this is a
     # standing request-rate decision, not a prompt preference.
-    MAX_SUGGESTED_QUERIES = 6
+    MAX_SUGGESTED_QUERIES = MAX_QUERIES   # the save-time cap, not a copy of it
     MAX_QUERY_CHARS = 60
     # A person is waiting on a form POST. The scoring timeout (180s) is sized
     # for an appraisal nobody is watching; a form that hangs that long is

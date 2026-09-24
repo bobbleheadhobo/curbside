@@ -1539,6 +1539,35 @@ def test_two_different_things_photographed_apart_are_not_merged(rig):
     assert r.n_scored == 2, "two real listings were collapsed into one"
 
 
+def test_a_listing_two_terms_find_is_stored_once_and_credited_to_both(rig):
+    """Sources return a listing once per term that finds it, now that the
+    repeats are the evidence for which terms earn their request. The pipeline
+    is where the copies merge, so nothing downstream sees a listing twice."""
+    from datetime import datetime, timezone
+    from conftest import make_listing
+    from dealbot.models import RawListing
+
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    now = datetime.now(timezone.utc)
+
+    class TwoTerms:
+        name = "fixture"
+        def search(self, hunt):
+            return iter([RawListing("fixture", "a", {}, now, query="dresser"),
+                         RawListing("fixture", "b", {}, now, query="dresser"),
+                         RawListing("fixture", "a", {}, now, query="drawers")])
+        def parse(self, raw):
+            return make_listing(lid=f"fixture:{raw.source_id}", price_cents=0,
+                                title=f"Free dresser {raw.source_id}")
+
+    r = run_hunt(store, hunt, TwoTerms(), scorer, notifiers, cfg.location)
+    assert r.n_fetched == 2 and r.n_scored == 2
+    y = store.query_yield(hunt.id, ["dresser", "drawers"], bar=7.0)
+    assert (y["dresser"]["found"], y["dresser"]["only"]) == (2, 1)
+    assert (y["drawers"]["found"], y["drawers"]["only"]) == (1, 0)
+
+
 _STOVE = "https://images.craigslist.org/00e0e_63Mjb6WaX9P_0t20CI_600x450.jpg"
 
 

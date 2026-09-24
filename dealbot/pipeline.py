@@ -22,8 +22,8 @@ from .filters import gate, matches_any
 from .models import GateResult
 from dataclasses import asdict, replace
 
-from .models import (Candidate, Hunt, Listing, Location, RunResult, Score,
-                     UpsertResult)
+from .models import (Candidate, Hunt, Listing, Location, RawListing,
+                     RunResult, Score, UpsertResult)
 from .notify.base import Notifier
 from .scoring.base import Scorer, TriageResult
 from .scoring.claude_code import ScoringUnavailable
@@ -184,6 +184,34 @@ def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
     return len(dropped)
 
 
+def parse_unique(source: Source, raws: Sequence[RawListing]
+                 ) -> tuple[list[Listing], dict[str, set[str]]]:
+    """One Listing per id, and which search terms found each.
+
+    A source yields a listing once per term that finds it, so this is where
+    the copies are merged -- and where the copies are counted, because a term
+    whose every find another term also made is a request per run buying
+    nothing. `hits` is term -> listing ids, for `Store.record_query_hits`.
+    """
+    listings: list[Listing] = []
+    kept: set[str] = set()
+    hits: dict[str, set[str]] = {}
+    for raw in raws:
+        try:
+            parsed = validate(source.parse(raw))
+        except Exception as exc:                          # noqa: BLE001
+            log.warning("parse failed for %s:%s -- %s", raw.source, raw.source_id, exc)
+            continue
+        if parsed is None:
+            continue
+        if raw.query:
+            hits.setdefault(raw.query, set()).add(parsed.id)
+        if parsed.id not in kept:
+            kept.add(parsed.id)
+            listings.append(parsed)
+    return listings, hits
+
+
 def _with_stamp(listing: Listing, upserts: dict[str, UpsertResult]) -> Listing:
     """The source's own version stamp for this listing, as stored.
 
@@ -283,15 +311,7 @@ def run_hunt(
         return result
 
     # --- 2. parse -----------------------------------------------------------
-    listings: list[Listing] = []
-    for raw in raws:
-        try:
-            parsed = validate(source.parse(raw))
-        except Exception as exc:                          # noqa: BLE001
-            log.warning("parse failed for %s:%s -- %s", raw.source, raw.source_id, exc)
-            continue
-        if parsed is not None:
-            listings.append(parsed)
+    listings, hits = parse_unique(source, raws)
     result.n_fetched = len(listings)
 
     if len(raws) and not listings:
@@ -310,6 +330,7 @@ def run_hunt(
             result.n_new += 1
     store.mark_matches(hunt.id, listings)
     store.mark_gone(hunt.id, source.name, [l.id for l in listings])
+    store.record_query_hits(hunt.id, hits)
 
     # --- 4. gate ------------------------------------------------------------
     gr = gate(
@@ -711,8 +732,7 @@ def dry_run(store: Store, hunt: Hunt, source: Source, location: Location) -> dic
     debugging path: see what the gate would admit without spending anything or
     mutating the store. Relist detection is unavailable here, since that needs
     the upsert."""
-    raws = list(source.search(hunt))
-    listings = [l for r in raws if (l := validate(source.parse(r)))]
+    listings, _ = parse_unique(source, list(source.search(hunt)))
     gr = gate(hunt, listings, location,
               statuses=store.statuses(hunt.id),
               last_scores=store.last_scores(hunt.id),

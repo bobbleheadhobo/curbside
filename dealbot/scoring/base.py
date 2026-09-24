@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
 
-from ..models import Candidate, Hunt, Listing, Score, Want
+from ..models import MAX_QUERIES, Candidate, Hunt, Listing, Score, Want
 
 log = logging.getLogger("dealbot.scoring")
 
@@ -211,12 +211,12 @@ what the item is NOT -- "no pods", "not a corner unit" -- matches nothing,
 because nobody advertises an absence; those are constraints, checked
 separately against the listings these terms find."""
 
-SUGGEST_INSTRUCTION = """\
+SUGGEST_INSTRUCTION = f"""\
 Return ONE JSON object and nothing else:
-{"queries": ["<search term>", ...]}
+{{"queries": ["<search term>", ...]}}
 
-Between three and six terms, most obvious first. Each is used as a whole search
-on its own, so each must stand alone.
+Between 3 and {MAX_QUERIES} terms, most obvious first. Each is used as a whole
+search on its own, so each must stand alone.
 
 Check each term before you return it:
   - Would a seller put these words in a listing title? If not, drop it.

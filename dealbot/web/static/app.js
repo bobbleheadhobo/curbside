@@ -861,6 +861,7 @@ if ("serviceWorker" in navigator) {
         box.appendChild(pill);
       });
       box.hidden = !box.childElementCount;
+      if (opts.onchange) opts.onchange(items().length);
     }
 
     function commit() {
@@ -907,7 +908,18 @@ if ("serviceWorker" in navigator) {
     return {commit: commit, write: write, input: input, form: form};
   }
 
-  var queries = pills("f-queries", {placeholder: "tv stand", comma: true});
+  // The term count under the field, kept current as pills come and go. The
+  // server renders the same sentence, so with no script it is still right on
+  // load; only the number and the over-the-cap colour change here.
+  var cost = document.getElementById("f-queries-cost");
+  function recount(n) {
+    if (!cost) return;
+    var b = cost.querySelector("b");
+    if (b) b.textContent = n;
+    cost.classList.toggle("overcap", n > Number(cost.dataset.max));
+  }
+  var queries = pills("f-queries", {placeholder: "tv stand", comma: true,
+                                    onchange: recount});
   pills("f-requires", {placeholder: "at least 70 inches wide", wide: true});
 
   /* "Suggest terms" without leaving the page.
