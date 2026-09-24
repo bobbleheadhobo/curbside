@@ -174,6 +174,7 @@ class CraigslistSource(Throttled):
         free_only = hunt.max_price_cents == 0
         path = PATH_FREE if free_only else PATH_ALL
         queries = [""] if free_only else list(hunt.queries or [""])
+        self._reserve(len(queries))
 
         seen: set[str] = set()
         for query in queries:

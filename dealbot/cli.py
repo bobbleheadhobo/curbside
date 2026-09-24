@@ -144,8 +144,10 @@ def _rotated(hunts, store, advance: bool = True):
     had never once been short.
 
     Rotating costs one settings write per pass and makes the shortage take
-    turns. It matters more now that a starved fetch is a warning rather than
-    an error: without it, last would mean never.
+    turns: without it, last would mean never. It moves one place per pass, so
+    a skipped hunt does not jump to the front -- what gets it fetched is that
+    a skip is not a pass (`full_pass=0`), which leaves it due on the next
+    tick, when the hunts it collided with are not.
 
     The counter is advanced here rather than derived from the clock so that a
     pass which does nothing (outside the waking hours) does not silently skip

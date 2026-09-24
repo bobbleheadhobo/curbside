@@ -82,10 +82,21 @@ politeness budget is not a failure: `BudgetExhausted` is now caught separately
 at the fetch and recorded as `fetch skipped` in `warning`, while the site
 actually refusing to answer still fails loudly as before.
 
-That is only safe because the order rotates. `cli._rotated` advances a
-`pass_rotation` settings row each pass, so a hunt skipped for want of budget
-leads the next one; without it, a warning would mean the last hunt simply never
-fetched. `--dry-run` reads the counter without advancing it.
+A skip is also **not a pass** (`full_pass=0`): nothing was fetched, so the
+hunt comes due again on the next tick. Counting it as a pass kept collisions
+going. Every hunt it collided with had reset its clock in the same pass, so
+they were all due together again an hour later: five wants at once need ~48
+Facebook requests against 25, and three of five were skipped on the first pass
+after the fifth arrived. Left due, the skipped hunt runs on the next tick
+beside hunts that are not due, and the passes spread themselves out.
+
+Two things keep that from turning into the every-tick retry above. A search
+whose queries cannot all fit in what is left is refused **before** a request
+goes out (`Throttled._reserve`), because running out part way throws the
+first queries' results away: the receiver want spent 4 of its 7 like that.
+And the order rotates. `cli._rotated` advances a `pass_rotation` settings row
+each pass, one place at a time, so the shortage takes turns; without it, last
+would mean never. `--dry-run` reads the counter without advancing it.
 
 Rotation makes a shortage fair. It does not make it smaller, and the cost side
 grows with the wants rather than with the listings. A search is one request per
@@ -96,7 +107,7 @@ a sweep at 22 want queries plus one sweep query is 23 Facebook requests before
 any description is fetched, against `max_requests_per_run: 25`. The arithmetic
 is worth doing on paper when a want is added, because the symptom is not a
 failure: it is `fetch skipped` in `warning` on whichever hunts sort late that
-pass, and listings that stay `new`.
+pass, and hunts that fetch a tick later than their cadence says.
 
 Units live in `~/.config/systemd/user/`: `curbside.timer` → `curbside.service`,
 plus `curbside-web.service` for the dashboard (bound to localhost).

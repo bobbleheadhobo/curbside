@@ -198,7 +198,9 @@ class FacebookSource(Throttled):
 
     def search(self, hunt: Hunt) -> Iterator[RawListing]:
         seen: set[str] = set()
-        for query in (hunt.queries or ("",)):
+        queries = hunt.queries or ("",)
+        self._reserve(len(queries))
+        for query in queries:
             surfaces = self._surfaces(query)
             results, failures = None, []
             for url in surfaces:

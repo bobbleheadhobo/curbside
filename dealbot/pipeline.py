@@ -250,21 +250,31 @@ def run_hunt(
         # the pass simply spent this source's requests on the hunts ahead of
         # this one.
         #
-        # It must NOT go in `error`. `last_success_at` counts runs with
-        # `error IS NULL`, so an error makes the hunt due again on the very
-        # next tick -- and the thing it would then do is hammer a source we
-        # had just decided to stop asking. Measured: `want:stacked-ottoman` is
-        # last in the pass and so is always the one starved of Facebook's 25,
-        # and both times it was recorded as an error it re-ran six minutes
-        # later instead of sixty, the second of which came back throttled.
-        # Exactly the cadence collapse a quota standdown caused, arriving
-        # through the request budget instead.
+        # It must NOT go in `error`, which means the SITE failed us and is what
+        # the health pill reads. It went there once: `want:stacked-ottoman`
+        # sorted last, was starved of Facebook's 25 on every pass, and as an
+        # error re-ran on every tick, six minutes apart instead of sixty --
+        # the second of which came back throttled. A cadence collapse, because
+        # it was the same hunt, last, every time.
         #
-        # Being last is what `cli` now rotates away, so a hunt skipped on one
-        # pass goes first on the next rather than never being fetched at all.
+        # Nor does it count as a pass (`full_pass=0`), because nothing was
+        # fetched. Counting it made a skipped hunt wait out a whole interval,
+        # and since every hunt that collided with it reset its clock in the same
+        # pass, they collided again an hour later: five wants due together
+        # need ~48 Facebook requests against 25, so three of five were skipped
+        # on the first pass after the fifth want arrived, the sweep among them.
+        # Uncounted, a skipped hunt comes due on the next tick, when the hunts
+        # it collided with are not, and the passes spread themselves out.
+        #
+        # This is not the every-tick collapse above. That was the SAME hunt,
+        # always last, retrying on every tick for ever. Rotation ended the
+        # always-last, `_reserve` makes a skip cost no request, and one fetch
+        # later the hunt's clock resets. The per-pass budget is still the
+        # ceiling on how hard any pass asks.
         log.warning("fetch skipped for %s: %s", hunt.id, exc)
         result.warning = f"fetch skipped: {exc}"
-        store.finish_run(run_id, n_fetched=0, warning=result.warning)
+        store.finish_run(run_id, n_fetched=0, warning=result.warning,
+                         full_pass=0)
         return result
     except Exception as exc:                              # noqa: BLE001
         log.exception("fetch failed for %s", hunt.id)

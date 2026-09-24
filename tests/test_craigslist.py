@@ -197,6 +197,25 @@ def test_liveness_spends_a_request_slot(src, stub_listing, monkeypatch):
     assert src._requests_made == before + 1
 
 
+def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
+    """Same rule as Facebook's: nothing is spent on a search whose results
+    would be thrown away. A free sweep is one category browse, whatever its
+    queries say."""
+    from dealbot.sources.base import BudgetExhausted
+    asked = []
+    monkeypatch.setattr(src, "_get", lambda *a, **k: asked.append(a) or {})
+    src.max_requests, src._requests_made = 60, 58
+    want = type("H", (), {"queries": ("a", "b", "c"), "max_price_cents": 5000})()
+    with pytest.raises(BudgetExhausted, match="3 searches, 2 of 60 left"):
+        list(src.search(want))
+    assert asked == [] and src._requests_made == 58
+
+    sweep = type("H", (), {"queries": ("x", "y", "z"), "max_price_cents": 0})()
+    with pytest.raises(SourceBlocked):         # asked once: the empty payload
+        list(src.search(sweep))
+    assert len(asked) == 1
+
+
 # --- stale cache copies ------------------------------------------------------
 
 def _payload(updated, price):

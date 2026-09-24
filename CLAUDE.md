@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 581 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 584 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -210,16 +210,31 @@ and left the cadence broken. Fix the column, not the display.
 The request budget then did it again, which is why `BudgetExhausted` is caught
 separately at the fetch. It subclasses `SourceBlocked` so the *site* refusing
 to answer still fails loudly, but running out of **our own** politeness budget
-is not a failure — and writing it to `error` made the hunt re-run six minutes
-later instead of sixty, hammering a source we had just decided to stop asking.
-One of those retries came back throttled.
+is not a failure. In `error`, the hunt that sorted last re-ran on every tick,
+six minutes apart instead of sixty, and one of those retries came back
+throttled.
+
+**A budget skip is a warning, and it is not a pass.** It goes in `warning` with
+`full_pass=0`, so the hunt comes due on the next tick rather than an interval
+later. Counting it as a pass looked like the careful choice and kept the
+collisions going: every hunt it collided with reset its clock in the same pass,
+so they were all due together again an hour later, every hour. Five wants due
+at once need ~48 Facebook requests against 25, and three of five were skipped
+on the first pass after the fifth arrived, the sweep among them. Left due, a
+skipped hunt runs on the next tick beside hunts that are not due, and the
+passes spread themselves out. Two things keep that from becoming the collapse
+above: `Throttled._reserve` refuses a search whose queries cannot all fit
+**before** spending anything (running out part way threw away 4 of the
+receiver want's 7 requests), and rotation means it is not the same hunt every
+time.
 
 **Which hunt gets starved is decided by the pass order, so the pass order
 rotates.** One budget serves the whole pass and `cfg.hunts` is fixed — sweeps,
 then wants by name — so last was always `want:stacked-ottoman`, the only hunt
 in the database ever to record `BudgetExhausted`. `cli._rotated` advances a
-`pass_rotation` settings row each pass, which is what makes the warning safe:
-without it, last would mean never. `--dry-run` reads the counter and does not
+`pass_rotation` settings row each pass, so the shortage takes turns: without
+it, last would mean never. It shifts by one place per pass, so a skipped hunt
+does not jump to the front; being left due is what gets it fetched. `--dry-run` reads the counter and does not
 advance it, because it promises to write nothing.
 
 **But rotation shares a shortage out; it does not create budget.** Search costs

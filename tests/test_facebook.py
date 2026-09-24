@@ -142,6 +142,20 @@ def test_our_own_budget_is_not_reported_as_facebook_gating(src, monkeypatch):
         list(src.search(hunt))
 
 
+def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
+    """Results are kept only if every query answers, so running out part way
+    throws away what the first queries bought. The receiver want spent 4 of
+    its 7 that way on its first pass and kept nothing."""
+    from dealbot.sources.facebook import BudgetExhausted
+    asked = []
+    monkeypatch.setattr(src, "_get", lambda url: asked.append(url) or "")
+    src.max_requests, src._requests_made = 25, 21
+    hunt = type("H", (), {"queries": ("a", "b", "c", "d", "e", "f", "g")})()
+    with pytest.raises(BudgetExhausted, match="7 searches, 4 of 25 left"):
+        list(src.search(hunt))
+    assert asked == [] and src._requests_made == 21
+
+
 def test_a_price_drop_to_free_is_not_lost_in_enrichment(src):
     """REGRESSION: `detail_price or search_price` treats 0 as falsy, so a seller
     dropping to free kept showing the old price -- defeating the free sweep and

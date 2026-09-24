@@ -88,6 +88,23 @@ class Throttled:
         if self._last_request and elapsed < wait:
             time.sleep(wait - elapsed)
 
+    def _reserve(self, n: int) -> None:
+        """Refuse, before spending anything, a job needing `n` requests when
+        fewer are left in this pass.
+
+        A search is one request per query, and its results are only kept if
+        every query answers: running out part way raises, and what the first
+        few bought is thrown away. `want:home-theater-receiver` spent 4 of its
+        7 on the first pass it ever made and kept nothing -- 16% of Facebook's
+        25, gone. A minimum is enough here: a surface fallback can cost more,
+        but never less.
+        """
+        left = self.max_requests - self._requests_made
+        if n > left:
+            raise BudgetExhausted(
+                f"request budget exhausted ({n} searches, {left} of "
+                f"{self.max_requests} left this run)")
+
     def _spend_slot(self) -> None:
         """Count a request that has just gone out."""
         self._last_request = time.monotonic()

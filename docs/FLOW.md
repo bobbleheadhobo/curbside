@@ -119,6 +119,7 @@ class Source(Protocol):
 
 class Throttled:                 # mixin: inherit it, do not retype it
     def reset_budget(self) -> None: ...        # one budget per PASS, not per hunt
+    def _reserve(self, n: int) -> None: ...    # refuse a search that cannot finish
     def _await_slot(self) -> None: ...         # jittered wait; raises BudgetExhausted
     def _spend_slot(self) -> None: ...         # count a request that went out
 

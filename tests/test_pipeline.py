@@ -1899,8 +1899,37 @@ def test_running_out_of_our_own_budget_is_a_warning_not_an_error(rig):
     ).fetchone()
     assert row["error"] is None and "budget" in row["warning"]
     assert row["n_fetched"] == 0
-    # And the cadence holds: the hunt counts as having run.
-    assert store.last_success_at(hunt.id, "fixture") is not None
+
+
+def test_a_hunt_skipped_for_budget_comes_due_on_the_next_tick(rig):
+    """It fetched nothing, so it has not had its turn. Counting the skip as a
+    pass made it wait a whole interval, and every hunt it collided with reset
+    its clock in the same pass -- so they collided again an hour later, every
+    hour. Five wants due together need ~48 Facebook requests against 25: three
+    of five were skipped on the first pass after the fifth arrived.
+
+    Left due, it runs on the next tick alongside hunts that are NOT due, and
+    the passes spread themselves out. Once it has fetched, its clock is set
+    like any other."""
+    from dealbot.cli import _is_due
+    from dealbot.sources.base import BudgetExhausted
+
+    cfg, store, source, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+
+    class Spent:
+        name = "fixture"
+        def search(self, hunt):
+            raise BudgetExhausted("request budget exhausted (1 searches, "
+                                  "0 of 25 left this run)")
+        def parse(self, raw): return None
+
+    run_hunt(store, hunt, Spent(), scorer, notifiers, cfg.location)
+    assert store.last_success_at(hunt.id, "fixture") is None
+    assert _is_due(store, hunt, "fixture")
+
+    run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
+    assert not _is_due(store, hunt, "fixture")
 
 
 def test_a_site_that_will_not_answer_is_still_an_error(rig):
