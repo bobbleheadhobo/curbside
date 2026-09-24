@@ -2763,3 +2763,63 @@ def test_every_cadence_is_set_in_one_place(tmp_path):
     assert s.get_setting("hunt_interval:want:nobody") is None
     page = client.get("/settings").text
     assert page.count('name="iv:') == len(cfg.hunts)
+
+
+# --- each limit saves on its own, and the small print is readable ---------
+
+def test_each_limit_saves_without_touching_the_others(tmp_path):
+    """One Save under four numbers re-sent all four, so changing the radius
+    also resubmitted three you had not touched. Each has its own form now,
+    and the endpoint leaves alone any field it is not sent."""
+    import re
+    from dealbot.config import with_store
+    from dealbot.db import Store
+    client, cfg = _client(tmp_path)
+    page = client.get("/settings").text
+    assert len(re.findall(r'<form[^>]*action="/settings/tuning"', page)) == 4
+    before = with_store(cfg, Store(cfg.db_path))
+
+    client.post("/settings/tuning", data={"radius_miles": "12"},
+                follow_redirects=False)
+    after = with_store(cfg, Store(cfg.db_path))
+    assert after.location.radius_miles == 12
+    assert after.defaults.min_deal_score == before.defaults.min_deal_score
+    assert after.defaults.max_results == before.defaults.max_results
+    assert after.scorer.max_image_checks == before.scorer.max_image_checks
+
+
+def _tokens(css: str, block_start: str) -> dict:
+    import re
+    block = css[css.index(block_start):]
+    block = block[:block.index("}")]
+    out = {}
+    for name, hexa in re.findall(r"--([\w-]+):\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b",
+                                 block):
+        out[name] = "#" + (hexa if len(hexa) == 6 else "".join(c * 2 for c in hexa))
+    return out
+
+
+def _contrast(a: str, b: str) -> float:
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4
+             for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_the_grey_text_is_readable_on_every_surface_in_both_themes():
+    """`--faint` was 4.42:1 on `--line-soft` and 4.47:1 on `--bad-soft`, just
+    under 4.5: the zeros in a failed run and the score on a low card. Measured
+    from the stylesheet, so a later token edit cannot slip back under."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    for start in (":root{", ":root[data-theme=dark]{"):
+        t = _tokens(css, start)
+        for fg in ("dim", "faint"):
+            for bg in ("bg", "card", "line-soft", "good-soft", "warn-soft",
+                       "bad-soft", "accent-soft"):
+                ratio = _contrast(t[fg], t[bg])
+                assert ratio >= 4.5, f"{start} --{fg} on --{bg}: {ratio:.2f}"

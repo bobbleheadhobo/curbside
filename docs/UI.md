@@ -818,6 +818,19 @@ found by no other term, and of those how many made the bar. "No other term"
 means the terms the want has now, so a deleted term cannot make a kept one look
 redundant. It is a read of `query_hits`; the poller writes it.
 
+**Each limit on `/settings` saves on its own.** One Save under four numbers
+re-sent all four, so changing the radius also resubmitted three you had not
+touched. The two score bars share a form because they are one decision. Each
+form is its own `data-inplace` target, so saving one does not wipe an edit
+waiting in another. They do not borrow `.addterm`: its input is 15px, and a
+form field under 16px makes iOS zoom the page on focus.
+
+**No text under 11px, and grey text clears 4.5:1 on every surface.** The tab
+labels, the tab count badge and the "/10" under a score were 10 to 10.5px, and
+`--faint` was 4.42:1 on `--line-soft`. `tests/test_web.py` computes the
+contrast of `--dim` and `--faint` against every surface token in both themes,
+straight from `app.css`.
+
 **The price cap of 0 is a real answer.** It means free ones only, because
 `over_price` drops anything dearer than the cap. It used to be refused as a
 mistake, which left "free only" with no way to say it except leaving the search

@@ -16,7 +16,11 @@
 :root{
   /* Ground / surface. Grouped-list structure: a tinted ground, cards on top. */
   --bg:#f4f4f6; --card:#fff; --raised:#fff;
-  --fg:#101014; --dim:#5f5f6a; --faint:#6d6d78;
+  --fg:#101014; --dim:#5f5f6a;
+  /* #6a6a75, not #6d6d78: the old grey was 4.42:1 on --line-soft and 4.47:1 on
+     --bad-soft, just under 4.5. This clears every tinted surface here (4.62:1
+     at worst) and stays a visible step lighter than --dim. */
+  --faint:#6a6a75;
   --line:#e5e5ea; --line-soft:#eeeef2;
   /* One accent. Primary actions, current tab, selection. Never decoration. */
   --accent:#2b64d6; --accent-soft:#eaf0fe; --on-accent:#fff;
@@ -179,16 +183,16 @@ svg.i{width:1em;height:1em;flex:none;stroke:currentColor;fill:none;
 }
 .tabbar a{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:3px;height:56px;font-size:10.5px;font-weight:550;color:var(--faint);
+  gap:3px;height:56px;font-size:11px;font-weight:550;color:var(--faint);
   letter-spacing:.005em;position:relative
 }
 .tabbar a svg.i{font-size:22px;stroke-width:1.7}
 .tabbar a[aria-current=page]{color:var(--tint)}
 .tabbar a:active{background:var(--line-soft)}
 .tabbar .pip{
-  position:absolute;top:6px;left:calc(50% + 7px);min-width:16px;height:16px;
+  position:absolute;top:5px;left:calc(50% + 7px);min-width:17px;height:17px;
   border-radius:99px;background:var(--tint);color:var(--card);
-  font-size:10px;line-height:16px;font-weight:700;text-align:center;padding:0 4px
+  font-size:11px;line-height:17px;font-weight:700;text-align:center;padding:0 4px
 }
 @media (min-width:900px){.tabbar{display:none}}
 
@@ -384,7 +388,7 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
 .shot[hidden]{display:none}
 .shot.empty{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:4px;color:var(--faint);font-size:10.5px;font-weight:550;
+  gap:4px;color:var(--faint);font-size:11px;font-weight:550;
   border:1px dashed var(--line);text-align:center;padding:0 6px;line-height:1.25
 }
 .shot.empty svg.i{font-size:17px;stroke-width:1.5}
@@ -468,7 +472,7 @@ a.chip[aria-current=true]{background:var(--accent);color:var(--on-accent)}
   font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1;
   text-align:center
 }
-.score span{font-size:10.5px;font-weight:600;color:var(--faint);letter-spacing:.03em}
+.score span{font-size:11px;font-weight:600;color:var(--faint);letter-spacing:.03em}
 /* Filled, because the score is the most-scanned thing on the card and a
    coloured digit on white was doing none of the work a colour can do. Still
    semantic: this is the judgement, not the section. */
@@ -1310,3 +1314,12 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .daybars svg a rect[fill=transparent]:hover{fill:var(--line-soft)}
 td .kind{margin-left:6px;font-size:11.5px;color:var(--faint);font-weight:550}
 td .kind.hi{color:var(--warn)}
+
+/* --- settings: each limit saves on its own -------------------------------- */
+/* Not `.addterm`: that one's input is 15px, and a form field under 16px makes
+   iOS zoom the page on focus. These keep the ordinary field size and a full
+   tap-height button beside them. */
+.tunerow{display:flex;gap:8px;align-items:stretch}
+.tunerow input{flex:1;min-width:0}
+.tunerow button,.tunesave button{flex:none;width:auto;min-height:var(--tap);padding:0 16px}
+.tunesave{display:flex;justify-content:flex-end}

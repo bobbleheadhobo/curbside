@@ -121,54 +121,70 @@
 
 {# The four numbers worth a thumb. Each one says what it is currently costing,
    because a threshold you cannot see the effect of is one you guess at. #}
+{# Each number saves on its own. One Save under all four meant changing the
+   radius also re-sent three numbers you had not touched, and a mistyped one
+   among them went in with it. Each form refreshes only itself, so an edit
+   waiting in another field is not wiped. The two bars share a form because
+   they are one decision: how picky to be. `/settings/tuning` already skips a
+   field that is not sent. #}
 <div class="panel" id="tuning" style="margin-bottom:18px">
   <h2>Limits</h2>
-  <form method="post" action="/settings/tuning" data-inplace="#tuning"
-        data-toast="Saved.">
-    <div class="field">
-      <div class="row">
-        <label><span class="lbl">Show a want scoring at least</span>
-          <input type="text" inputmode="decimal" name="min_deal_score"
-                 value="{{ '%g'|format(tuning.min_deal_score) }}"></label>
-        <label><span class="lbl">Show a free find scoring at least</span>
-          <input type="text" inputmode="decimal" name="free_find_min_score"
-                 value="{{ '%g'|format(tuning.free_find_min_score) }}"></label>
-      </div>
-      <p class="hint">Out of 10. Anything the model scores below this is judged
-        but not shown to you. Lower it to see more.
-        {%- if tuning.near_miss %} <a href="/skipped">{{ tuning.near_miss }} are
-        sitting just below the wants number</a>.{% endif %}</p>
+  <form method="post" action="/settings/tuning" class="field" id="tune-bars"
+        data-inplace="#tune-bars" data-toast="Saved.">
+    <div class="row">
+      <label><span class="lbl">Show a want scoring at least</span>
+        <input type="text" inputmode="decimal" name="min_deal_score"
+               value="{{ '%g'|format(tuning.min_deal_score) }}"></label>
+      <label><span class="lbl">Show a free find scoring at least</span>
+        <input type="text" inputmode="decimal" name="free_find_min_score"
+               value="{{ '%g'|format(tuning.free_find_min_score) }}"></label>
     </div>
-    <div class="field">
-      <label class="lbl" for="t-run">Listings to send to the model each run</label>
+    <p class="hint">Out of 10. Anything the model scores below this is judged
+      but not shown to you. Lower it to see more.
+      {%- if tuning.near_miss %} <a href="/skipped">{{ tuning.near_miss }} are
+      sitting just below the wants number</a>.{% endif %}</p>
+    <div class="tunesave"><button>Save both</button></div>
+  </form>
+  <form method="post" action="/settings/tuning" class="field" id="tune-run"
+        data-inplace="#tune-run" data-toast="Saved.">
+    <label class="lbl" for="t-run">Listings to send to the model each run</label>
+    <div class="tunerow">
       <input type="text" inputmode="numeric" id="t-run" name="max_results"
              value="{{ tuning.max_results }}">
-      <p class="hint">Counted per hunt and per site, so {{ tuning.max_results }}
-        here means up to {{ tuning.max_results * tuning.combos }} judged on a
-        busy pass. Raising it clears the queue faster and costs more.
-        {%- if tuning.backlog %} {{ tuning.backlog }} are queued now.{% endif %}</p>
+      <button>Save</button>
     </div>
-    <div class="field">
-      <label class="lbl" for="t-img">Photos to look at each run</label>
+    <p class="hint">Counted per hunt and per site, so {{ tuning.max_results }}
+      here means up to {{ tuning.max_results * tuning.combos }} judged on a
+      busy pass. Raising it clears the queue faster and costs more.
+      {%- if tuning.backlog %} {{ tuning.backlog }} are queued now.{% endif %}</p>
+  </form>
+  <form method="post" action="/settings/tuning" class="field" id="tune-img"
+        data-inplace="#tune-img" data-toast="Saved.">
+    <label class="lbl" for="t-img">Photos to look at each run</label>
+    <div class="tunerow">
       <input type="text" inputmode="numeric" id="t-img" name="max_image_checks"
              value="{{ tuning.max_image_checks }}">
-      <p class="hint">When the words are not enough the model asks to see the
-        pictures. That costs about twice a judgement, so only listings it would
-        already pick get a look, up to {{ tuning.max_image_checks }} per
-        hunt per run at {{ tuning.images_per_check }} photos each.
-        {%- if tuning.looked %} {{ tuning.looked }} have had one.{% endif %}
-        Set it to 0 to never look.</p>
+      <button>Save</button>
     </div>
-    <div class="field">
-      <label class="lbl" for="t-radius">How far you will drive, in miles</label>
+    <p class="hint">When the words are not enough the model asks to see the
+      pictures. That costs about twice a judgement, so only listings it would
+      already pick get a look, up to {{ tuning.max_image_checks }} per
+      hunt per run at {{ tuning.images_per_check }} photos each.
+      {%- if tuning.looked %} {{ tuning.looked }} have had one.{% endif %}
+      Set it to 0 to never look.</p>
+  </form>
+  <form method="post" action="/settings/tuning" class="field" id="tune-radius"
+        data-inplace="#tune-radius" data-toast="Saved.">
+    <label class="lbl" for="t-radius">How far you will drive, in miles</label>
+    <div class="tunerow">
       <input type="text" inputmode="decimal" id="t-radius" name="radius_miles"
              value="{{ '%g'|format(tuning.radius_miles) }}">
-      <p class="hint">Straight line from home, so real driving is further.
-        Anything beyond it is never collected.
-        {%- if tuning.too_far %} {{ tuning.too_far }} have been dropped for being
-        too far.{% endif %}</p>
+      <button>Save</button>
     </div>
-    <div class="formactions"><button class="primary">Save</button></div>
+    <p class="hint">Straight line from home, so real driving is further.
+      Anything beyond it is never collected.
+      {%- if tuning.too_far %} {{ tuning.too_far }} have been dropped for being
+      too far.{% endif %}</p>
   </form>
   <p class="settings-note">Everything else is in <code>config.yaml</code>.</p>
 </div>
