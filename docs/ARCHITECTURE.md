@@ -87,12 +87,25 @@ That is only safe because the order rotates. `cli._rotated` advances a
 leads the next one; without it, a warning would mean the last hunt simply never
 fetched. `--dry-run` reads the counter without advancing it.
 
+Rotation makes a shortage fair. It does not make it smaller, and the cost side
+grows with the wants rather than with the listings. A search is one request per
+query per source, an enrichment is one more, and both come from the same
+per-pass allowance — `_get` is the single choke point inside each adapter, so
+there is no separate detail budget to run out of independently. Four wants and
+a sweep at 22 want queries plus one sweep query is 23 Facebook requests before
+any description is fetched, against `max_requests_per_run: 25`. The arithmetic
+is worth doing on paper when a want is added, because the symptom is not a
+failure: it is `fetch skipped` in `warning` on whichever hunts sort late that
+pass, and listings that stay `new`.
+
 Units live in `~/.config/systemd/user/`: `curbside.timer` → `curbside.service`,
 plus `curbside-web.service` for the dashboard (bound to localhost).
 
 ## 2. Fetch — two stages
 
-**Stage one, the index.** One HTTP request per query. Facebook tries the
+**Stage one, the index.** One HTTP request per query — so a want's query
+list is its standing per-pass cost at every source, paid whether or not
+anything new is found. Facebook tries the
 *category* page first (`/marketplace/albuquerque/free`, which returns more) and
 falls back to the search page; Craigslist calls its JSON API. This yields title,
 price, city and one thumbnail — **no descriptions**, and on Facebook no

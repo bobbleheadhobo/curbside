@@ -222,6 +222,18 @@ in the database ever to record `BudgetExhausted`. `cli._rotated` advances a
 without it, last would mean never. `--dry-run` reads the counter and does not
 advance it, because it promises to write nothing.
 
+**But rotation shares a shortage out; it does not create budget.** Search costs
+one request **per query, per source, per pass**, and detail enrichment spends
+the *same* budget — `_get` is the single choke point in each adapter, so an item
+page and a search page are the same slot. Every hunt's queries are therefore
+subtracted from every source's allowance before a single description is
+fetched. Adding a fifth want with seven queries took Facebook from 16 searches
+(9 slots left for detail) to 23 of 25 (2 left) — and that shortfall lands on
+the whole pass, not on the new want. Count the queries against
+`max_requests_per_run` before adding a want, and prefer trimming queries to
+raising Facebook's 25: that number is set for never tripping a silent throttle,
+and being wrong about it is invisible.
+
 **A "day" is the user's day, in one place.** `schedule.local_day_start` is
 that place, and both the daily spend ceiling and `/stats` call it. It was UTC
 midnight on both sides, which in Albuquerque is 6pm and inside the waking

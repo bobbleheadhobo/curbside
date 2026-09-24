@@ -85,6 +85,12 @@ facebook:
   # that contains no listings at all. These numbers are set for never noticing
   # it rather than for speed.
   min_interval_seconds: 15
+  # PER PASS, not per hunt, and searches and detail fetches share it. Every
+  # want's query list is subtracted from this before any description is
+  # fetched: 22 want queries plus the sweep's one is 23 of these 25, leaving 2
+  # for enrichment across the whole pass. Trim queries rather than raising this
+  # -- being wrong about this number looks like nothing at all (see the
+  # silent-throttle note above).
   max_requests_per_run: 25
   fetch_details: true
 
