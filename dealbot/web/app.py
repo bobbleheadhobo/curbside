@@ -1229,11 +1229,12 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
 
     @app.get("/hunt/{hunt_id:path}")
     def hunt_view(request: Request, hunt_id: str, view: str = "",
-                  reason: str = "", status: str = ""):
+                  reason: str = ""):
         """One hunt's whole record, and why the gate turned things away.
 
-        `status=` is the old address and still works: it is a view of one
-        status. A `reason=` implies the rejected view.
+        A `reason=` implies the rejected view. The old `?status=` address is
+        gone: nothing linked to it, and it showed the database's own words for
+        a state. An old link simply lands on the default view.
         """
         cfg = _live()
         hunts = hunts_including_archived(cfg, store)
@@ -1243,13 +1244,8 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
                  for key, name, sts in HUNT_VIEWS]
         if reason:
             view = "rejected"
-        if status:
-            chosen = next(((k, n, st) for k, n, st, _ in views
-                           if st == (status,)),
-                          (status, status_label(status), (status,)))
-        else:
-            chosen = next(((k, n, st) for k, n, st, _ in views if k == view),
-                          views[0][:3])
+        chosen = next(((k, n, st) for k, n, st, _ in views if k == view),
+                      views[0][:3])
         key, name, statuses = chosen
         pattern = reason_pattern(reason) if reason else ""
         items = _rows(store, hunt_sql(len(statuses)),

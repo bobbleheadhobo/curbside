@@ -2965,6 +2965,8 @@ def test_rejections_are_grouped_named_and_each_shows_its_own(tmp_path):
     assert set(_cards(dup)) == {"Seen twice", "Seen twice again"}
     far = client.get(f"/hunt/{hunt.id}?reason=too_far").text
     assert set(_cards(far)) == {"Far away"}
-    # The old address still answers, as a view of that one status.
-    old = client.get(f"/hunt/{hunt.id}?status=gone").text
-    assert set(_cards(old)) == {"Long gone"}
+    # The old `?status=` address is retired. It answers with the default view
+    # rather than an error, and never with the database's word for a state.
+    old = client.get(f"/hunt/{hunt.id}?status=gone")
+    assert old.status_code == 200
+    assert set(_cards(old.text)) == {"A picked one", "A judged one"}

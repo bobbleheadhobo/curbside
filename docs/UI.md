@@ -853,6 +853,7 @@ Undo like the other two. Rejection reasons are grouped and named
 (`reason_label`): every duplicate was its own `duplicate_of:<id>` tag, and
 every tag used to link to all the rejections rather than its own. The counts
 cover listings still rejected only; a gone listing keeps its old reason.
+The old `?status=` address is retired; an old link lands on the default view.
 
 **The price cap of 0 is a real answer.** It means free ones only, because
 `over_price` drops anything dearer than the cap. It used to be refused as a
