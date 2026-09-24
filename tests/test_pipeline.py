@@ -1539,6 +1539,152 @@ def test_two_different_things_photographed_apart_are_not_merged(rig):
     assert r.n_scored == 2, "two real listings were collapsed into one"
 
 
+_STOVE = "https://images.craigslist.org/00e0e_63Mjb6WaX9P_0t20CI_600x450.jpg"
+
+
+class _Market:
+    """A feed whose listings can be changed between runs, counting every
+    detail fetch -- the request a re-decided duplicate must not cost."""
+    name = "fixture"
+
+    def __init__(self, listings):
+        from datetime import datetime, timezone
+        self.now = datetime.now(timezone.utc)
+        self.listings = {l.id: l for l in listings}
+        self.fetched: list[str] = []
+
+    def search(self, hunt):
+        from dealbot.models import RawListing
+        return iter([RawListing("fixture", lid.split(":")[1], {}, self.now)
+                     for lid in self.listings])
+
+    def parse(self, raw):
+        return self.listings[f"fixture:{raw.source_id}"]
+
+    def detail(self, listing):
+        self.fetched.append(listing.id)
+        return self.listings[listing.id]
+
+
+def _stove(lid, *, photo=_STOVE, price=0, hours_ago=1, title="Free gas stove"):
+    from datetime import datetime, timedelta, timezone
+    from conftest import make_listing
+    return make_listing(lid=lid, title=title, description="Works, just older.",
+                        price_cents=price, lat=35.3285, lng=-106.5309,
+                        images=(photo,),
+                        posted_at=datetime.now(timezone.utc)
+                                  - timedelta(hours=hours_ago))
+
+
+def test_an_earlier_duplicate_never_holds_a_slot_again(rig):
+    """REGRESSION, found live: `want:bookshelf` recorded `n_deferred` 21 on
+    every run for nine days and judged nothing.
+
+    `duplicate_of:` is re-decided every run, and it used to be re-decided by
+    fetching the item page again. An enriched duplicate carries a real posting
+    date and a never-enriched Craigslist listing does not, so the duplicates
+    won the batch cap every time: five of them held all five slots, and the
+    21 live listings queued behind them were never fetched at all.
+    """
+    from dataclasses import replace
+    cfg, store, _, scorer, notifiers = rig
+    hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"),
+                   max_results=2)
+
+    market = _Market([_stove("fixture:a", hours_ago=30)])
+    run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+
+    # The repost is the freshest thing on the page, permanently, and three
+    # ordinary listings wait behind it.
+    market.listings["fixture:b"] = _stove("fixture:b", hours_ago=1)
+    for n, name in enumerate(("table", "chairs", "lamp")):
+        lid = f"fixture:{name}"
+        market.listings[lid] = _stove(
+            lid, title=f"Free dining {name} set", hours_ago=10 + n,
+            photo=_STOVE.replace("63Mjb6WaX9P", f"{name:A<11}"[:11]))
+
+    for _ in range(2):
+        run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+
+    assert market.fetched.count("fixture:b") == 1, \
+        "the duplicate was fetched again to learn what the store already said"
+    judged = {r["listing_id"] for r in store.conn.execute(
+        "SELECT listing_id FROM scores")}
+    assert {"fixture:table", "fixture:chairs", "fixture:lamp"} <= judged
+    why = store.conn.execute(
+        "SELECT status, filter_reason FROM hunt_matches WHERE listing_id=?",
+        ("fixture:b",)).fetchone()
+    assert (why["status"], why["filter_reason"]) == \
+        ("filtered", "duplicate_of:fixture:a")
+
+
+def test_a_duplicate_that_changes_is_judged_after_all(rig):
+    """What re-deciding is FOR: a merge has to come undone when the listing
+    stops matching. The search feed writes the new photo and price to the
+    store, and the store is what the duplicate is re-decided from."""
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+
+    market = _Market([_stove("fixture:a", hours_ago=30)])
+    run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+    market.listings["fixture:b"] = _stove("fixture:b")
+    run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+    assert store.statuses(hunt.id)["fixture:b"] == "filtered"
+
+    market.listings["fixture:b"] = _stove(
+        "fixture:b", price=None,
+        photo=_STOVE.replace("63Mjb6WaX9P", "ZZZZZZZZZZZ"))
+    r = run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+    assert r.n_scored == 1
+    assert store.statuses(hunt.id)["fixture:b"] != "filtered"
+
+
+def test_a_stale_copy_is_judged_on_the_copy_already_held(rig):
+    """REGRESSION. Craigslist's item cache goes backwards, and `detail`
+    refuses a copy older than the one stored -- which is right. But it said so
+    by returning None, and the pipeline read None as "nothing there" and
+    deferred. Four postings got the older copy on every fetch for two days, so
+    a listing enriched once and then stood aside on quota would have waited
+    for ever for a cache that does not converge. We hold the newer copy; judge
+    that.
+    """
+    from datetime import datetime, timezone
+    from dataclasses import replace
+
+    from dealbot.sources.base import StaleCopy
+
+    cfg, store, _, scorer, notifiers = rig
+    hunt = next(h for h in cfg.hunts if h.kind == "sweep")
+    shown: dict[str, str | None] = {}
+    triage = scorer.triage
+
+    def spy(hunt, candidates):
+        shown.update({c.listing.id: c.listing.description for c in candidates})
+        return triage(hunt, candidates)
+
+    scorer.triage = spy
+
+    enriched = replace(_stove("fixture:a"),
+                       source_updated_at=datetime(2026, 9, 21, 14, 0,
+                                                  tzinfo=timezone.utc))
+    store.upsert_listing(enriched)
+    thin = replace(enriched, description=None, source_updated_at=None)
+
+    class Behind(_Market):
+        def detail(self, listing):
+            self.fetched.append(listing.id)
+            raise StaleCopy(listing.id)
+
+    market = Behind([thin])
+    r = run_hunt(store, hunt, market, scorer, notifiers, cfg.location)
+
+    assert market.fetched == ["fixture:a"]
+    assert r.n_scored == 1, "deferred instead of judged on the copy held"
+    assert store.statuses(hunt.id)["fixture:a"] != "new"
+    assert shown == {"fixture:a": "Works, just older."}, \
+        "judged on the thin search record rather than the copy held"
+
+
 # --- what you went and grabbed ---------------------------------------------
 #
 # The bot asserts a value on every listing it judges and nothing else in the

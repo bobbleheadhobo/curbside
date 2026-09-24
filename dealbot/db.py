@@ -463,6 +463,14 @@ class Store:
                             first_seen=row["first_seen"],
                             source_updated_at=row["source_updated_at"])
 
+    def listing(self, listing_id: str) -> Listing | None:
+        """One listing as stored: whatever the search feed last said, plus
+        everything enrichment has filled in. `raw` is not rebuilt, so this is
+        for READING -- upserting it back would overwrite the stored payload."""
+        row = self.conn.execute("SELECT * FROM listings WHERE id=?",
+                                (listing_id,)).fetchone()
+        return self.row_to_listing(row) if row else None
+
     def scored_duplicate(self, hunt_id: str, dup_key: str | None,
                          exclude_id: str,
                          img_key: str | None = None) -> str | None:

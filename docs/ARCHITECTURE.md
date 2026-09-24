@@ -121,7 +121,7 @@ Rate limiting lives inside each adapter so a caller cannot bypass it:
 | source | between requests | per run | notes |
 |---|---|---|---|
 | Facebook | 15s | 25 | throttles silently; absent `feed_units` raises |
-| Craigslist | 4s | 40 | JSON both ends; `?format=rss` is blocked |
+| Craigslist | 4s | 60 | JSON both ends; `?format=rss` is blocked |
 
 ## 3. The gate — what must be true before anything costs money
 
@@ -258,6 +258,16 @@ from "silently broken", so it is no longer the caller's to remember.
   normalised title + exact price + coordinates rounded to ~1km identifies the
   same physical item. A duplicate of something this hunt already *paid to
   appraise* is skipped as `duplicate_of:<id>`.
+
+  That rejection is re-decided every run, because a wrong merge has to be
+  able to come undone, but it is re-decided **from the store**, before the
+  cap, with no detail fetch. The stored row holds this run's title and price
+  over the enrichment already paid for, which is everything the keys hash.
+  Re-fetching was the old way. It cost a request per duplicate per run and
+  could not change the answer for an unchanged listing, and because an
+  enriched duplicate has a real posting date while an unenriched Craigslist
+  listing does not, the duplicates won the cap: five held every slot on
+  `want:bookshelf` for nine days while 21 live listings were never fetched.
 
 ## 4. The model
 

@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from dealbot.models import Location
-from dealbot.sources.craigslist import CraigslistSource, SourceBlocked
+from dealbot.sources.craigslist import (CraigslistSource, SourceBlocked,
+                                        StaleCopy)
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures/craigslist"
 ABQ = Location(lat=35.0844, lng=-106.6504, radius_miles=25)
@@ -219,14 +220,15 @@ def test_the_stamp_is_parsed_off_the_detail_payload(src, stub_listing,
                                               tzinfo=timezone.utc)
 
 
-def test_a_stale_detail_copy_is_ignored_rather_than_stored(src, stub_listing,
+def test_a_stale_detail_copy_is_refused_rather_than_stored(src, stub_listing,
                                                            monkeypatch):
     """Craigslist's item endpoint serves a cache that does not converge: two
     fetches minutes apart returned the seller's pre-edit and post-edit copies.
     Stored blind, the price ping-pongs -- which reads as a price drop, and buys
     an appraisal, every time it swings down."""
     monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1000, 150))
-    assert src.detail(_held(stub_listing, 2000)) is None
+    with pytest.raises(StaleCopy):
+        src.detail(_held(stub_listing, 2000))
 
 
 def test_a_newer_copy_is_taken(src, stub_listing, monkeypatch):
@@ -276,6 +278,7 @@ def test_the_stamp_survives_a_round_trip_through_the_store(src, stub_listing,
         assert stored.source_updated_at is not None
 
         monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(1000, 150))
-        assert src.detail(stored) is None
+        with pytest.raises(StaleCopy):
+            src.detail(stored)
     finally:
         store.close()

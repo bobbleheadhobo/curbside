@@ -32,6 +32,18 @@ class BudgetExhausted(SourceBlocked):
     help, and reporting it as "all surfaces gated" blames the wrong thing."""
 
 
+class StaleCopy(Exception):
+    """The source answered with an OLDER copy than the one already stored.
+
+    Not a `SourceBlocked`: the site answered fine, and the next listing will
+    probably get a current copy. And not a `None`, which means "there is
+    nothing here" -- this means "we already hold something newer", and the two
+    want opposite handling. Deferring on it left a listing waiting for a cache
+    that, for four Craigslist postings, served the older copy on every fetch
+    for two days.
+    """
+
+
 class Throttled:
     """Politeness, shared by the adapters that make requests.
 

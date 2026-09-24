@@ -141,10 +141,14 @@ def test_every_permanent_reason_sticks(hunt):
 def test_a_duplicate_is_re_decided_every_run(hunt):
     """The fingerprint has collapsed four different "Curb alert" posts into
     one before now. Making a wrong merge permanent is the confidently-wrong
-    failure relist detection was left inert to avoid."""
+    failure relist detection was left inert to avoid.
+
+    Admitted under its own reason, not as `new`: the pipeline re-decides it
+    from the store, and must be able to tell it from a listing that needs a
+    detail fetch."""
     gr = _gate(hunt, [make_listing()],
                filtered={"fixture:1": "duplicate_of:craigslist:abc"})
-    assert [c.reason for c in gr.candidates] == ["new"]
+    assert [c.reason for c in gr.candidates] == ["was_duplicate"]
 
 
 def test_a_blocked_word_is_re_decided_every_run(hunt):

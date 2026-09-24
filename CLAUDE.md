@@ -55,7 +55,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 578 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 581 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -312,11 +312,22 @@ among the freshest, so they won slots under the batch cap: three photoless
 Craigslist posts held three of the free sweep's five slots for four days, and
 the 73 listings queued behind them were never judged at all. `n_deferred` sat
 at a flat 78 and every individual run looked healthy. `filters.PERMANENT_REJECTIONS`
-is that list, and it is deliberately three entries long — `too_old`,
-`no_photo`, `nothing_to_judge`. Read the comment above it before adding a
-fourth: `excluded_kw` and `too_far` are re-decided from a phone, and
-`duplicate_of:` rests on a fingerprint that has already merged four different
-posts into one.
+is that list, and it is deliberately short — `too_old`, `no_photo`,
+`nothing_to_judge`, `is_ad`. Read the comment above it before adding another:
+`excluded_kw` and `too_far` are re-decided from a phone, and `duplicate_of:`
+rests on a fingerprint that has already merged four different posts into one.
+
+**A rejection that can come untrue is re-decided from the STORE, not the
+source.** `duplicate_of:` repeated the failure above through the one reason
+left off that list. It was re-fetched every run to be dropped again, and an
+enriched duplicate carries a real posting date where an unenriched Craigslist
+listing has none, so five of them held all five of `want:bookshelf`'s slots
+for nine days while 21 live listings behind them were never fetched. The
+re-fetch bought nothing: an unchanged listing re-hashes to the same keys.
+`filters.REDECIDED_FROM_STORE` admits them as `was_duplicate`, and the pipeline
+re-runs the check on the stored row before the cap. No request, no slot, and
+a merge still comes undone when the search feed brings a new price, title or
+photo.
 
 **A rejection must be recorded, never just dropped.** `store.record_rejections`
 is what makes a drop explainable on `/hunt` instead of a listing silently
@@ -482,7 +493,10 @@ query that filters on a new column means adding its index too.
   availability is asked of the **page** (`CraigslistSource.liveness`, a HEAD,
   status code only, `410`/`404` → `removed` and everything else `unknown`),
   and a detail payload whose `updatedDate` predates the one already stored is
-  dropped as a stale copy. `mark_gone` deliberately never retires a `saved`
+  refused as a stale copy. It is refused by raising `StaleCopy`, **not** by
+  returning None: None means "nothing there", and the pipeline deferred on it,
+  waiting on a cache that served four postings the older copy on every fetch
+  for two days. We hold the newer copy, so the pipeline judges that. `mark_gone` deliberately never retires a `saved`
   row — the user's decision is marked, not undone — so before `liveness` there
   was **no** working sale signal for a saved Craigslist listing at all: it
   could vanish from search and 410 on the web and still read as for sale

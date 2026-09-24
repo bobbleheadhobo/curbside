@@ -42,7 +42,7 @@ from typing import Sequence
 
 from .db import Store
 from .models import Listing
-from .sources.base import Source, SourceBlocked
+from .sources.base import Source, SourceBlocked, StaleCopy
 
 log = logging.getLogger("dealbot.recheck")
 
@@ -179,6 +179,11 @@ def recheck(store: Store, sources: Sequence[tuple[str, Source]], *,
 
         try:
             full = source.detail(listing)
+        except StaleCopy:
+            # An older copy than the one held. Nothing to refresh, and no
+            # evidence of anything -- the same as no payload at all, which is
+            # what the verdict logic below already knows how to read.
+            full = None
         except SourceBlocked as exc:
             # Gated, or out of request budget -- for THIS source. Stop asking
             # it and carry on with the others: Facebook's budget is spent by

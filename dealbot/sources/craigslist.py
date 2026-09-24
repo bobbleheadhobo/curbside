@@ -38,7 +38,7 @@ from ..models import Hunt, Listing, Location, RawListing
 # Defined in sources/base so the pipeline can tell "Craigslist is gating us"
 # from "this one payload would not parse" without importing every adapter.
 from .base import (BudgetExhausted, SourceBlocked,    # noqa: F401  re-exported
-                   Throttled)
+                   StaleCopy, Throttled)
 
 log = logging.getLogger("dealbot.sources.craigslist")
 
@@ -248,12 +248,13 @@ class CraigslistSource(Throttled):
         if full is not None and _is_stale(full.source_updated_at,
                                           listing.source_updated_at):
             # A cached copy older than the one we already hold. Not an error,
-            # not evidence of anything -- just nothing new. Both callers treat
-            # None as "no refresh": the pipeline defers the listing to the next
-            # run rather than re-judging it on a price that went backwards, and
-            # `recheck` has already had its availability answer from the page.
+            # not evidence of anything -- just nothing new. Raised rather than
+            # returned as None, because None means "nothing there" and this
+            # means the opposite: the pipeline judges the copy it already
+            # holds instead of deferring, and `recheck` has already had its
+            # availability answer from the page.
             log.info("stale detail payload for %s; ignored", listing.id)
-            return None
+            raise StaleCopy(listing.id)
         return full
 
     # --- liveness ------------------------------------------------------------

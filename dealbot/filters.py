@@ -46,8 +46,9 @@ TRIAGED = ("saved", "dismissed", "grabbed")
 # * `duplicate_of:` -- the fingerprint is the weakest thing here. It has
 #   already collapsed four different "Curb alert" posts into one, and making
 #   a wrong merge permanent is exactly the confidently-wrong failure the
-#   relist detection was left inert to avoid. It costs a detail fetch a run;
-#   correctness is worth more than the fetch.
+#   relist detection was left inert to avoid. So it is re-decided every run,
+#   but from the STORE (see `REDECIDED_FROM_STORE`), never from a detail
+#   fetch.
 #
 # `too_old` cannot be undone from the dashboard either: `max_age_days` lives
 # in config.yaml, so raising it will not bring these back. That is the one
@@ -59,6 +60,23 @@ TRIAGED = ("saved", "dismissed", "grabbed")
 # no edit by anybody turns a retail advertisement into a neighbour selling a
 # planter.
 PERMANENT_REJECTIONS = ("too_old", "no_photo", "nothing_to_judge", "is_ad")
+
+# Rejections re-decided every run from what the store already holds, at no
+# request cost. The gate admits them as `was_duplicate` and the pipeline
+# re-runs the check on the stored, enriched row before the batch cap.
+#
+# Re-fetching was the old way, and it bought nothing: an unchanged listing
+# re-hashes to the same keys and reproduces the same merge. What CAN undo one
+# is a new price or title, which the search feed has already written to the
+# store, or a fix to the key code -- and re-deciding from the store sees both.
+#
+# The fetch was not only wasted, it starved. An enriched duplicate carries a
+# real posting date while a never-enriched Craigslist listing has only
+# `first_seen`, so the duplicates won the batch cap on every run: five of
+# them held all five of `want:bookshelf`'s slots for nine days, and the 21
+# live listings behind them were never fetched, never judged, and `n_deferred`
+# sat flat at 21.
+REDECIDED_FROM_STORE = ("duplicate_of:",)
 
 
 @lru_cache(maxsize=512)
@@ -176,6 +194,9 @@ def gate(
         was_filtered = (filtered or {}).get(listing.id)
         if was_filtered and was_filtered.startswith(PERMANENT_REJECTIONS):
             rejected.append((listing.id, was_filtered))
+            continue
+        if was_filtered and was_filtered.startswith(REDECIDED_FROM_STORE):
+            candidates.append(Candidate(listing, "was_duplicate"))
             continue
 
         prior = last_scores.get(listing.id)

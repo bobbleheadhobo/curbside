@@ -329,7 +329,8 @@ class Score:
 class Candidate:
     """Survived the gate and is headed for the model."""
     listing: Listing
-    reason: str                      # "new" | "price_drop" | "relist"
+    # "new" | "price_drop" | "relist" | "backlog" | "was_duplicate"
+    reason: str
 
 
 @dataclass(frozen=True)

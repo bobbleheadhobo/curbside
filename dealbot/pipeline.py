@@ -27,7 +27,7 @@ from .models import (Candidate, Hunt, Listing, Location, RunResult, Score,
 from .notify.base import Notifier
 from .scoring.base import Scorer, TriageResult
 from .scoring.claude_code import ScoringUnavailable
-from .sources.base import (BudgetExhausted, Source, SourceBlocked,
+from .sources.base import (BudgetExhausted, Source, SourceBlocked, StaleCopy,
                            validate)
 
 log = logging.getLogger("dealbot.pipeline")
@@ -311,6 +311,24 @@ def run_hunt(
     )
     store.record_rejections(hunt.id, gr.rejected)
 
+    # --- 4a0. re-decide earlier duplicates from the store --------------------
+    # BEFORE the cap, so a duplicate can never hold a slot. The stored row is
+    # this run's title and price over the enrichment already paid for, which is
+    # everything the keys hash -- see `filters.REDECIDED_FROM_STORE`. One that
+    # is no longer a duplicate goes on as an ordinary candidate.
+    def _still_duplicate(cand: Candidate) -> str | None:
+        if cand.reason != "was_duplicate":
+            return None
+        held = store.listing(cand.listing.id)
+        if held is None:
+            return None
+        prior = store.scored_duplicate(hunt.id, held.dup_key, held.id,
+                                       held.image_key)
+        return f"duplicate_of:{prior}" if prior else None
+
+    gr = _drop(store, hunt, gr, _still_duplicate,
+               "%d earlier duplicates still duplicates")
+
     # --- 4a. cap the batch ---------------------------------------------------
     # Cold start is the problem case: a first run against Craigslist's free
     # category sees ~192 listings, which would mean 192 detail fetches and 192
@@ -370,6 +388,17 @@ def run_hunt(
                 # recognise a stale cached copy of its own item page. The
                 # store just told us, one stage ago.
                 full = source.detail(_with_stamp(cand.listing, upserts))
+            except StaleCopy:
+                # The source only had an OLDER copy than the one we hold, so
+                # judge the one we hold. Deferring instead, as this used to,
+                # waits on a cache that does not converge: four Craigslist
+                # postings got the older copy on every fetch for two days.
+                # Not upserted -- it came out of the store, without its `raw`.
+                held = store.listing(cand.listing.id)
+                if held is None or not held.source_updated_at:
+                    continue
+                enriched.append(replace(cand, listing=held))
+                continue
             except SourceBlocked as exc:
                 # Blocked or out of request budget. Stop enriching, but do NOT
                 # kill the run: what was already enriched is good, and the rest
