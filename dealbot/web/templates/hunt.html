@@ -31,7 +31,7 @@
   <h2>Why they were rejected</h2>
   <nav class="filterchips" style="padding:12px 15px;margin:0" aria-label="Reason">
     <a class="chip" href="/hunt/{{ hunt_id }}?view=rejected"
-       {%- if not reason %} aria-current="true"{% endif %}>Every reason</a>
+       {%- if not reason %} aria-current="true"{% endif %}>All</a>
     {% for key, label, n in reasons %}
     <a class="chip" href="/hunt/{{ hunt_id }}?reason={{ key|urlencode }}"
        {%- if key == reason %} aria-current="true"{% endif %}>{{ label }}

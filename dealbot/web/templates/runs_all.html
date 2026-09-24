@@ -15,7 +15,7 @@
 {# The filter is on the page. It used to be reachable only by tapping a hunt
    inside a pass on /runs, with "Every hunt" the only way back out. #}
 <div class="filterchips">
-  <a class="chip" href="/runs/all"{% if not hunt_filter %} aria-current="true"{% endif %}>every hunt</a>
+  <a class="chip" href="/runs/all"{% if not hunt_filter %} aria-current="true"{% endif %}>All</a>
   {% for h in hunts %}
   <a class="chip" href="/runs/all?hunt={{ h.id }}"{% if hunt_filter == h.id %} aria-current="true"{% endif %}>{{ h.name }}</a>
   {% endfor %}
