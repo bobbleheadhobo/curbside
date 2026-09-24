@@ -2862,3 +2862,109 @@ def test_the_card_says_the_last_pass_as_an_age_like_the_pill(tmp_path):
     s.finish_run(s.start_run(cfg.hunts[0], "facebook"))
     page = client.get("/runs").text
     assert "Last pass just now" in page
+
+
+# --- a hunt's page ------------------------------------------------------------
+
+def _hunt_fixture(cfg):
+    """One want hunt holding a listing in each state worth telling apart."""
+    from datetime import datetime, timezone
+    from dealbot.db import Store
+    from dealbot.models import Listing, Score
+    s = Store(cfg.db_path)
+    hunt = next(h for h in cfg.hunts if h.kind == "want")
+    def put(lid, title, status, score=None, reason=None):
+        l = Listing(id=lid, source="facebook", source_id=lid.split(":")[1],
+                    title=title, description="d", price_cents=5000,
+                    currency="USD", url="u", images=("a.jpg",))
+        s.upsert_listing(l)
+        s.mark_matches(hunt.id, [l])
+        if score is not None:
+            s.save_score(Score(listing_id=lid, hunt_id=hunt.id, model="m",
+                               scored_at=datetime.now(timezone.utc),
+                               match="yes", deal_score=score,
+                               est_value_cents=None, condition=None,
+                               matched_want=None, worth_grabbing=False,
+                               unknowns=(), requirements=(), red_flags=(),
+                               reasoning="r"), priced_at_cents=5000)
+        if reason:
+            s.record_rejections(hunt.id, [(lid, reason)])
+        elif status != "new":
+            s.set_status(hunt.id, lid, status)
+    put("facebook:1", "A picked one", "wanted", 8.0)
+    put("facebook:2", "A judged one", "scored", 4.0)
+    put("facebook:3", "A good one you dismissed", "dismissed", 9.0)
+    put("facebook:4", "A poor one you dismissed", "dismissed", 2.0)
+    put("facebook:5", "Long gone", "gone", 6.0)
+    put("facebook:6", "Too dear", "filtered", reason="over_price")
+    put("facebook:7", "Seen twice", "filtered", reason="duplicate_of:craigslist:aaa")
+    put("facebook:8", "Seen twice again", "filtered", reason="duplicate_of:craigslist:bbb")
+    put("facebook:9", "Far away", "filtered", reason="too_far_by_city")
+    s.conn.commit()
+    return hunt
+
+
+def _cards(page):
+    import re
+    return re.findall(r'data-title="([^"]+)"', page)
+
+
+def test_a_hunt_opens_on_what_it_judged_not_on_everything(tmp_path):
+    """It opened on every listing the hunt ever matched -- mostly gone or
+    already dismissed -- under the database's words for each state."""
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+    page = client.get(f"/hunt/{hunt.id}").text
+    assert set(_cards(page)) == {"A picked one", "A judged one"}
+    for word in ("Judged", "Picked", "Dismissed", "Rejected", "Gone"):
+        assert f">{word}\n" in page or f">{word} " in page, word
+    for raw in ("free_find<", ">filtered<", ">scored<"):
+        assert raw not in page
+    assert "Waiting" not in page, "an empty view has no chip"
+    assert "4 turned away before judging" in page
+    # ...and the figure is the Rejected view's own count, not every row that
+    # ever carried a reason.
+    assert "Rejected\n    <span class=\"num\">4</span>" in page
+
+
+def test_each_card_offers_only_what_its_state_allows(tmp_path):
+    """Every card offered Save and Dismiss, so a listing you had dismissed
+    offered Dismiss again. Undecided gets both; dismissed gets Put back, to
+    wherever its score earns; gone gets nothing."""
+    import re
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+
+    def buttons(view, title):
+        page = client.get(f"/hunt/{hunt.id}?view={view}").text
+        card = page[page.index(f'data-title="{title}"'):]
+        card = card[:card.index('<article') if '<article' in card else None]
+        card = card[:card.index('</article>')]
+        return (re.findall(r'name="status" value="(\w+)"', card),
+                "Put back" in card)
+
+    assert buttons("judged", "A picked one") == (["saved", "dismissed"], False)
+    # 9.0 on a want clears the bar, so it goes back to the wants list...
+    assert buttons("dismissed", "A good one you dismissed") == (["wanted"], True)
+    # ...and 2.0 goes back to Skipped, which is where it came from.
+    assert buttons("dismissed", "A poor one you dismissed") == (["scored"], True)
+    assert buttons("gone", "Long gone") == ([], False)
+
+
+def test_rejections_are_grouped_named_and_each_shows_its_own(tmp_path):
+    """Every duplicate was its own `duplicate_of:<id>` tag, and every tag
+    linked to all the rejections rather than its own."""
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+    page = client.get(f"/hunt/{hunt.id}?view=rejected").text
+    chips = page.split("Why they were rejected")[1].split("</nav>")[0]
+    assert chips.count("Duplicate") == 1, "one chip for both duplicates"
+    assert "Over your price" in chips and "Too far" in chips
+    assert "duplicate_of:" not in chips and "too_far_by_city" not in chips
+    dup = client.get(f"/hunt/{hunt.id}?reason=duplicate").text
+    assert set(_cards(dup)) == {"Seen twice", "Seen twice again"}
+    far = client.get(f"/hunt/{hunt.id}?reason=too_far").text
+    assert set(_cards(far)) == {"Far away"}
+    # The old address still answers, as a view of that one status.
+    old = client.get(f"/hunt/{hunt.id}?status=gone").text
+    assert set(_cards(old)) == {"Long gone"}

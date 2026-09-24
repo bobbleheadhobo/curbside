@@ -531,7 +531,7 @@ All of this was collected and none of it was visible:
 | `/free` free finds | worth collecting regardless of the list |
 | `/saved` | what you decided to act on, and what you went and grabbed |
 | `/skipped` | judged, then passed over. `/near` 308-redirects here |
-| `/hunt/<id>` | everything one hunt matched, including rejections and why |
+| `/hunt/<id>` | one hunt's record by view (judged by default), and why the gate rejected what it did |
 | `/listing/<id>` | detail, the judgement and every earlier pass, price sparkline |
 | `/runs` | what is true now and the one action each fact needs, the plan, every hunt's backlog, the last ten passes |
 | `/runs/all` | every run, one row each, filterable by hunt |

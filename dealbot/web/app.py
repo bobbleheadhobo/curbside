@@ -36,6 +36,8 @@ from ..pipeline import route
 from ..thumbs import ThumbnailStore
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+# Pure and state-free, so safe as globals: `_card.html` is imported without
+# context, and these name statuses and rejection reasons on every card.
 STATIC = Path(__file__).parent / "static"
 
 
@@ -74,7 +76,72 @@ ORDER BY s.deal_score DESC, l.last_seen DESC
 LIMIT ?
 """
 
-HUNT_SQL = """
+# The hunt page's views, in the order its chips sit. Each is a plain name over
+# the statuses behind it. It used to open on EVERYTHING -- 200 cards, mostly
+# listings that were gone or already dismissed -- with every card offering Save
+# and Dismiss, so a dismissed listing offered Dismiss again. "Judged" is the
+# default: what the model looked at that you have not already turned down.
+HUNT_VIEWS = (
+    ("judged", "Judged", ("wanted", "free_find", "saved", "grabbed", "scored")),
+    ("picked", "Picked", ("wanted", "free_find")),
+    ("saved", "Saved", ("saved", "grabbed")),
+    ("dismissed", "Dismissed", ("dismissed",)),
+    ("waiting", "Waiting", ("new",)),
+    ("rejected", "Rejected", ("filtered",)),
+    ("gone", "Gone", ("gone",)),
+    ("removed", "Removed", ("archived",)),
+)
+
+# What a status is called on the page. The database's words -- free_find,
+# filtered, scored, new -- are for the database.
+STATUS_LABELS = {"wanted": "Picked", "free_find": "Free find", "saved": "Saved",
+                 "grabbed": "Grabbed", "scored": "Judged",
+                 "dismissed": "Dismissed", "new": "Waiting",
+                 "filtered": "Rejected", "gone": "Gone", "archived": "Removed"}
+
+
+def status_label(status: str | None) -> str:
+    return STATUS_LABELS.get(status or "", status or "")
+
+
+# A rejection reason, grouped and named. Every duplicate carried its own
+# `duplicate_of:<id>`, so on the free sweep ten of the 28 tags were one-off
+# codes; and `too_far` and `too_far_by_city` are one question to a reader.
+_REASON_NAMES = {"over_price": "Over your price", "too_far": "Too far",
+                 "too_old": "Too old", "no_photo": "No photo",
+                 "nothing_to_judge": "Empty post", "is_ad": "Advert",
+                 "duplicate": "Duplicate"}
+
+
+def reason_key(reason: str | None) -> str:
+    """The group a raw `filter_reason` belongs to, as used in `?reason=`."""
+    reason = reason or ""
+    if reason.startswith("duplicate_of:"):
+        return "duplicate"
+    if reason.startswith("too_far"):
+        return "too_far"
+    return reason
+
+
+def reason_label(reason: str | None) -> str:
+    key = reason_key(reason)
+    if key.startswith("excluded_kw:"):
+        return f"Blocked: {key.split(':', 1)[1]}"
+    return _REASON_NAMES.get(key, key)
+
+
+def reason_pattern(key: str) -> str:
+    """The LIKE pattern that selects one group. Matched with LIKE because two
+    groups are prefixes; the rest are exact strings, which LIKE also matches."""
+    return {"duplicate": "duplicate_of:%", "too_far": "too_far%"}.get(key, key)
+
+
+def hunt_sql(n_statuses: int) -> str:
+    """The hunt page's query over `n_statuses` statuses, optionally narrowed to
+    one rejection group. Built by formatting a placeholder count, never by
+    editing another query's text (see `_queue_sql`)."""
+    marks = ",".join("?" * n_statuses)
+    return f"""
 SELECT m.hunt_id, m.status, m.filter_reason, l.*,
        l.previous_price_cents,
        CAST(julianday('now') - julianday(l.posted_at) AS INTEGER) AS age_days,
@@ -87,7 +154,8 @@ FROM hunt_matches m
 JOIN listings l ON l.id = m.listing_id
 LEFT JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
                               WHERE hunt_id = m.hunt_id AND listing_id = m.listing_id)
-WHERE m.hunt_id = ? AND (? = '' OR m.status = ?)
+WHERE m.hunt_id = ? AND m.status IN ({marks})
+  AND (? = '' OR m.filter_reason LIKE ?)
 ORDER BY COALESCE(s.deal_score, -1) DESC, l.last_seen DESC
 LIMIT ?
 """
@@ -115,9 +183,13 @@ SELECT hunt_id, COUNT(*) AS n,
 FROM hunt_matches WHERE hunt_id IN (%s) GROUP BY hunt_id
 """
 
+# Only rows still `filtered`. A listing keeps its old reason after it goes or
+# is dismissed, so counting every row with a reason told the hunt page "252
+# turned away" over a Rejected view holding 118, and a "Too far 126" chip that
+# could only ever show some of its 126.
 REJECT_REASONS_SQL = """
 SELECT filter_reason, COUNT(*) AS n FROM hunt_matches
-WHERE hunt_id = ? AND filter_reason IS NOT NULL
+WHERE hunt_id = ? AND status = 'filtered' AND filter_reason IS NOT NULL
 GROUP BY filter_reason ORDER BY n DESC
 """
 
@@ -922,6 +994,10 @@ def health(row, paused, hunts, sched, activity, judging=None) -> dict:
                        f"Nothing new to judge in the last hour. {detail}")}
 
 
+TEMPLATES.env.globals.update(status_label=status_label,
+                             reason_label=reason_label)
+
+
 def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     """`scorer` is optional and is used for ONE thing: drafting a want's search
     terms when its author left them blank. Without it that field simply stays
@@ -1152,19 +1228,78 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         return _bin(request, "free.html", "free_find", cfg=cfg, blocked=blocked)
 
     @app.get("/hunt/{hunt_id:path}")
-    def hunt_view(request: Request, hunt_id: str, status: str | None = None):
-        st = status or ""
-        hunts = {h.id: h for h in _live().hunts}
-        items = _rows(store, HUNT_SQL, (hunt_id, st, st, PAGE_LIMIT))
+    def hunt_view(request: Request, hunt_id: str, view: str = "",
+                  reason: str = "", status: str = ""):
+        """One hunt's whole record, and why the gate turned things away.
+
+        `status=` is the old address and still works: it is a view of one
+        status. A `reason=` implies the rejected view.
+        """
+        cfg = _live()
+        hunts = hunts_including_archived(cfg, store)
         counts = {r["status"]: r["n"] for r in
                   store.conn.execute(HUNT_COUNTS_SQL, (hunt_id,))}
-        reasons = [(r["filter_reason"], r["n"]) for r in
-                   store.conn.execute(REJECT_REASONS_SQL, (hunt_id,))]
-        total = counts.get(st, sum(counts.values())) if st else sum(counts.values())
+        views = [(key, name, sts, sum(counts.get(x, 0) for x in sts))
+                 for key, name, sts in HUNT_VIEWS]
+        if reason:
+            view = "rejected"
+        if status:
+            chosen = next(((k, n, st) for k, n, st, _ in views
+                           if st == (status,)),
+                          (status, status_label(status), (status,)))
+        else:
+            chosen = next(((k, n, st) for k, n, st, _ in views if k == view),
+                          views[0][:3])
+        key, name, statuses = chosen
+        pattern = reason_pattern(reason) if reason else ""
+        items = _rows(store, hunt_sql(len(statuses)),
+                      (hunt_id, *statuses, pattern, pattern, PAGE_LIMIT))
+
+        # What each card may offer. Deciding again on something you already
+        # decided is not an action: a dismissed listing offers Put back, a
+        # gone or rejected one offers nothing, and only the undecided get
+        # Save and Dismiss. Put back returns it where `route` would have put
+        # it, which is the one rule for that.
+        hunt = hunts.get(hunt_id)
+        for i in items:
+            st = i["status"]
+            if st in ("wanted", "free_find", "scored"):
+                i["actions"] = ["saved", "dismissed"]
+            elif st == "saved":
+                i["actions"] = ["dismissed"]
+            elif st == "dismissed" and i.get("deal_score") is not None:
+                i["actions"] = ["restore"]
+                i["restore_to"] = _put_back_status(hunt, i)
+            else:
+                i["actions"] = []
+
+        grouped: dict[str, int] = {}
+        for r in store.conn.execute(REJECT_REASONS_SQL, (hunt_id,)):
+            k = reason_key(r["filter_reason"])
+            grouped[k] = grouped.get(k, 0) + r["n"]
+        reasons = sorted(((k, reason_label(k), n) for k, n in grouped.items()),
+                         key=lambda r: -r[2])
+        total = sum(counts.get(x, 0) for x in statuses)
         return TEMPLATES.TemplateResponse(request, "hunt.html", ctx(
-            request, items=items, hunt=hunts.get(hunt_id), hunt_id=hunt_id,
-            counts=counts, active=status, total=total, reasons=reasons,
-            truncated=total > len(items)))
+            request, cfg=cfg, items=items, hunt=hunt, hunt_id=hunt_id,
+            views=[v for v in views if v[3] or v[0] == key], view=key,
+            view_name=name, reason=reason, reasons=reasons, total=total,
+            matched=sum(counts.values()), truncated=total > len(items)))
+
+    def _put_back_status(hunt, item: dict) -> str:
+        """Where an undone dismissal goes: the list its score earns, or
+        `scored` (/skipped) when it earns none."""
+        if hunt is None:
+            return "scored"
+        srow = store.conn.execute(
+            "SELECT * FROM scores WHERE id=(SELECT MAX(id) FROM scores "
+            "WHERE hunt_id=? AND listing_id=?)", (hunt.id, item["id"])).fetchone()
+        lrow = store.conn.execute("SELECT * FROM listings WHERE id=?",
+                                  (item["id"],)).fetchone()
+        if srow is None or lrow is None:
+            return "scored"
+        return route(store.row_to_score(srow), hunt,
+                     store.row_to_listing(lrow)) or "scored"
 
     @app.get("/listing/{listing_id:path}")
     def listing_view(request: Request, listing_id: str, back: str = "/"):

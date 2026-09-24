@@ -121,7 +121,7 @@
           {%- else %} {{i.age_days}}d ago{% endif %}</span>{% endif %}
         {# The bin views are named after the status, so repeating it on every
            row is noise; the hunt view is where it actually varies. #}
-        {% if show_status and i.status %}<span>{{i.status}}</span>{% endif %}
+        {% if show_status and i.status %}<span>{{ status_label(i.status) }}</span>{% endif %}
       </p>
 
       {% set no_words = not (i.description or '').strip() %}
@@ -158,7 +158,7 @@
           <span class="chip unk"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>no description</span>{% endif %}
         {% for f in i.red_flags %}
           <span class="chip flag"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span>{{f}}</span></span>{% endfor %}
-        {% if i.filter_reason %}<span class="chip">{{i.filter_reason}}</span>{% endif %}
+        {% if i.filter_reason %}<span class="chip" title="{{ i.filter_reason }}">{{ reason_label(i.filter_reason) }}</span>{% endif %}
       </p>
       {% endif %}
     </div>
@@ -234,14 +234,20 @@
        happened. #}
     {% endif %}
     {% for s in actions %}
-    <form class="inline" method="post" action="/triage">
+    {# `restore` undoes a dismissal, to wherever the listing's score would put
+       it (`restore_to`, decided by `route` on the server). It carries its own
+       kind so the script folds the card and offers Undo, rather than posting
+       a status it does not recognise and reloading the page. #}
+    <form class="inline" method="post" action="/triage"
+          {%- if s == 'restore' %} data-kind="restored"{% endif %}>
       <input type="hidden" name="hunt_id" value="{{i.hunt_id}}">
       <input type="hidden" name="listing_id" value="{{i.id}}">
-      <input type="hidden" name="status" value="{{s}}">
+      <input type="hidden" name="status" value="{{ i.restore_to if s == 'restore' else s }}">
       <input type="hidden" name="back" value="{{back}}">
-      <button title="{% if s == 'saved' %}Move to Saved{% elif s == 'dismissed' %}Take it off your picks, and teach the hunt not to send things like it{% endif %}">
+      <button title="{% if s == 'saved' %}Move to Saved{% elif s == 'dismissed' %}Take it off your picks, and teach the hunt not to send things like it{% elif s == 'restore' %}Undo the dismissal, and stop teaching the hunt to avoid it{% endif %}">
         {% if s == 'saved' %}<svg class="i" aria-hidden="true"><use href="#i-saved"/></svg>Save
         {% elif s == 'dismissed' %}<svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Dismiss
+        {% elif s == 'restore' %}<svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Put back
         {% else %}{{s}}{% endif %}
       </button>
     </form>

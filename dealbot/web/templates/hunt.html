@@ -1,45 +1,61 @@
 {% extends "base.html" %}{% from "_card.html" import card %}
 {% block title %}{{ hunt.name if hunt else hunt_id }} &middot; Curbside{% endblock %}
 {% block content %}
+{% set name = hunt.name if hunt else hunt_id.split(':', 1)[-1] %}
 <div class="pagehead">
-  <h1>{{ hunt.name if hunt else hunt_id }}</h1>
+  <h1>{{ name }}</h1>
   <p class="stats">
-    <i><b>{{total}}</b> matched</i>
-    {% if counts.get('filtered') %}
-      <i><b>{{counts['filtered']}}</b> rejected at the gate</i>{% endif %}
-    {% if truncated %}
-      <i>showing {{items|length}}</i>{% endif %}
+    <i><b>{{ matched }}</b> found</i>
+    {% if truncated %}<i>showing {{ items|length }}</i>{% endif %}
   </p>
-  <p>Everything this hunt matched, and what the gate rejected.</p>
+  <p>Everything this hunt found, and why some was turned away.</p>
 </div>
 
-<div class="filterchips">
-  <a class="chip" href="/hunt/{{hunt_id}}"{% if not active %} aria-current="true"{% endif %}>all
-    <span class="num">{{counts.values()|sum}}</span></a>
-  {% for s, n in counts|dictsort %}
-  <a class="chip" href="/hunt/{{hunt_id}}?status={{s}}"{% if active == s %} aria-current="true"{% endif %}>{{s}}
-    <span class="num">{{n}}</span></a>
+{# One chip per view, in plain words, and only the ones with something in
+   them. It opened on everything -- mostly listings long gone or already
+   dismissed -- under the database's own words for each state. #}
+<nav class="filterchips" aria-label="Show">
+  {% for key, label, sts, n in views %}
+  <a class="chip" href="/hunt/{{ hunt_id }}?view={{ key }}"
+     {%- if key == view and not reason %} aria-current="true"{% endif %}>{{ label }}
+    <span class="num">{{ n }}</span></a>
   {% endfor %}
-</div>
+</nav>
 
-{% if reasons %}
+{# Why the gate turned things away: the tuning half of this page. "112 over
+   your price" says the cap is wrong faster than reading 112 listings. Grouped
+   and named -- every duplicate used to be its own one-off code -- and each
+   one shows only its own listings. #}
+{% if reasons and view == 'rejected' %}
 <div class="panel" style="margin-bottom:16px">
-  <h2>Rejected, by reason. This is the tuning view.</h2>
-  <div class="filterchips" style="padding:12px 15px;margin:0">
-    {% for reason, n in reasons %}
-    <a class="chip" href="/hunt/{{hunt_id}}?status=filtered">{{reason}}
-      <span class="num">{{n}}</span></a>
+  <h2>Why they were rejected</h2>
+  <nav class="filterchips" style="padding:12px 15px;margin:0" aria-label="Reason">
+    <a class="chip" href="/hunt/{{ hunt_id }}?view=rejected"
+       {%- if not reason %} aria-current="true"{% endif %}>Every reason</a>
+    {% for key, label, n in reasons %}
+    <a class="chip" href="/hunt/{{ hunt_id }}?reason={{ key|urlencode }}"
+       {%- if key == reason %} aria-current="true"{% endif %}>{{ label }}
+      <span class="num">{{ n }}</span></a>
     {% endfor %}
-  </div>
+  </nav>
 </div>
+{% elif reasons and view == 'judged' %}
+<p class="huntnote">{{ reasons|sum(attribute=2) }} turned away before judging.
+  <a href="/hunt/{{ hunt_id }}?view=rejected">See why</a></p>
 {% endif %}
 
+{% set back = '/hunt/' ~ hunt_id ~ '?view=' ~ view %}
 <div class="stack">
-{% for i in items %}{{ card(i, '/hunt/' ~ hunt_id, show_status=true) }}{% else %}
+{% for i in items %}{{ card(i, back, actions=i.actions, show_status=view in ('judged', 'saved')) }}{% else %}
 <div class="empty">
   <svg class="i" aria-hidden="true"><use href="#i-hunt"/></svg>
-  <b>Nothing matched yet</b>
-  <p><a href="/runs">The runs</a> will say whether it ran.</p>
+  {% if matched %}
+  <b>Nothing {{ view_name|lower }}</b>
+  <p>Try another view above.</p>
+  {% else %}
+  <b>Nothing found yet</b>
+  <p><a href="/runs">Runs</a> will say whether it ran.</p>
+  {% endif %}
 </div>
 {% endfor %}
 </div>

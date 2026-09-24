@@ -23,9 +23,9 @@
 (function () {
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var ICON = {saved: "i-saved", dismissed: "i-x", blocked: "i-gone",
-              grabbed: "i-check"};
+              grabbed: "i-check", restored: "i-undo"};
   var LABEL = {saved: "Saved", dismissed: "Dismissed", blocked: "Blocked",
-               grabbed: "Grabbed"};
+               grabbed: "Grabbed", restored: "Put back"};
   var live;
 
   function post(url, data) {
@@ -465,8 +465,11 @@
     }
 
     if (form.getAttribute("action") === "/triage") {
-      var kind = form.querySelector('[name=status]').value;
-      if (kind !== "saved" && kind !== "dismissed") return;
+      // A form may name its own kind: "Put back" posts whatever status the
+      // listing's score earns, which is not a kind the card can label.
+      var kind = form.getAttribute("data-kind")
+                 || form.querySelector('[name=status]').value;
+      if (kind !== "saved" && kind !== "dismissed" && kind !== "restored") return;
       ev.preventDefault();
       act(form, card, kind);
       return;

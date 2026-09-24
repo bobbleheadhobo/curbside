@@ -935,6 +935,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .card.saved .verdict{color:var(--good);background:color-mix(in srgb,var(--good-soft) 88%,transparent)}
 .card.dismissed .verdict{color:var(--dim);background:color-mix(in srgb,var(--line-soft) 92%,transparent)}
 .card.blocked .verdict{color:var(--warn);background:color-mix(in srgb,var(--warn-soft) 90%,transparent)}
+.card.restored .verdict{color:var(--accent);background:color-mix(in srgb,var(--accent-soft) 90%,transparent)}
 @keyframes verdict-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 .card.collapsing{
   overflow:hidden;max-height:0!important;opacity:0;margin-bottom:-10px;
@@ -1341,3 +1342,7 @@ td .kind.hi{color:var(--warn)}
   .runlog-list{display:none}
   .runlog-table{display:block}
 }
+
+/* --- a hunt's page ---------------------------------------------------------- */
+.huntnote{margin:-6px 0 16px;font-size:13px;color:var(--dim)}
+.huntnote a{color:var(--accent);font-weight:550}

@@ -56,7 +56,7 @@ dealbot/web/
     free.html       /free    worth grabbing anyway
     saved.html      /saved   what you decided to act on
     skipped.html    /skipped judged, then passed over (/near redirects here)
-    hunt.html       /hunt/<id>  everything one hunt matched, with rejections
+    hunt.html       /hunt/<id>  one hunt's record, by view, and why things were rejected
     listing.html    /listing/<id>  detail, scores, price sparkline
     error.html      404 / 400 / 500, in the normal shell
     runs.html       /runs    what is true now, the plan, the hunts, recent passes
@@ -840,6 +840,20 @@ labels, the tab count badge and the "/10" under a score were 10 to 10.5px, and
 contrast of `--dim` and `--faint` against every surface token in both themes,
 straight from `app.css`.
 
+**A hunt's page opens on what it judged, not on everything.** It used to show
+every listing the hunt ever matched -- 200 cards, mostly gone or already
+dismissed -- under the database's own words (`free_find`, `filtered`), with
+Save and Dismiss on every card, so a dismissed listing offered Dismiss again.
+`HUNT_VIEWS` names each view in plain words over the statuses behind it, and a
+view with nothing in it has no chip. Each card offers only what its state
+allows: Save and Dismiss while undecided, **Put back** once dismissed (to the
+list `route` says its score earns, else Skipped), nothing when gone or
+rejected. Put back carries `data-kind="restored"` so `app.js` folds it with
+Undo like the other two. Rejection reasons are grouped and named
+(`reason_label`): every duplicate was its own `duplicate_of:<id>` tag, and
+every tag used to link to all the rejections rather than its own. The counts
+cover listings still rejected only; a gone listing keeps its old reason.
+
 **The price cap of 0 is a real answer.** It means free ones only, because
 `over_price` drops anything dearer than the cap. It used to be refused as a
 mistake, which left "free only" with no way to say it except leaving the search
@@ -905,7 +919,8 @@ The parts that matter are the ones that fail quietly, and they are tested in
   not cosmetic — the gate never spends on that listing again — so an accidental
   one is expensive.
 * A swipe towards an action the card does not offer barely moves and does
-  nothing: `/saved` has only Dismiss, and the hunt views have neither.
+  nothing: `/saved` has only Dismiss, and on a hunt's page a dismissed, gone
+  or rejected card has neither.
 * The click that a touch ends in is swallowed once **and then expires**. A
   drag usually suppresses the click by itself, so a listener that simply waits
   for one sits there and eats the *next* real tap on that card instead.
