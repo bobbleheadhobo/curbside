@@ -1,7 +1,8 @@
 # Curbside
 
-Watches Facebook Marketplace around Albuquerque for free and underpriced things,
-scores them, and puts what survives on a local dashboard.
+Watches Facebook Marketplace and Craigslist around Albuquerque for free and
+underpriced things, judges them with Claude, and puts what survives on a local
+dashboard and into two Discord channels.
 
 **Working on this?** Start with [`CLAUDE.md`](CLAUDE.md) — orientation, the
 invariants that fail quietly when broken, and how to run things without spending
@@ -14,12 +15,17 @@ plan quota.
 | [`docs/DESIGN.md`](docs/DESIGN.md) | why the shape is what it is |
 | [`docs/FLOW.md`](docs/FLOW.md) | features, types, control flow |
 | [`docs/UI.md`](docs/UI.md) | changing the dashboard |
+| [`PRODUCT.md`](PRODUCT.md) | who the dashboard is for and what it must feel like |
+| [`DESIGN.md`](DESIGN.md) | the dashboard's visual system: colours, type, components |
 | [`systemd/README.md`](systemd/README.md) | deployment |
 
-## Status: P1 + P2 + P2.5 complete, two live sources
+## Status: live
 
-The whole pipeline runs end to end against recorded fixtures — **no network, no
-Claude quota**. That ordering is deliberate: every dead scraper project on GitHub
+A systemd timer runs a pass every 15 minutes during waking hours, against both
+live sources, with the real scorer. It spends real plan quota.
+
+The whole pipeline also runs end to end against recorded fixtures, with **no
+network and no Claude quota**, and the test suite does nothing else. That ordering is deliberate: every dead scraper project on GitHub
 died because the fetch layer broke and took the project with it. Here the
 pipeline is provably fine and a Facebook change is a one-file repair.
 
@@ -30,26 +36,36 @@ pipeline is provably fine and a Facebook change is a one-file repair.
 | **P2.5** | two lists of picks; model-requested image pass | **done** |
 | **P1** | live Facebook + Craigslist sources, two-stage fetch | **done** |
 | **P3** | dismissal learning, price-drop / stale flags, sparkline, rejection view | **done** |
-| P4 | Discord notifications — two channels | next |
-| P4 | ntfy, scheduled runs | |
-| P5 | comparables from our own price history; second source | |
+| **P4** | Discord notifications (two channels), scheduled runs, still-for-sale re-checks | **done** |
+| P5 | comparables from our own price history | needs about a month of data |
+| | ntfy | not built |
 
 ## Quickstart
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m dealbot.cli once      # one pass over every hunt
+.venv/bin/python -m dealbot.cli once --no-score   # one pass, spends nothing
 .venv/bin/python -m dealbot.cli serve     # dashboard on 127.0.0.1:8080
 .venv/bin/python -m pytest tests/ -q
 ```
+
+A bare `dealbot once` judges with the real scorer and **spends plan quota**. Use
+`--no-score` or `--dry-run` unless that is what you mean.
 
 ```
 dealbot once --hunt free-nearby --dry-run   fetch and gate, write nothing
 dealbot once --no-score                     full pipeline, spend nothing
 dealbot once --due                          the timer's pass; respects the hours
-dealbot hunts                               hunts, their last run, the window
 dealbot run                                 poll on each hunt's cadence
+dealbot hunts                               hunts, their last run, the window
+dealbot notify                              send pending alerts; no fetch, no cost
+dealbot recheck                             is it still for sale? requests, no quota
+dealbot seed-demo                           a realistic offline database to develop against
+dealbot prune-thumbs                        drop cached photos no longer needed
 ```
+
+`serve` binds localhost by default. The app has no login, so the deployed unit
+opts in to `--host 0.0.0.0 --port 8477` explicitly, behind a trusted network.
 
 **It sleeps.** Noon to 8pm by default, editable at `/settings`. Outside the
 window a `--due` pass does nothing at all — no fetching, no judging, no
@@ -59,7 +75,7 @@ re-checking — because nothing found at 3am can be collected at 3am. A hand-run
 ## How it works
 
 ```
-sources/   fixture | facebook          → RawListing
+sources/   fixture | facebook | craigslist  → RawListing
            ↓ parse + validate
 store/     sqlite — nothing is ever deleted
            ↓
@@ -67,7 +83,7 @@ filter/    cheap deterministic gates    ← keeps model cost near zero
            ↓
 score/     triage (batched) → appraise (individual)
            ↓
-notify/    dashboard | ntfy
+notify/    dashboard | discord
 ```
 
 Configure in `config.yaml`. A **want** is something you want, with a budget and a
@@ -81,9 +97,36 @@ into a search box. The queries cast the net; the description does the judging.
 
 **`config.yaml` seeds the wants once and is then out of the loop.** After a
 database's first open, wants live in SQLite and are added, edited and removed
-at `/settings` — the file and the dashboard are never fighting over one file,
-which is the same reason the pause switches live where they do. A removed want
-is archived, not deleted: its hunt stops, its history stays.
+from the Wants page (`/`), in a panel folded away above the cards. The file and
+the dashboard are never fighting over one file. A removed want is archived, not
+deleted: its hunt stops, its history stays.
+
+**Every search term is a request.** Each term costs one request per source per
+pass, from the same per-pass budget that fetches descriptions, so a want may
+have at most six. Its editor shows what each term has found that no other term
+did, which is how to decide which one to cut.
+
+The waking hours, each hunt's cadence, the blocked words and the tuned limits
+(the two score bars, the batch cap, the radius, the photo budget) are set on
+`/settings`, and the same seed-once rule applies to the blocked words.
+
+## The dashboard
+
+Built for a phone, read many times a day. Five tabs along the bottom:
+
+| page | what it holds |
+|---|---|
+| **Wants** `/` | picks that match something on your list, and the list itself |
+| **Free** `/free` | free finds: picks that match nothing but are worth collecting |
+| **Saved** `/saved` | what you kept; **Grabbed it** records what you paid |
+| **Skipped** `/skipped` | judged and passed over, so the bar can be checked |
+| **Runs** `/runs` | what is running now, and why judging is held if it is |
+
+`/stats` says what the bot spends and what each hunt found for it, `/settings`
+holds the controls above, and `/hunt/<id>` shows what one hunt judged and why
+anything was dropped. Each page has its own hue, so you can tell where you are
+at a glance. [`DESIGN.md`](DESIGN.md) is the
+system, and [`docs/UI.md`](docs/UI.md) is how to work on it.
 
 ## On your phone
 

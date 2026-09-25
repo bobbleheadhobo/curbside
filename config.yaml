@@ -107,7 +107,7 @@ craigslist:
 recheck:
   # `gone` only ever meant "stopped appearing in results" -- 45 minutes off page
   # one on the free sweep. This asks the source outright whether the things in
-  # your bins are still for sale. One detail fetch per listing per interval,
+  # your picks are still for sale. One detail fetch per listing per interval,
   # no model call, so it costs requests and no quota.
   # Two speeds. Saved things are the ones you might be about to drive
   # to, and there are only ever a handful, so they are asked about on every
