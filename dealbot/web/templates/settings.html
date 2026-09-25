@@ -4,11 +4,11 @@
 <div class="pagehead">
   <h1>Settings</h1>
   <p class="stats">
-    <i><b>{{ n_wants }}</b> want{{ '' if n_wants == 1 else 's' }}</i>
+    <i class="fig-wants"><b>{{ n_wants }}</b> want{{ '' if n_wants == 1 else 's' }}</i>
     {% set nblocked = sweeps|sum(attribute='terms'|length) if false else
         (sweeps|map(attribute='terms')|map('length')|sum) %}
     {% if nblocked %}<i><b>{{ nblocked }}</b> blocked</i>{% endif %}
-    <i><b>{{ schedule.window_label if schedule.enabled else 'Always' }}</b>
+    <i class="fig-hours"><b>{{ schedule.window_label if schedule.enabled else 'Always' }}</b>
       {{ 'awake' if schedule.enabled else 'on' }}</i>
   </p>
   <p class="pagelinks">

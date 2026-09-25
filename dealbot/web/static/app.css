@@ -75,7 +75,7 @@ body[data-page=free]    {--tint:#0d7a4a;--tint-soft:#e4f5ec}
 body[data-page=saved]   {--tint:#6b3fb5;--tint-soft:#f0eafc}
 body[data-page=skipped] {--tint:#a3316f;--tint-soft:#fbe9f2}
 body[data-page=runs]    {--tint:#0f6d78;--tint-soft:#e2f2f4}
-body[data-page=settings]{--tint:#5c6b0e;--tint-soft:#eff3dc}
+body[data-page=settings]{--tint:#5c6b0e;--tint-soft:#eff3dc;--fig-wants:#2b64d6;--fig-hours:#0f6d78}
 body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
 
 @media (prefers-color-scheme:dark){
@@ -84,7 +84,7 @@ body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
   :root:not([data-theme=light]) body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
   :root:not([data-theme=light]) body[data-page=skipped] {--tint:#e882bd;--tint-soft:#2d1825}
   :root:not([data-theme=light]) body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
-  :root:not([data-theme=light]) body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f}
+  :root:not([data-theme=light]) body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f;--fig-wants:#6f9dff;--fig-hours:#57c7d4}
   :root:not([data-theme=light]) body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
 }
 :root[data-theme=dark] body                 {--tint:#6f9dff;--tint-soft:#1a2237}
@@ -92,7 +92,7 @@ body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
 :root[data-theme=dark] body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
 :root[data-theme=dark] body[data-page=skipped] {--tint:#e882bd;--tint-soft:#2d1825}
 :root[data-theme=dark] body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
-:root[data-theme=dark] body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f}
+:root[data-theme=dark] body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f;--fig-wants:#6f9dff;--fig-hours:#57c7d4}
 :root[data-theme=dark] body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
 
 *{box-sizing:border-box}
@@ -240,6 +240,10 @@ main.wide{max-width:1100px}
   font-variant-numeric:tabular-nums
 }
 .stats .hi b{color:var(--warn)}
+/* Settings' head figures each take the hue of the page that thing lives on:
+   wants blue, blocked words olive (they live here), the hours Runs' teal.
+   The values are copies of those pages' tints; a test holds them equal. */
+.stats .fig-wants b{color:var(--fig-wants)} .stats .fig-hours b{color:var(--fig-hours)}
 /* The one count on this site that is an outcome rather than work done. */
 .stats .ok b{color:var(--good)}
 /* Phone first, and this is the line that overflows first: the figures shrink

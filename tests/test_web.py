@@ -3014,3 +3014,24 @@ def test_no_page_colour_borrows_a_state_colour():
     for page, tint, soft in tints:
         assert tint.lower() not in state, f"{page} tint {tint} is a state colour"
         assert soft.lower() not in state, f"{page} wash {soft} is a state colour"
+
+
+def test_settings_figures_match_the_pages_they_point_at():
+    """Settings' head figures are coloured by where each thing lives: the want
+    count in Wants' hue, the hours in Runs'. CSS cannot read another page's
+    tint, so they are copies, and this keeps each copy equal to its page in
+    every theme block."""
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    blocks = re.findall(r"^(.*?)body\[data-page=(\w+)\]\s*\{([^}]*)\}", css, re.M)
+    by_theme = {}
+    for prefix, page, body in blocks:
+        props = dict(re.findall(r"--([\w-]+):(#[0-9a-fA-F]{6})", body))
+        by_theme.setdefault(prefix.strip(), {})[page] = props
+    assert len(by_theme) == 3
+    for theme, pages in by_theme.items():
+        s = pages["settings"]
+        assert s["fig-wants"] == pages["wants"]["tint"], theme
+        assert s["fig-hours"] == pages["runs"]["tint"], theme

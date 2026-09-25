@@ -341,7 +341,7 @@
           "#ecf2db"
         ],
         "soft": "#eff3dc",
-        "note": "Settings' location colour: the tools. Was amber (#8a5300) until 2026-09-25, the warning colour, so its figures read as cautions. Marks location only: the desktop nav item, the head's figures."
+        "note": "Settings' location colour: the tools. Was amber (#8a5300) until 2026-09-25, the warning colour, so its figures read as cautions. Marks location only: the desktop nav item, the head's figures. Its head figures are the one mix: want count in Wants blue, blocked words in olive, hours in Runs teal, each pointing where that thing lives."
       }
     },
     "typographyMeta": {

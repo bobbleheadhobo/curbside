@@ -329,7 +329,9 @@ figures in the page head's stats line, and the current Stats period.
 - **Settings Olive** (`#5c6b0e` / `#b5c85a`, wash `#eff3dc`): the tools. It
   was amber until 2026-09-25, the same value as Attention Amber below, so the
   page's own figures read as cautions. A page hue never reuses a state colour,
-  and a test holds that.
+  and a test holds that. Settings' three head figures are the one place other
+  pages' hues appear: the want count in Wants blue, the blocked words in olive,
+  the hours in Runs teal, each pointing at where that thing lives.
 
 ### Tertiary (semantic state)
 - **Confirmation Green** (`#0f7040` light / `#4bd08a` dark): "free" prices, a
