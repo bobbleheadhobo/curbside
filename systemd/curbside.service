@@ -1,12 +1,12 @@
 [Unit]
 Description=Curbside — one pass over every hunt that is due
-Documentation=file:///home/joey/code/deal_bot/README.md
+Documentation=file:///home/joey/code/curbside/README.md
 After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/joey/code/deal_bot
-ExecStart=/home/joey/code/deal_bot/.venv/bin/python -m curbside.cli once --due
+WorkingDirectory=/home/joey/code/curbside
+ExecStart=/home/joey/code/curbside/.venv/bin/python -m curbside.cli once --due
 # A run is fetch (rate-limited, 15s between Facebook requests) plus scoring
 # (a subprocess per listing). Generous, but bounded: a wedged run must not still
 # be holding the lock when the next tick fires.

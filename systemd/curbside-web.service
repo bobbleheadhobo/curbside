@@ -3,11 +3,11 @@ Description=Curbside dashboard
 After=network-online.target
 
 [Service]
-WorkingDirectory=/home/joey/code/deal_bot
+WorkingDirectory=/home/joey/code/curbside
 # Bound to all interfaces so a reverse proxy and the tailnet can both reach it.
 # NOTE: /triage is an unauthenticated POST that mutates state, so whatever
 # fronts this MUST require auth. On a public domain that is not optional.
-ExecStart=/home/joey/code/deal_bot/.venv/bin/python -m curbside.cli serve --host 0.0.0.0 --port 8477
+ExecStart=/home/joey/code/curbside/.venv/bin/python -m curbside.cli serve --host 0.0.0.0 --port 8477
 Restart=always
 RestartSec=10
 
