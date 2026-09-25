@@ -1,13 +1,13 @@
 ---
 name: Curbside
-description: A phone-first marketplace triage dashboard — grouped inset lists on a tinted ground, one blue accent, semantic colour only for state.
+description: A phone-first marketplace triage dashboard — grouped inset lists on a tinted ground, a hue per page for where you are, one blue for what you can do, semantic colour only for state.
 colors:
   bg: "#f4f4f6"
   card: "#ffffff"
   raised: "#ffffff"
   fg: "#101014"
   dim: "#5f5f6a"
-  faint: "#6d6d78"
+  faint: "#6a6a75"
   line: "#e5e5ea"
   line-soft: "#eeeef2"
   accent: "#2b64d6"
@@ -19,6 +19,18 @@ colors:
   warn-soft: "#fdf1de"
   bad: "#b52424"
   bad-soft: "#fdeceb"
+  wants-hue: "#2b64d6"
+  wants-hue-soft: "#eaf0fe"
+  free-hue: "#0d7a4a"
+  free-hue-soft: "#e4f5ec"
+  saved-hue: "#6b3fb5"
+  saved-hue-soft: "#f0eafc"
+  skipped-hue: "#a3316f"
+  skipped-hue-soft: "#fbe9f2"
+  runs-hue: "#0f6d78"
+  runs-hue-soft: "#e2f2f4"
+  settings-hue: "#8a5300"
+  settings-hue-soft: "#fdf1de"
 typography:
   page-title:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, Roboto, 'Helvetica Neue', Arial, sans-serif"
@@ -88,11 +100,11 @@ typography:
     letterSpacing: "0.03em"
     textTransform: "uppercase"
   tab-label:
-    fontSize: "10.5px"
+    fontSize: "11px"
     fontWeight: 550
     letterSpacing: "0.005em"
   score-unit:
-    fontSize: "10.5px"
+    fontSize: "11px"
     fontWeight: 600
     letterSpacing: "0.03em"
 rounded:
@@ -204,12 +216,44 @@ components:
     height: "56px"
     typography: "{typography.tab-label}"
   tab-item-current:
-    textColor: "{colors.accent}"
+    textColor: "{colors.wants-hue}"
   notice:
     backgroundColor: "{colors.warn-soft}"
     textColor: "{colors.warn}"
     rounded: "{rounded.md}"
     padding: "13px 15px"
+  status-lead-warn:
+    backgroundColor: "{colors.warn-soft}"
+    textColor: "{colors.warn}"
+    padding: "16px 15px"
+  status-lead-ok:
+    backgroundColor: "{colors.good-soft}"
+    textColor: "{colors.good}"
+    padding: "16px 15px"
+  status-lead-bad:
+    backgroundColor: "{colors.bad-soft}"
+    textColor: "{colors.bad}"
+    padding: "16px 15px"
+  period-chip:
+    backgroundColor: "{colors.card}"
+    textColor: "{colors.dim}"
+    rounded: "{rounded.pill}"
+    padding: "0 13px"
+    height: "36px"
+  period-chip-current:
+    backgroundColor: "{colors.wants-hue-soft}"
+    textColor: "{colors.wants-hue}"
+  field-input:
+    backgroundColor: "{colors.card}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    height: "{spacing.tap}"
+  button-field-save:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    height: "{spacing.tap}"
+    padding: "0 16px"
 ---
 
 # Design System: Curbside
@@ -234,9 +278,9 @@ first gate needs, and nothing else. The page head above it is built the same
 way: a large plain title and a line of live facts about what is waiting, not a
 paragraph explaining what the view is. The model's judgement is real content but
 it is read second, so it folds behind a disclosure whose summary counts what
-is inside. Colour carries no decoration at all: blue means "this is current or
-this is the primary action", green/amber/red mean a state the data is in, and
-every other surface is grey.
+is inside. Colour carries no decoration at all, and each colour has one job:
+a page's own hue says where you are, blue says what you can do, green/amber/red
+mean a state the data is in, and every other surface is grey.
 
 Both themes are real and equally weighted — this is opened outdoors in daylight
 and in bed at night. Every colour is a custom property with a
@@ -245,7 +289,7 @@ neither theme is a filter over the other.
 
 **Key Characteristics:**
 - Grouped inset cards on a tinted ground; the ground is never white
-- One accent (`#2b64d6` light, `#6f9dff` dark) for current-tab, primary action and selection only
+- A hue per page for location (the current tab, its pip, the head's figures); one blue (`#2b64d6` / `#6f9dff`) for action and selection
 - Semantic green/amber/red used exclusively for state, never for emphasis
 - Tabular figures on every comparable number
 - Hairlines (1px `--line`) do the structural work; shadow is a whisper
@@ -255,18 +299,36 @@ neither theme is a filter over the other.
 
 ## Colors
 
-A near-neutral grey system with exactly one chromatic voice, plus three
+A near-neutral grey system with two chromatic jobs kept apart — a hue per page
+that says where you are, and one blue that says what you can do — plus three
 semantic signals that are only ever allowed to describe a state.
 
 ### Primary
-- **Marketplace Blue** (`#2b64d6` light / `#6f9dff` dark): The single accent,
-  darkened from its first value so it clears AA against the card surface.
-  It appears on the current tab, the current filter chip, the primary button,
-  in-prose links, the count pip on a tab, and the focus ring. Nothing decorative
-  is ever blue.
-- **Blue Wash** (`#eaf0fe` light / `#1a2237` dark): The quiet form of the
-  accent — the background of the current item in the desktop nav. It is the only
-  tinted non-semantic surface in the system.
+- **Marketplace Blue** (`#2b64d6` light / `#6f9dff` dark): the action colour,
+  darkened from its first value so it clears AA against the card surface. It
+  fills the primary button, colours in-prose links, draws the focus ring and a
+  focused field's border, and fills the current filter chip. Nothing
+  decorative is ever blue.
+- **Blue Wash** (`#eaf0fe` light / `#1a2237` dark): the quiet form of the
+  accent, behind the "Stats and spend" signpost and the add button.
+
+### Secondary (page hues)
+Each destination owns a hue, declared as `--tint` and `--tint-soft` on
+`body[data-page=…]` in both themes. It marks location only: the current bottom
+tab and its count pip, the current desktop nav item (hue on its soft wash), the
+figures in the page head's stats line, and the current Stats period.
+- **Wants Blue** (`#2b64d6` / `#6f9dff`, wash `#eaf0fe`): the same value as the
+  accent. On Wants, location and action share a colour.
+- **Free Green** (`#0d7a4a` / `#4bd08a`, wash `#e4f5ec`): the thing is free.
+- **Saved Violet** (`#6b3fb5` / `#b79bff`, wash `#f0eafc`): it is yours.
+- **Skipped Rose** (`#a3316f` / `#e882bd`, wash `#fbe9f2`): the pile you walked
+  past. It was slate until 2026-09-24, and its active tab could not be told from
+  the grey inactive ones.
+- **Runs Teal** (`#0f6d78` / `#57c7d4`, wash `#e2f2f4`): machinery, not
+  merchandise.
+- **Settings Amber** (`#8a5300` / `#e8b155`, wash `#fdf1de`): the same value
+  as Attention Amber below. On Settings a page figure and a caution therefore
+  look alike. The overlap is known and unresolved; do not copy it to a new page.
 
 ### Tertiary (semantic state)
 - **Confirmation Green** (`#0f7040` light / `#4bd08a` dark): "free" prices, a
@@ -286,7 +348,7 @@ semantic signals that are only ever allowed to describe a state.
 - **Ink** (`#101014` / `#edeef1`): all primary text.
 - **Dim** (`#5f5f6a` / `#9b9daa`): secondary text — place, meta, table headers,
   disclosure summaries.
-- **Faint** (`#6d6d78` / `#8b8d99`): tertiary — the `/10` beside a score,
+- **Faint** (`#6a6a75` / `#8b8d99`): tertiary — the `/10` beside a score,
   struck-through old prices, "no photo", "no price", and every score under 5.0.
   Darker than a placeholder grey looks like it should be, because all of that
   is data a person reads.
@@ -295,23 +357,31 @@ semantic signals that are only ever allowed to describe a state.
   *inside* a card or panel; the hard one bounds it.
 
 ### Named Rules
-**The One Blue Rule.** Blue means current, primary, or selected. If an element
-is blue and it is neither the active tab, the primary action, a link, nor a
-selection, it is wrong.
+**The Where-Versus-What Rule.** A page's hue says where you are; blue says
+what you can do. The hue marks the current tab, its pip, the head's figures and
+the current period, and never an action. Blue marks the primary button, links,
+the focus ring and the current filter chip, and never a page. On Wants the two
+happen to share a value; everywhere else they must not be swapped.
+
+**The Hue-Is-Not-Grey Rule.** A page hue has to be a hue, because the inactive
+tabs beside it are grey. Slate at saturation 0.17 made the Skipped tab read as
+one more inactive icon. `tests/test_web.py` fails any page hue under 0.35
+saturation.
 
 **The State-Only Rule.** Green, amber and red describe a fact about the data —
-free, unverified, flagged, failing. They are never used to make something look
-important. Green is the narrowest of the three: a score of 7 or better, the
-word FREE, and the check glyph on a matched want. The want and price-drop chips
-are neutral fills, because a chip that is merely present is not a state worth
-colouring.
+free, confirmed, unverified, flagged, failing. They are never used to make
+something look important. Green means confirmed: a score of 7 or better, the
+word FREE, a want the model confirmed, a price that dropped, and "Working" on
+the status card. The same want chip turns amber when the match is unverified.
 
 **The Faint-Is-Text Rule.** `--faint` carries real content — the `/10` unit,
 struck-through prices, "no photo", every score under 5.0 — so it is held to a
 text contrast ratio, not a decoration one. Every foreground/background pair in
 both themes clears WCAG AA, verified by computing the ratio rather than judging
-it by eye. A colour change is not shipped until it has been recomputed; the
-palette drifted to 2.78:1 once by looking fine.
+it by eye. The palette drifted to 2.78:1 once by looking fine, and to 4.42:1 on
+`--line-soft` a second time, which is why `tests/test_web.py` now computes
+`--dim` and `--faint` against every surface token in both themes straight from
+the stylesheet.
 
 **The Two Real Themes Rule.** Every colour is a custom property with both a
 `prefers-color-scheme` and a `[data-theme=dark]` value. No hardcoded hex may
@@ -356,13 +426,14 @@ Weights are taken from the variable range rather than the classic steps — 550,
 - **Secondary** (400–550, 13.5px, 1.55, max 62ch): page-head explanations,
   buttons, notices, disclosure bodies.
 - **Meta** (400, 12.5px, 1.5): distance, city, age, disclosure summaries.
-- **Chip** (550, 11.5px, 1.45): all state chips.
+- **Chip** (550, 11.5px, 1.45): all state chips, and the plan meters' captions.
 - **Section Label** (620, 12px, `+0.04em`, uppercase): detail-page section
   headings.
 - **Table Header** (550, 11px, `+0.03em`, uppercase): column headers, and the
   `data-label` pseudo-element that replaces them on a phone.
-- **Tab Label** (550, 10.5px, `+0.005em`): the five bottom tabs, and — at the
-  same size, 600 weight, `+0.03em` — the `/10` unit beside a deal score.
+- **Tab Label** (550, 11px, `+0.005em`): the five bottom tabs, and — at the
+  same size, 600 weight, `+0.03em` — the `/10` unit beside a deal score. Both
+  were 10.5px until 2026-09-24.
 
 ### Icon Sizes
 
@@ -376,6 +447,10 @@ at 12–15px so small icons do not go grey, 1.4–1.5 at 17–30px so large ones
 quiet.
 
 ### Named Rules
+**The 11px Floor Rule.** Nothing a person reads is set under 11px: not a tab
+label, not a count pip, not the `/10` unit, not a placeholder. The smallest
+steps on the ramp are Table Header and Tab Label at exactly 11px.
+
 **The Icons-Are-Sized-Not-Typeset Rule.** An `svg.i` `font-size` is an icon
 size, never a new type step. Pick from the icon scale to match the adjacent
 text; do not introduce a new step to split a difference.
@@ -404,7 +479,7 @@ through the score. Any new container inherits this and must not opt out.
 ## Layout
 
 **The model is a single centred column of grouped cards.** `main` is capped at
-720px (1100px with `.wide`, used by the runs table) and padded 20px/16px,
+720px (1100px with `.wide`, used by Runs, All runs and Stats) and padded 20px/16px,
 rising to 28px/24px above 900px. Cards stack with a 10px gap; nothing is ever
 in a multi-column grid.
 
@@ -502,8 +577,9 @@ Soft rectangles at three scales, plus one pill. Containers — cards, panels,
 notices, empty states — use a generous 14px radius (`--r`). Interactive
 controls and inner blocks use 8px (`--r-sm`): buttons, the desktop nav item,
 the unknowns callout. Chips are tighter at 6px, as is the focus ring; card thumbnails
-10px; gallery images 12px. Only the health pill and the tab count pip are fully round
-(99px), and roundness there means "status", not "button".
+10px; gallery images 12px. Fully round (99px) is kept for status and for a
+choice of view: the health pill, the tab count pip, the status card's tone dot
+and the Stats period switch. Roundness never means "button".
 
 Everything is bordered rather than borderless: `1px solid var(--line)` on
 containers, `var(--line-soft)` on internal dividers. The one dashed border in
@@ -513,10 +589,9 @@ with round caps and joins; the stroke thickens to 2–2.1 only when an icon
 shrinks below ~13px so it does not go grey. The sprite is not additive by default: `#i-empty` was
 deleted once nothing referenced it. Three definitions are deliberately kept
 unreferenced as reserves rather than rules — `#i-near` (the bullseye the
-descending arrow `#i-skipped` replaced when `/near` became `/skipped`),
-`--shadow-lift`, and `--good-soft`, which went unused when the want and drop
-chips turned neutral but completes the semantic soft-fill triad. A reserve is
-recorded here; anything not recorded here is deleted when it goes unused.
+descending arrow `#i-skipped` replaced when `/near` became `/skipped`) and
+`--shadow-lift`. A reserve is recorded here; anything not recorded here is
+deleted when it goes unused.
 
 ## Components
 
@@ -529,16 +604,16 @@ recorded here; anything not recorded here is deleted when it goes unused.
 ### Buttons
 - **Shape:** Softly rounded (8px), 1px bordered, 34px minimum height, 13.5px/550 label with an optional 15px leading icon.
 - **Default:** Raised surface on a hairline border, ink text. Hover fills with the soft hairline and darkens the border to faint; press fills with the hard hairline.
-- **Primary:** Solid accent, on-accent text, accent border. Hover mixes the accent 88% with black. Reserved for the one action that resumes or restores something.
+- **Primary:** Solid accent, on-accent text, accent border. Hover mixes the accent 88% with black. Reserved for the one action that resumes, restores or saves something, and **one per card or panel**: on the status card only the lead fact's action is filled, and a Limits field's Save is a default button.
 - **Disabled:** 45% opacity, pointer events off.
 - **In a card footer** the triage buttons go full-width at the 44px `--tap` minimum on a phone, and revert to auto-width 36px at 560px.
 
 ### Chips
 - **Style:** 6px radius, 11.5px/550, soft-hairline fill with dim text by default, with a 12px icon at 2.0 stroke.
 - **Wrapping:** `white-space: normal`, `max-width: 100%`, left-aligned. A chip wraps rather than clips, because a want name or a filter reason is part of *why* the listing is on screen and truncating it hides the reason.
-- **Semantic variants:** unverified match (amber on amber-soft) and red flag (red on bad-soft) are the only coloured fills. A matched want and a price drop are neutral; the want chip keeps a green check glyph, so the icon carries the state and the chip does not.
+- **Semantic variants:** a confirmed want and a price drop are green on good-soft, an unverified want is amber on warn-soft, and a red flag is red on bad-soft. Everything else is the neutral fill.
 - **Red flag:** a sentence the model wrote, so it gets `align-items: flex-start`, 1.4 line-height and `3px 7px` padding, with its text clamped to two lines on the card and shown in full in the disclosure.
-- **Filter chips** are links, so they are tap targets: `8px 10px` padding and a 32px minimum height — the system's one named exception to the 44px floor, because a chip is inline in a wrapping row rather than a control in a control row. They hover to a firmer grey, and the current one (`aria-current=true`) inverts to solid accent.
+- **Filter chips** are links, so they are tap targets: `8px 10px` padding and a 32px minimum height — the system's one named exception to the 44px floor, because a chip is inline in a wrapping row rather than a control in a control row. They hover to a firmer grey, and the current one (`aria-current=true`) inverts to solid accent. Their labels are plain words, never a database value: "Too far", "Blocked: couch", "Judged", not `too_far_by_city` or `scored`.
 
 ### Cards / Containers
 - **Corner Style:** 14px, with `overflow: hidden` so the three internal bands clip to the corner.
@@ -546,16 +621,17 @@ recorded here; anything not recorded here is deleted when it goes unused.
 - **Background:** card white on the tinted ground; the whole main row tints to soft hairline on hover and on `:active`.
 - **Shadow:** resting only (see Elevation).
 - **Internal Padding:** 12px, 13px gap between photo and text column.
+- **Actions by state:** a card offers only what its state allows. Save and Dismiss while undecided; Dismiss alone once saved; **Put back** (undo glyph) once dismissed, returning it to the list its score earns; nothing once gone or rejected. A button that would do nothing is not rendered.
 - **Photo:** 128px square (148px ≥560px), 10px radius, `object-fit: cover`. The "no photo / photo expired" placeholder is rendered *underneath* the image and the image hides itself on error, so an expired URL degrades to a labelled dashed state rather than a broken-image glyph.
 
 ### Navigation
 - **Destinations:** Wants, Free, Saved, Skipped, Runs. Each has a drawn icon; the label is the view's own word, not a category name.
-- **Bottom tab bar (<900px):** fixed, five equal columns, card surface over a hairline top border, 56px rows, 22px icon over a 10.5px label. Faint by default; the current tab (`aria-current=page`) turns accent — colour is the only affordance, there is no pill or underline. A count pip (accent fill, on-accent text, 99px, 10px/700) rides the icon's top-right.
-- **Top bar:** sticky, on the page ground rather than the card surface, 52px plus the top safe area, with the wordmark at 16px/650. Above 900px the same five destinations appear as 32px text-and-icon items that hover to soft hairline and go blue-wash-on-accent when current.
-- **Health pill:** always at the right of the top bar, a 30px bordered pill with a 7px status dot — green (ok), amber (paused/quiet), red (fetch failing), faint (no runs yet) — linking to `/runs`.
+- **Bottom tab bar (<900px):** fixed, five equal columns, card surface over a hairline top border, 56px rows, 22px icon over an 11px label. Faint by default; the current tab (`aria-current=page`) turns the page's own hue — colour is the only affordance, there is no pill or underline, which is why the hue must be a real hue. A count pip (page-hue fill, card-coloured text, 99px, 17px tall, 11px/700) rides the icon's top-right.
+- **Top bar:** sticky, on the page ground rather than the card surface, 52px plus the top safe area, with the wordmark at 16px/650. Above 900px the same five destinations appear as 32px text-and-icon items that hover to soft hairline and take the page hue on its wash when current.
+- **Health pill:** always at the right of the top bar, a 30px bordered pill with a 7px status dot — green (ok), amber (paused/quiet), red (fetch failing), faint (no runs yet) — linking to `/runs`, whose status card finishes its sentence.
 
 ### Control Row / Triage Row
-- **Character:** A settings-like control row inside a panel. `.control-row` is the general form — the pause switches on `/runs` and `/free` — and `.triage-row` is the same component carrying a listing's triage actions; they share every rule.
+- **Character:** A settings-like control row inside a panel. `.control-row` is the general form — the pause switches in Settings' Running panel, the want editor's hunt controls — and `.triage-row` is the same component carrying a listing's triage actions; they share every rule.
 - **Action width:** a triage row's forms are `min-width: 110px`; a control row's are `min-width: 180px`, because a switch is labelled with a sentence ("Pause free-stuff searches") rather than a verb.
 - **Layout:** The label (`.who`, 13.5px/600 with a 12px dim sub-line) takes its own full-width line, and `.triage-actions` sits under it as a wrapping group where every form is `flex: 1 1 0` with a `min-width: 110px`, so buttons share the width evenly instead of breaking two-and-two. Buttons are full-width at `var(--tap)`.
 - **≥560px:** the label returns to sharing the row (`flex: 1 1 auto`), the action group shrinks to its content, and the buttons relax to auto-width and 36px.
@@ -572,6 +648,36 @@ Centred in a card-shaped container: a 30px faint icon at 1.4 stroke, a 15.5px/62
 - **Character:** An error is a wrong turn, not a dead end. 404, a query string the route cannot parse (400) and an unhandled 500 all render `error.html` inside the normal shell, so the top bar, the health pill and both navs still work.
 - **Composition:** no new visual vocabulary — a `.pagehead` h1 carrying the heading ("Not found", "Bad link", "Something went wrong") over an `.empty` block with the 30px alert icon, the specific detail in ink bold, the recovery sentence in dim, and a link back to Wants.
 - **Fallback:** if the shell itself cannot render — the database may be what is broken — the handler drops to plain text carrying the same status and detail. The design degrades to words rather than to a stack trace.
+
+### Inputs / Fields
+- **Style:** card surface, 1px hairline, 8px radius, at least `var(--tap)` tall, and **16px text** — anything smaller makes iOS zoom the page on focus and leave it zoomed.
+- **Focus:** the border turns accent with a 3px accent ring at 22% (`color-mix`), no outline.
+- **A value with its own Save** (Settings' Limits): the field and a 44px default button share a row, and each form saves and refreshes only itself, so an edit waiting in the next field is never wiped. A value the server cannot read is refused in the toast by name ("The radius has to be a number."); one it clamps says what it saved ("The radius saved as 200 miles, the most it allows."). A form never toasts "Saved." over a value that did not save.
+
+### Status Card (signature)
+The top of `/runs`, and the rest of the health pill's sentence. Every fact true
+right now, most actionable first in the pill's own order, each on its own line
+with the **one** action it calls for: *Judge anyway* when judging is held,
+*Resume* when something is paused, *Change hours* when asleep.
+- **Lead line:** the pill's state as a 17px/620 title over a 13px ink sentence, filled with its tone's soft colour — good-soft for Working, warn-soft for a pause or hold, bad-soft for a failed fetch, the page ground for asleep. It is the panel's one filled block, and its action is the panel's one filled button.
+- **Other lines:** plain card surface, a 14px/620 title led by an 8px round dot in the tone colour, a 13px dim sentence indented under it.
+- **Footer:** "Last pass 5m ago" — an age, like the pill beside it, with the date in `title`.
+
+### Pass Rows
+A pass is one `<details>` row, not ten run cards. The summary is the pass's time
+(14px/600) with its duration right-aligned in faint tabular figures, a dim
+"725 found · 7 new · 0 judged · 0 picked" line, then each distinct note in plain
+words — amber for a warning, red for a failure — with the raw journal text kept
+in `title`. Opened, it lists its runs on the page ground, one line each, the
+hunt name linking to that hunt's runs. The same one-line shape is how All runs
+lists runs on a phone; the table returns at 720px.
+
+### Period Switch
+Stats' one window: Today, 7 days, 30 days, All time as round 36px links on the
+card surface, the current one on the page hue's wash in the page hue. Everything
+below the spend panel follows it. Each bar in the spend chart is a link to its
+own day, with a transparent hit area the full height of the chart, because a
+$0.40 day draws a bar two pixels tall.
 
 ### The Judgement Disclosure (signature)
 The card's second band is a `<details>` whose summary states its own contents —
@@ -611,7 +717,11 @@ inside the disclosure must also be reflected in the summary's count.
 - **Do** give every tappable element a deliberate minimum height from `var(--tap)`, filter chips excepted at 32px.
 - **Do** render errors in the normal shell with the nav intact, using `.pagehead` and `.empty`.
 - **Do** delete a symbol or token that nothing references, unless it is recorded here as a reserve.
-- **Do** keep the accent under a tenth of any screen — current tab, primary action, links, selection, focus ring.
+- **Do** keep the accent under a tenth of any screen — primary action, links, selection, focus ring.
+- **Do** mark location with the page's hue and action with blue, and give a new page a hue of its own, saturated enough to beat the grey inactive tabs.
+- **Do** keep one filled button per card or panel: the action of the lead fact.
+- **Do** set every form field at 16px or larger, and give a single value its own Save.
+- **Do** say in words what a run warning or a rejection reason means; keep the raw text in `title`.
 
 ### Don't:
 - **Don't** introduce a second typeface, a webfont, or a monospace face. The platform system sans is the whole type system.
@@ -629,3 +739,8 @@ inside the disclosure must also be reflected in the summary's count.
 - **Don't** colour a chip that is merely present. Green is a score of 7+, the word FREE, and the want check glyph — nothing else.
 - **Don't** assume any on-screen string is short or space-separated; it was written by a stranger and `overflow-wrap: anywhere` is what keeps it inside its card.
 - **Don't** skip a heading level: the card title is an `<h2>` under the page's `<h1>`.
+- **Don't** set anything a person reads under 11px.
+- **Don't** make a page hue a grey, or reuse a semantic colour as a new page's hue.
+- **Don't** toast success the server did not confirm, and don't clamp a value silently.
+- **Don't** offer a button that would do nothing — Dismiss on a dismissed card, Save on a gone one.
+- **Don't** show a database value (`free_find`, `filtered`, `duplicate_of:…`) where a person reads it.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-09T00:00:00Z",
+  "generatedAt": "2026-09-25T00:34:37Z",
   "title": "Design System: Curbside",
   "extensions": {
     "colorMeta": {
@@ -20,7 +20,8 @@
           "#eaf0fe"
         ],
         "derivation": "Hover/pressed states are mixed from the token: color-mix(in srgb, var(--accent) 88%, #000). #000 is a mixing operand, not a palette entry.",
-        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better."
+        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better.",
+        "note": "Action and selection only: the primary button, links, the focus ring, a focused field, the current filter chip. Location is the page hue's job."
       },
       "accent-soft": {
         "role": "primary",
@@ -98,7 +99,7 @@
           "#1d1e22",
           "#26272c",
           "#5f5f6a",
-          "#6d6d78",
+          "#6a6a75",
           "#e5e5ea",
           "#f4f4f6"
         ]
@@ -145,7 +146,7 @@
           "#26272c",
           "#4a4a55",
           "#5f5f6a",
-          "#6d6d78",
+          "#6a6a75",
           "#c9c9d2",
           "#e5e5ea",
           "#edeef1"
@@ -161,7 +162,7 @@
           "#26272c",
           "#4a4a55",
           "#5f5f6a",
-          "#6d6d78",
+          "#6a6a75",
           "#9b9daa",
           "#c9c9d2",
           "#eeeef2"
@@ -171,19 +172,19 @@
       "faint": {
         "role": "neutral",
         "displayName": "Faint",
-        "canonical": "#6d6d78",
+        "canonical": "#6a6a75",
         "dark": "#8b8d99",
         "tonalRamp": [
           "#101014",
           "#26272c",
           "#4a4a55",
-          "#6d6d78",
+          "#6a6a75",
           "#8b8d99",
           "#c9c9d2",
           "#e5e5ea",
           "#f4f4f6"
         ],
-        "contrast": "Re-derived in the accessibility pass; every foreground/background pair in both themes computes to WCAG AA or better.",
+        "contrast": "Was #6d6d78, 4.42:1 on --line-soft. #6a6a75 clears every surface at 4.62:1 or better; tests/test_web.py computes --dim and --faint against every surface in both themes.",
         "note": "Carries text, not decoration: the /10 unit, struck-through prices, 'no photo', 'no price', and every score under 5.0."
       },
       "line": {
@@ -196,7 +197,7 @@
           "#1f2024",
           "#26272c",
           "#4a4a55",
-          "#6d6d78",
+          "#6a6a75",
           "#e5e5ea",
           "#eeeef2",
           "#f4f4f6"
@@ -212,7 +213,7 @@
           "#1f2024",
           "#26272c",
           "#4a4a55",
-          "#6d6d78",
+          "#6a6a75",
           "#e5e5ea",
           "#eeeef2",
           "#fafafb"
@@ -227,12 +228,120 @@
           "#0f1012",
           "#26272c",
           "#5f5f6a",
-          "#6d6d78",
+          "#6a6a75",
           "#e5e5ea",
           "#eeeef2",
           "#f4f4f6",
           "#ffffff"
         ]
+      },
+      "wants-hue": {
+        "role": "secondary",
+        "displayName": "Wants Blue",
+        "canonical": "#2b64d6",
+        "dark": "#6f9dff",
+        "tonalRamp": [
+          "#030a1e",
+          "#0f244d",
+          "#204182",
+          "#3562b8",
+          "#6488cc",
+          "#95afde",
+          "#c7d5ee",
+          "#e9eff9"
+        ],
+        "soft": "#eaf0fe",
+        "note": "Wants' location colour; the same value as the accent. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+      },
+      "free-hue": {
+        "role": "secondary",
+        "displayName": "Free Green",
+        "canonical": "#0d7a4a",
+        "dark": "#4bd08a",
+        "tonalRamp": [
+          "#020f07",
+          "#0d2e1c",
+          "#1c5135",
+          "#317650",
+          "#659678",
+          "#96b7a2",
+          "#c8d9ce",
+          "#eaf0ec"
+        ],
+        "soft": "#e4f5ec",
+        "note": "Free finds' location colour: the thing is free. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+      },
+      "saved-hue": {
+        "role": "secondary",
+        "displayName": "Saved Violet",
+        "canonical": "#6b3fb5",
+        "dark": "#b79bff",
+        "tonalRamp": [
+          "#0d071b",
+          "#2b1c47",
+          "#4c3579",
+          "#6f51ab",
+          "#8f7bc1",
+          "#b2a5d6",
+          "#d6d0ea",
+          "#efedf7"
+        ],
+        "soft": "#f0eafc",
+        "note": "Saved's location colour: it is yours. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+      },
+      "skipped-hue": {
+        "role": "secondary",
+        "displayName": "Skipped Rose",
+        "canonical": "#a3316f",
+        "dark": "#e882bd",
+        "tonalRamp": [
+          "#17040d",
+          "#3f162b",
+          "#6b2a4c",
+          "#9a436f",
+          "#b57090",
+          "#cf9eb3",
+          "#e7ccd7",
+          "#f6ebef"
+        ],
+        "soft": "#fbe9f2",
+        "note": "Skipped's location colour, the pile you walked past. Slate until 2026-09-24, when its active tab could not be told from the grey ones. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+      },
+      "runs-hue": {
+        "role": "secondary",
+        "displayName": "Runs Teal",
+        "canonical": "#0f6d78",
+        "dark": "#57c7d4",
+        "tonalRamp": [
+          "#030d0f",
+          "#0f2b2f",
+          "#1f4d53",
+          "#357079",
+          "#679298",
+          "#97b4b8",
+          "#c8d8da",
+          "#eaf0f1"
+        ],
+        "soft": "#e2f2f4",
+        "note": "Runs' location colour: machinery, not merchandise. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+      },
+      "settings-hue": {
+        "role": "secondary",
+        "displayName": "Settings Amber",
+        "canonical": "#8a5300",
+        "dark": "#e8b155",
+        "tonalRamp": [
+          "#120902",
+          "#36210a",
+          "#5d3d18",
+          "#875c2b",
+          "#a4825f",
+          "#c1a991",
+          "#dfd2c5",
+          "#f3ede8"
+        ],
+        "soft": "#fdf1de",
+        "note": "Settings' location colour. Shares its value with Attention Amber; a known, unresolved overlap. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
       }
     },
     "typographyMeta": {
@@ -278,7 +387,7 @@
       },
       "tab-label": {
         "displayName": "Tab Label",
-        "purpose": "The five bottom tabs: Wants, Free, Saved, Skipped, Runs."
+        "purpose": "The five bottom tabs, at 11px (10.5px until 2026-09-24): nothing a person reads is under 11px."
       },
       "page-title-desktop": {
         "displayName": "Page Title (desktop)",
@@ -298,7 +407,7 @@
       },
       "score-unit": {
         "displayName": "Score Unit",
-        "purpose": "The /10 beside a deal score."
+        "purpose": "The /10 beside a deal score, at 11px."
       }
     },
     "shadows": [
@@ -448,7 +557,7 @@
       "refersTo": "button",
       "description": "The default control: bordered, raised, 34px, tonal feedback only.",
       "html": "<button class=\"ds-btn\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m4.5 12.5 5 5 10-11\"/></svg>Contacted</button>",
-      "css": ".ds-btn{font:550 13.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s,color .15s;-webkit-tap-highlight-color:transparent}.ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}.ds-btn:active{background:var(--line,#e5e5ea)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-btn .ds-i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}"
+      "css": ".ds-btn{font:550 13.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s,color .15s;-webkit-tap-highlight-color:transparent}.ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6a6a75)}.ds-btn:active{background:var(--line,#e5e5ea)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-btn .ds-i{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}"
     },
     {
       "name": "Primary Button",
@@ -480,15 +589,15 @@
       "refersTo": "card",
       "description": "The signature component. Three clipped bands: a tappable main row (photo, h2 title, price, place, chips, score), the folded judgement, and the action footer whose controls are var(--tap) tall.",
       "html": "<article class=\"ds-card\"><a class=\"ds-card-main\" href=\"#\"><div class=\"ds-shot-wrap\"><div class=\"ds-shot ds-shot-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z\"/><path d=\"m4 17 5-5 4 4\"/><path d=\"m14 14 2-2 4 4\"/><circle cx=\"15\" cy=\"8.5\" r=\"1.3\"/></svg>no photo</div></div><div class=\"ds-info\"><h2>Solid oak bookshelf, six shelves, must go this weekend</h2><p class=\"ds-price\"><span class=\"ds-now ds-num\">$199</span><span class=\"ds-strike ds-num\">$450</span></p><p class=\"ds-where\"><span class=\"ds-num\">7 mi</span><span>Nob Hill</span><span>listed 21d ago</span></p></div><p class=\"ds-score ds-hi\"><b class=\"ds-num\">8.4</b><span class=\"ds-num\">/10</span></p></a><details class=\"ds-why\"><summary>Why it scored 8.4 &middot; 2 things to check<svg class=\"ds-i ds-chev\" viewBox=\"0 0 24 24\"><path d=\"m6 9.5 6 6 6-6\"/></svg></summary><div class=\"ds-whybody\"><p>Priced well under comparable oak units and the seller has already dropped it once.</p></div></details><div class=\"ds-actions\"><button class=\"ds-btn\">Save</button><button class=\"ds-btn\">Dismiss</button></div></article>",
-      "css": ".ds-card{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-card-main{display:flex;gap:13px;padding:12px;align-items:flex-start;text-decoration:none;color:inherit;transition:background .15s}.ds-card-main:hover{background:var(--line-soft,#eeeef2)}.ds-shot-wrap{position:relative;width:128px;height:128px;flex:none}.ds-shot{position:absolute;inset:0;width:100%;height:100%;border-radius:10px;object-fit:cover;background:var(--line-soft,#eeeef2);display:block}.ds-shot-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--faint,#6d6d78);font-size:10.5px;font-weight:550;border:1px dashed var(--line,#e5e5ea);text-align:center;line-height:1.25}.ds-shot-empty .ds-i{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.ds-info{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}.ds-info h2{margin:0;font-size:15px;line-height:1.32;font-weight:600;letter-spacing:-.012em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ds-num{font-variant-numeric:tabular-nums}.ds-price{margin:0;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}.ds-now{font-size:17px;font-weight:680;letter-spacing:-.02em}.ds-strike{font-size:13px;color:var(--faint,#6d6d78);text-decoration:line-through}.ds-where{margin:0;font-size:12.5px;color:var(--dim,#5f5f6a);display:flex;gap:2px 12px;flex-wrap:wrap;line-height:1.5}.ds-score{flex:none;margin:0;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:1px}.ds-score b{font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1}.ds-score span{font-size:10.5px;font-weight:600;color:var(--faint,#6d6d78);letter-spacing:.03em}.ds-hi b{color:var(--good,#0f7040)}.ds-why{border-top:1px solid var(--line-soft,#eeeef2)}.ds-why>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:var(--tap,44px);padding:7px 12px;font-size:12.5px;font-weight:550;color:var(--dim,#5f5f6a);transition:background .15s}.ds-why>summary::-webkit-details-marker{display:none}.ds-why>summary:hover{background:var(--line-soft,#eeeef2);color:var(--fg,#101014)}.ds-chev{margin-left:auto;width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease}.ds-why[open]>summary .ds-chev{transform:rotate(180deg)}.ds-whybody{padding:2px 12px 13px;font-size:13.5px;line-height:1.55}.ds-whybody p{margin:0}.ds-actions{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line-soft,#eeeef2);background:var(--raised,#fff)}.ds-actions .ds-btn{flex:1;min-height:var(--tap,44px)}@media (min-width:560px){.ds-shot-wrap{width:148px;height:148px}.ds-actions .ds-btn{flex:none;min-height:36px}}@media (prefers-reduced-motion:reduce){.ds-card *{animation:none!important}.ds-why[open]>summary .ds-chev{transition:none}}"
+      "css": ".ds-card{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-card-main{display:flex;gap:13px;padding:12px;align-items:flex-start;text-decoration:none;color:inherit;transition:background .15s}.ds-card-main:hover{background:var(--line-soft,#eeeef2)}.ds-shot-wrap{position:relative;width:128px;height:128px;flex:none}.ds-shot{position:absolute;inset:0;width:100%;height:100%;border-radius:10px;object-fit:cover;background:var(--line-soft,#eeeef2);display:block}.ds-shot-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--faint,#6a6a75);font-size:11px;font-weight:550;border:1px dashed var(--line,#e5e5ea);text-align:center;line-height:1.25}.ds-shot-empty .ds-i{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.ds-info{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}.ds-info h2{margin:0;font-size:15px;line-height:1.32;font-weight:600;letter-spacing:-.012em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.ds-num{font-variant-numeric:tabular-nums}.ds-price{margin:0;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}.ds-now{font-size:17px;font-weight:680;letter-spacing:-.02em}.ds-strike{font-size:13px;color:var(--faint,#6a6a75);text-decoration:line-through}.ds-where{margin:0;font-size:12.5px;color:var(--dim,#5f5f6a);display:flex;gap:2px 12px;flex-wrap:wrap;line-height:1.5}.ds-score{flex:none;margin:0;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:1px}.ds-score b{font-size:17px;font-weight:680;letter-spacing:-.03em;line-height:1}.ds-score span{font-size:11px;font-weight:600;color:var(--faint,#6a6a75);letter-spacing:.03em}.ds-hi b{color:var(--good,#0f7040)}.ds-why{border-top:1px solid var(--line-soft,#eeeef2)}.ds-why>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:var(--tap,44px);padding:7px 12px;font-size:12.5px;font-weight:550;color:var(--dim,#5f5f6a);transition:background .15s}.ds-why>summary::-webkit-details-marker{display:none}.ds-why>summary:hover{background:var(--line-soft,#eeeef2);color:var(--fg,#101014)}.ds-chev{margin-left:auto;width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease}.ds-why[open]>summary .ds-chev{transform:rotate(180deg)}.ds-whybody{padding:2px 12px 13px;font-size:13.5px;line-height:1.55}.ds-whybody p{margin:0}.ds-actions{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line-soft,#eeeef2);background:var(--raised,#fff)}.ds-actions .ds-btn{flex:1;min-height:var(--tap,44px)}@media (min-width:560px){.ds-shot-wrap{width:148px;height:148px}.ds-actions .ds-btn{flex:none;min-height:36px}}@media (prefers-reduced-motion:reduce){.ds-card *{animation:none!important}.ds-why[open]>summary .ds-chev{transition:none}}"
     },
     {
       "name": "Bottom Tab Bar",
       "kind": "nav",
       "refersTo": "tab-item",
-      "description": "Primary navigation under 900px: Wants, Free, Saved, Skipped, Runs in five equal columns, colour-only current state, a count pip on the icon.",
+      "description": "Five equal tabs; the current one takes the page's own hue (--tint), and so does its count pip.",
       "html": "<nav class=\"ds-tabbar\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8Z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\"1.2\"/></svg>Wants<span class=\"ds-pip\">3</span></a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8\"/><path d=\"M2 8h20v4H2z\"/><path d=\"M12 21V8\"/></svg>Free</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z\"/></svg>Saved</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M4 8.5h16\"/><path d=\"M12 13v6\"/><path d=\"m9 16 3 3 3-3\"/></svg>Skipped</a><a href=\"#\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\"><path d=\"M3 12h4l3 8 4-16 3 8h4\"/></svg>Runs</a></nav>",
-      "css": ".ds-tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--card,#fff);border-top:1px solid var(--line,#e5e5ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:56px;font-size:10.5px;font-weight:550;color:var(--faint,#6d6d78);letter-spacing:.005em;position:relative;text-decoration:none;-webkit-tap-highlight-color:transparent}.ds-tabbar .ds-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.ds-tabbar a[aria-current=page]{color:var(--accent,#2b64d6)}.ds-tabbar a:active{background:var(--line-soft,#eeeef2)}.ds-tabbar a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:-2px}.ds-pip{position:absolute;top:6px;left:calc(50% + 7px);min-width:16px;height:16px;border-radius:99px;background:var(--accent,#2b64d6);color:var(--on-accent,#fff);font-size:10px;line-height:16px;font-weight:700;text-align:center;padding:0 4px;font-variant-numeric:tabular-nums}"
+      "css": ".ds-tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--card,#fff);border-top:1px solid var(--line,#e5e5ea);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;height:56px;font-size:11px;font-weight:550;color:var(--faint,#6a6a75);letter-spacing:.005em;position:relative;text-decoration:none;-webkit-tap-highlight-color:transparent}.ds-tabbar .ds-i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.ds-tabbar a[aria-current=page]{color:var(--tint,#2b64d6)}.ds-tabbar a:active{background:var(--line-soft,#eeeef2)}.ds-tabbar a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:-2px}.ds-pip{position:absolute;top:5px;left:calc(50% + 7px);min-width:17px;height:17px;border-radius:99px;background:var(--tint,#2b64d6);color:var(--card,#fff);font-size:11px;line-height:17px;font-weight:700;text-align:center;padding:0 4px;font-variant-numeric:tabular-nums}"
     },
     {
       "name": "Control Row",
@@ -496,7 +605,7 @@
       "refersTo": "button-triage-row",
       "description": "A control row inside a panel. The label takes its own line and the actions share the width evenly, so buttons never break two-and-two. .control-row is the general form (pause switches, 180px forms); .triage-row carries a listing's triage actions (110px forms).",
       "html": "<div class=\"ds-panel\"><div class=\"ds-triage-row\"><span class=\"ds-who\">Free-stuff sweeps<small>Running every 15 minutes.</small></span><div class=\"ds-triage-actions\"><form><button class=\"ds-btn\">Save</button></form><form><button class=\"ds-btn\">Dismiss</button></form><form><button class=\"ds-btn\">Contacted</button></form><form><button class=\"ds-btn\">Pause</button></form></div></div><p class=\"ds-triage-help\"><b>Dismissing is not cosmetic.</b> Dismissed titles become negative examples in the next prompt for this hunt.</p></div>",
-      "css": ".ds-panel{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-triage-row{display:flex;flex-wrap:wrap;gap:11px;align-items:center;padding:13px 15px}.ds-who{font-size:13.5px;font-weight:600;flex:1 1 100%}.ds-who small{display:block;font-weight:450;color:var(--dim,#5f5f6a);font-size:12px}.ds-triage-actions{display:flex;gap:8px;flex:1 1 100%;flex-wrap:wrap}.ds-triage-actions form{flex:1 1 0;min-width:110px;display:flex;margin:0}.ds-control-row .ds-triage-actions form{min-width:180px}.ds-triage-actions .ds-btn{width:100%;min-height:var(--tap,44px);font:550 13.5px/1 inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-triage-actions .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}.ds-triage-actions .ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-triage-help{margin:0;padding:13px 15px;font-size:12.5px;line-height:1.6;color:var(--dim,#5f5f6a);background:var(--bg,#f4f4f6);border-top:1px solid var(--line-soft,#eeeef2)}.ds-triage-help b{color:var(--fg,#101014);font-weight:600}@media (min-width:560px){.ds-who{flex:1 1 auto}.ds-triage-actions{flex:0 0 auto}.ds-triage-actions form{flex:0 0 auto;min-width:0}.ds-triage-actions .ds-btn{width:auto;min-height:36px}}"
+      "css": ".ds-panel{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-triage-row{display:flex;flex-wrap:wrap;gap:11px;align-items:center;padding:13px 15px}.ds-who{font-size:13.5px;font-weight:600;flex:1 1 100%}.ds-who small{display:block;font-weight:450;color:var(--dim,#5f5f6a);font-size:12px}.ds-triage-actions{display:flex;gap:8px;flex:1 1 100%;flex-wrap:wrap}.ds-triage-actions form{flex:1 1 0;min-width:110px;display:flex;margin:0}.ds-control-row .ds-triage-actions form{min-width:180px}.ds-triage-actions .ds-btn{width:100%;min-height:var(--tap,44px);font:550 13.5px/1 inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 13px;border-radius:var(--r-sm,8px);border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-triage-actions .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6a6a75)}.ds-triage-actions .ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}.ds-triage-help{margin:0;padding:13px 15px;font-size:12.5px;line-height:1.6;color:var(--dim,#5f5f6a);background:var(--bg,#f4f4f6);border-top:1px solid var(--line-soft,#eeeef2)}.ds-triage-help b{color:var(--fg,#101014);font-weight:600}@media (min-width:560px){.ds-who{flex:1 1 auto}.ds-triage-actions{flex:0 0 auto}.ds-triage-actions form{flex:0 0 auto;min-width:0}.ds-triage-actions .ds-btn{width:auto;min-height:36px}}"
     },
     {
       "name": "Health Pill",
@@ -504,7 +613,7 @@
       "refersTo": "health-pill",
       "description": "The bot's state compressed to a dot, in the top bar of every page: ok, quiet or paused, fetch failing, no runs yet.",
       "html": "<a class=\"ds-health\" href=\"#\"><span class=\"ds-dot\"></span>4m ago</a> <a class=\"ds-health ds-warn\" href=\"#\"><span class=\"ds-dot\"></span>Paused</a> <a class=\"ds-health ds-bad\" href=\"#\"><span class=\"ds-dot\"></span>Fetch failing</a>",
-      "css": ".ds-health{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--line,#e5e5ea);border-radius:99px;background:var(--card,#fff);font:500 12.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--dim,#5f5f6a);text-decoration:none;transition:border-color .15s}.ds-health:hover{border-color:var(--faint,#6d6d78)}.ds-health .ds-dot{width:7px;height:7px;border-radius:50%;background:var(--good,#0f7040);flex:none}.ds-health.ds-warn{color:var(--warn,#8a5300)}.ds-health.ds-warn .ds-dot{background:var(--warn,#8a5300)}.ds-health.ds-bad{color:var(--bad,#b52424)}.ds-health.ds-bad .ds-dot{background:var(--bad,#b52424)}.ds-health:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
+      "css": ".ds-health{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border:1px solid var(--line,#e5e5ea);border-radius:99px;background:var(--card,#fff);font:500 12.5px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--dim,#5f5f6a);text-decoration:none;transition:border-color .15s}.ds-health:hover{border-color:var(--faint,#6a6a75)}.ds-health .ds-dot{width:7px;height:7px;border-radius:50%;background:var(--good,#0f7040);flex:none}.ds-health.ds-warn{color:var(--warn,#8a5300)}.ds-health.ds-warn .ds-dot{background:var(--warn,#8a5300)}.ds-health.ds-bad{color:var(--bad,#b52424)}.ds-health.ds-bad .ds-dot{background:var(--bad,#b52424)}.ds-health:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
     },
     {
       "name": "Notice",
@@ -512,7 +621,7 @@
       "refersTo": "notice",
       "description": "The paused banner. Amber fill, a mixed-alpha amber border, an icon and an inline recovery action. Appears on every page while anything is switched off.",
       "html": "<div class=\"ds-notice\" role=\"status\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9.5 5v14M14.5 5v14\"/></svg><div><b>Paused:</b> Free sweeps &mdash; not being searched, so nothing new is collected for it.<div class=\"ds-notice-act\"><button class=\"ds-btn\">Resume everything</button></div></div></div>",
-      "css": ".ds-notice{display:flex;gap:11px;align-items:flex-start;background:var(--warn-soft,#fdf1de);border:1px solid color-mix(in srgb,var(--warn,#8a5300) 28%,transparent);border-radius:var(--r,14px);padding:13px 15px;font:400 13.5px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--warn,#8a5300)}.ds-notice b{font-weight:650}.ds-notice .ds-i{width:17px;height:17px;flex:none;margin-top:1px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}.ds-notice-act{display:flex;margin-top:10px}.ds-notice .ds-btn{font:550 13.5px/1 inherit;display:inline-flex;align-items:center;min-height:34px;padding:0 13px;border-radius:8px;border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-notice .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6d6d78)}"
+      "css": ".ds-notice{display:flex;gap:11px;align-items:flex-start;background:var(--warn-soft,#fdf1de);border:1px solid color-mix(in srgb,var(--warn,#8a5300) 28%,transparent);border-radius:var(--r,14px);padding:13px 15px;font:400 13.5px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--warn,#8a5300)}.ds-notice b{font-weight:650}.ds-notice .ds-i{width:17px;height:17px;flex:none;margin-top:1px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}.ds-notice-act{display:flex;margin-top:10px}.ds-notice .ds-btn{font:550 13.5px/1 inherit;display:inline-flex;align-items:center;min-height:34px;padding:0 13px;border-radius:8px;border:1px solid var(--line,#e5e5ea);background:var(--raised,#fff);color:var(--fg,#101014);cursor:pointer;transition:background .15s,border-color .15s}.ds-notice .ds-btn:hover{background:var(--line-soft,#eeeef2);border-color:var(--faint,#6a6a75)}"
     },
     {
       "name": "Empty State",
@@ -520,7 +629,7 @@
       "refersTo": "panel",
       "description": "Every view has one, and it explains what would put content here. Faint 30px icon, ink headline, dim explanation at 44ch.",
       "html": "<div class=\"ds-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3.5 7.5 12 2l8.5 5.5v9L12 22l-8.5-5.5z\"/><path d=\"M3.5 7.5 12 13l8.5-5.5\"/><path d=\"M12 13v9\"/></svg><b>Nothing worth grabbing right now</b><p>The sweep judges every free listing it finds and only the ones worth the drive get this far.</p></div>",
-      "css": ".ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6d6d78);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}"
+      "css": ".ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6a6a75);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}"
     },
     {
       "name": "Error Page",
@@ -528,7 +637,7 @@
       "refersTo": "panel",
       "description": "404, a query string the route cannot parse (400) and an unhandled 500 all render in the normal shell with working nav, built from .pagehead and .empty. No new visual vocabulary.",
       "html": "<div class=\"ds-pagehead\"><h1>Not found</h1></div><div class=\"ds-empty\"><svg class=\"ds-i\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z\"/><path d=\"M12 9.5v4\"/><path d=\"M12 17h.01\"/></svg><b>There is no page at that address.</b><p>If you followed a bookmark, the view may have been renamed.</p><p class=\"ds-back\"><a href=\"/\">Back to wants</a></p></div>",
-      "css": ".ds-pagehead{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-pagehead h1{font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;margin:0 0 18px;text-wrap:balance}.ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6d6d78);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}.ds-empty .ds-back{margin-top:14px}.ds-empty a{color:var(--accent,#2b64d6);font-weight:550}.ds-empty a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
+      "css": ".ds-pagehead{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-pagehead h1{font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-.03em;margin:0 0 18px;text-wrap:balance}.ds-empty{text-align:center;padding:56px 24px;color:var(--dim,#5f5f6a);font:400 14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04)}.ds-empty .ds-i{width:30px;height:30px;color:var(--faint,#6a6a75);margin-bottom:12px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.ds-empty b{display:block;color:var(--fg,#101014);font-size:15.5px;font-weight:620;margin-bottom:6px}.ds-empty p{margin:6px auto 0;max-width:44ch}.ds-empty .ds-back{margin-top:14px}.ds-empty a{color:var(--accent,#2b64d6);font-weight:550}.ds-empty a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px;border-radius:6px}"
     },
     {
       "name": "Responsive Table",
@@ -537,14 +646,46 @@
       "description": "Wide data inside a panel. Below 720px the head is hidden and each row becomes a two-column grid of data-label/value pairs.",
       "html": "<div class=\"ds-panel\"><h2>Runs</h2><table class=\"ds-table\"><thead><tr><th>When</th><th>Hunt</th><th class=\"ds-n\">Found</th><th class=\"ds-n\">Scored</th></tr></thead><tbody><tr><td class=\"ds-lead ds-num\" data-label=\"When\">2026-09-09 14:15</td><td data-label=\"Hunt\">bookshelf</td><td class=\"ds-n ds-num\" data-label=\"Found\">24</td><td class=\"ds-n ds-num\" data-label=\"Scored\">3</td></tr><tr class=\"ds-err\"><td class=\"ds-lead ds-num\" data-label=\"When\">2026-09-09 14:00</td><td data-label=\"Hunt\">free sweep</td><td class=\"ds-n ds-num\" data-label=\"Found\">0</td><td class=\"ds-n ds-num\" data-label=\"Scored\">0</td></tr></tbody></table></div>",
       "css": ".ds-panel{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:var(--r,14px);box-shadow:0 1px 2px rgba(16,16,20,.06),0 1px 1px rgba(16,16,20,.04);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;color:var(--fg,#101014)}.ds-panel h2{margin:0;padding:13px 15px;font-size:13px;font-weight:620;letter-spacing:-.005em;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table{width:100%;border-collapse:collapse;font-size:13px}.ds-table th,.ds-table td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft,#eeeef2);white-space:nowrap}.ds-table tr:last-child td{border-bottom:0}.ds-table th{color:var(--dim,#5f5f6a);font-weight:550;font-size:11px;letter-spacing:.03em;text-transform:uppercase;background:var(--bg,#f4f4f6)}.ds-num{font-variant-numeric:tabular-nums}.ds-table .ds-n{text-align:right}.ds-table tr.ds-err td{background:var(--bad-soft,#fdeceb)}.ds-table tr.ds-err td:first-child{box-shadow:inset 1px 0 0 var(--bad,#b52424)}@media (max-width:719px){.ds-table,.ds-table tbody,.ds-table tr,.ds-table td{display:block;width:100%}.ds-table thead{display:none}.ds-table tr{display:grid;grid-template-columns:1fr 1fr;column-gap:14px;padding:12px 14px;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table td{border:0;padding:2px 0;white-space:normal;display:flex;gap:10px;align-items:baseline;justify-content:space-between}.ds-table td::before{content:attr(data-label);color:var(--dim,#5f5f6a);font-size:11px;font-weight:550;letter-spacing:.03em;text-transform:uppercase;flex:none}.ds-table td.ds-lead{grid-column:1/-1;font-weight:600;font-size:14px;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-table td.ds-lead::before{content:none}}"
+    },
+    {
+      "name": "Status Card",
+      "kind": "custom",
+      "refersTo": "status-lead-warn",
+      "description": "The top of /runs: every true fact, most actionable first, each with its one action. The lead line is the panel's one filled block and one filled button.",
+      "html": "<section class=\"ds-now\"><div class=\"ds-now-line ds-lead ds-warn\"><div><b>Judging is paused</b><p>The 5-hour plan window is at 79%, past the 70% mark. Resumes in 11m. Still collecting.</p></div><button class=\"ds-btn ds-primary\">Judge anyway for 2 hours</button></div><div class=\"ds-now-line ds-warn\"><div><b>Free-stuff searches are paused</b><p>Your wants are still searched.</p></div><button class=\"ds-btn\">Resume free-stuff searches</button></div><p class=\"ds-now-foot\">Last pass 5m ago</p></section>",
+      "css": ".ds-now{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-now-line{display:flex;flex-wrap:wrap;gap:11px;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line-soft,#eeeef2)}.ds-now-line>div{flex:1 1 100%}.ds-now-line b{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:620;color:var(--fg,#101014)}.ds-now-line b::before{content:'';width:8px;height:8px;border-radius:99px;background:var(--warn,#8a5300)}.ds-now-line p{margin:3px 0 0 16px;font-size:13px;line-height:1.5;color:var(--dim,#5f5f6a)}.ds-lead{padding:16px 15px;background:var(--warn-soft,#fdf1de)}.ds-lead b{font-size:17px;letter-spacing:-.015em;color:var(--warn,#8a5300)}.ds-lead p{color:var(--fg,#101014)}.ds-btn{flex:1 1 100%;min-height:44px;border:1px solid var(--line,#e5e5ea);border-radius:8px;background:var(--raised,#fff);color:var(--fg,#101014);font:550 13.5px/1 inherit;cursor:pointer;transition:background .15s}.ds-btn:hover{background:var(--line-soft,#eeeef2)}.ds-btn:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px}.ds-primary{background:var(--accent,#2b64d6);border-color:var(--accent,#2b64d6);color:var(--on-accent,#fff)}.ds-primary:hover{background:color-mix(in srgb,var(--accent,#2b64d6) 88%,#000)}.ds-now-foot{margin:0;padding:11px 15px;font-size:12.5px;color:var(--dim,#5f5f6a)}"
+    },
+    {
+      "name": "Pass Row",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "One pass as one disclosure: time and duration, the counts, each distinct note in plain words; opened, its runs one line each.",
+      "html": "<details class=\"ds-pass\" open><summary><span class=\"ds-pass-head\"><b>24 Sep, 1:07pm</b><span>8m 39s</span></span><span class=\"ds-pass-sum\">725 found · 7 new · 0 judged · 0 picked</span><span class=\"ds-note\">Ran out of requests before opening every listing.</span></summary><ul><li><a href=\"#\">bookshelf</a> <span class=\"ds-site\">facebook</span> <span class=\"ds-n\">76 found · 0 new · 0 judged</span></li></ul></details>",
+      "css": ".ds-pass{background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-pass>summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:3px;padding:12px 15px;min-height:44px;transition:background .15s}.ds-pass>summary::-webkit-details-marker{display:none}.ds-pass>summary:hover{background:var(--line-soft,#eeeef2)}.ds-pass>summary:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:-2px}.ds-pass-head{display:flex;justify-content:space-between;align-items:baseline}.ds-pass-head b{font-size:14px;font-weight:600;color:var(--fg,#101014)}.ds-pass-head span{font-size:12px;color:var(--faint,#6a6a75);font-variant-numeric:tabular-nums}.ds-pass-sum{font-size:12.5px;color:var(--dim,#5f5f6a);font-variant-numeric:tabular-nums}.ds-note{font-size:12.5px;color:var(--warn,#8a5300)}.ds-pass ul{list-style:none;margin:0;padding:4px 15px 12px;background:var(--bg,#f4f4f6)}.ds-pass li{display:flex;flex-wrap:wrap;gap:2px 8px;padding:7px 0;font-size:12.5px}.ds-pass li a{font-weight:600;color:var(--fg,#101014);text-decoration:none}.ds-site{color:var(--faint,#6a6a75)}.ds-n{margin-left:auto;color:var(--dim,#5f5f6a)}"
+    },
+    {
+      "name": "Period Switch",
+      "kind": "chip",
+      "refersTo": "period-chip",
+      "description": "Stats' one window. Round 36px links; the current one on the page hue's wash.",
+      "html": "<nav class=\"ds-periods\" aria-label=\"Period\"><a href=\"#\">Today</a><a href=\"#\" aria-current=\"page\">7 days</a><a href=\"#\">30 days</a><a href=\"#\">All time</a></nav>",
+      "css": ".ds-periods{display:flex;flex-wrap:wrap;gap:6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-periods a{display:inline-flex;align-items:center;min-height:36px;padding:0 13px;border:1px solid var(--line,#e5e5ea);border-radius:99px;background:var(--card,#fff);font-size:13.5px;font-weight:550;color:var(--dim,#5f5f6a);text-decoration:none;transition:background .15s,color .15s}.ds-periods a:hover{background:var(--line-soft,#eeeef2);color:var(--fg,#101014)}.ds-periods a:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px}.ds-periods a[aria-current=page]{background:var(--tint-soft,#e2f2f4);border-color:transparent;color:var(--tint,#0f6d78);font-weight:620}"
+    },
+    {
+      "name": "Field With Its Own Save",
+      "kind": "input",
+      "refersTo": "field-input",
+      "description": "One value, one Save. 16px text so iOS does not zoom on focus; the button is a default, not a primary.",
+      "html": "<form class=\"ds-field\"><label for=\"ds-r\">How far you will drive, in miles</label><div class=\"ds-row\"><input id=\"ds-r\" inputmode=\"decimal\" value=\"31\"><button type=\"button\">Save</button></div><p>Straight line from home, so real driving is further.</p></form>",
+      "css": ".ds-field{display:flex;flex-direction:column;gap:7px;padding:13px 15px;background:var(--card,#fff);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}.ds-field label{font-size:13.5px;font-weight:600;color:var(--fg,#101014)}.ds-row{display:flex;gap:8px}.ds-row input{flex:1;min-width:0;min-height:44px;padding:0 12px;font-size:16px;color:var(--fg,#101014);background:var(--card,#fff);border:1px solid var(--line,#e5e5ea);border-radius:8px}.ds-row input:focus{outline:none;border-color:var(--accent,#2b64d6);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#2b64d6) 22%,transparent)}.ds-row button{min-height:44px;padding:0 16px;border:1px solid var(--line,#e5e5ea);border-radius:8px;background:var(--raised,#fff);color:var(--fg,#101014);font-size:13.5px;font-weight:550;cursor:pointer;transition:background .15s}.ds-row button:hover{background:var(--line-soft,#eeeef2)}.ds-row button:focus-visible{outline:2px solid var(--accent,#2b64d6);outline-offset:2px}.ds-field p{margin:0;font-size:12.5px;line-height:1.5;color:var(--dim,#5f5f6a)}"
     }
   ],
   "narrative": {
     "northStar": "The Standard, Played Straight",
-    "overview": "Curbside is a phone held in a spare moment, deciding in two seconds whether a thing is worth driving across town for. The system does not have a point of view about itself — it spends all of its character on legibility and none on personality. That is the commitment, not a compromise: the category standard executed at full fidelity. Apple decides the layout because the surface is a phone (a tinted ground, inset white cards, thumb-sized rows, a fixed five-tab bar at the bottom). Stripe decides the typography because the content is data (the platform system sans, tabular figures everywhere a number can be compared, hairlines instead of shadows, one restrained blue).\n\nDensity is medium and honest. A card is a 128px photo, a title clamped to two lines, a price, a place, a row of state chips and a score — everything the first gate needs, and nothing else. The page head above it is built the same way: a large plain title and a line of live facts about what is waiting, not a paragraph explaining what the view is. The model's judgement is real content but it is read second, so it folds behind a disclosure whose summary counts what is inside. Colour carries no decoration at all: blue means \"this is current or this is the primary action\", green/amber/red mean a state the data is in, and every other surface is grey.\n\nBoth themes are real and equally weighted — this is opened outdoors in daylight and in bed at night. Every colour is a custom property with a `prefers-color-scheme` override and a matching `[data-theme=dark]` block, and neither theme is a filter over the other.",
+    "overview": "Curbside is a phone held in a spare moment, deciding in two seconds whether a thing is worth driving across town for. The system does not have a point of view about itself — it spends all of its character on legibility and none on personality. That is the commitment, not a compromise: the category standard executed at full fidelity. Apple decides the layout because the surface is a phone (a tinted ground, inset white cards, thumb-sized rows, a fixed five-tab bar at the bottom). Stripe decides the typography because the content is data (the platform system sans, tabular figures everywhere a number can be compared, hairlines instead of shadows, one restrained blue).\n\nDensity is medium and honest. A card is a 128px photo, a title clamped to two lines, a price, a place, a row of state chips and a score — everything the first gate needs, and nothing else. The page head above it is built the same way: a large plain title and a line of live facts about what is waiting, not a paragraph explaining what the view is. The model's judgement is real content but it is read second, so it folds behind a disclosure whose summary counts what is inside. Colour carries no decoration at all, and each colour has one job: a page's own hue says where you are, blue says what you can do, green/amber/red mean a state the data is in, and every other surface is grey.\n\nBoth themes are real and equally weighted — this is opened outdoors in daylight and in bed at night. Every colour is a custom property with a `prefers-color-scheme` override and a matching `[data-theme=dark]` block, and neither theme is a filter over the other.",
     "keyCharacteristics": [
       "Grouped inset cards on a tinted ground; the ground is never white",
-      "One accent (`#2b64d6` light, `#6f9dff` dark) for current-tab, primary action and selection only",
+      "A hue per page for location (the current tab, its pip, the head's figures); one blue (`#2b64d6` / `#6f9dff`) for action and selection",
       "Semantic green/amber/red used exclusively for state, never for emphasis",
       "Tabular figures on every comparable number",
       "Hairlines (1px `--line`) do the structural work; shadow is a whisper",
@@ -554,38 +695,48 @@
     ],
     "rules": [
       {
-        "name": "The One Blue Rule",
-        "body": "Blue means current, primary, or selected. If an element is blue and it is neither the active tab, the primary action, a link, nor a selection, it is wrong.",
+        "name": "The Where-Versus-What Rule",
+        "body": "A page's hue says where you are; blue says what you can do. The hue marks the current tab, its pip, the head's figures and the current period, and never an action. Blue marks the primary button, links, the focus ring and the current filter chip, and never a page. On Wants the two happen to share a value; everywhere else they must not be swapped.",
+        "section": "colors"
+      },
+      {
+        "name": "The Hue-Is-Not-Grey Rule",
+        "body": "A page hue has to be a hue, because the inactive tabs beside it are grey. Slate at saturation 0.17 made the Skipped tab read as one more inactive icon. `tests/test_web.py` fails any page hue under 0.35 saturation.",
         "section": "colors"
       },
       {
         "name": "The State-Only Rule",
-        "body": "Green, amber and red describe a fact about the data — free, unverified, flagged, failing. They are never used to make something look important. Green is the narrowest of the three: a score of 7 or better, the word FREE, and the check glyph on a matched want. The want and price-drop chips are neutral fills, because a chip that is merely present is not a state worth colouring.",
+        "body": "Green, amber and red describe a fact about the data — free, confirmed, unverified, flagged, failing. They are never used to make something look important. Green means confirmed: a score of 7 or better, the word FREE, a want the model confirmed, a price that dropped, and \"Working\" on the status card. The same want chip turns amber when the match is unverified.",
         "section": "colors"
       },
       {
         "name": "The Faint-Is-Text Rule",
-        "body": "--faint carries real content — the /10 unit, struck-through prices, \"no photo\", every score under 5.0 — so it is held to a text contrast ratio, not a decoration one. Every foreground/background pair in both themes clears WCAG AA, verified by computing the ratio rather than judging it by eye. A colour change is not shipped until it has been recomputed; the palette drifted to 2.78:1 once by looking fine.",
+        "body": "`--faint` carries real content — the `/10` unit, struck-through prices, \"no photo\", every score under 5.0 — so it is held to a text contrast ratio, not a decoration one. Every foreground/background pair in both themes clears WCAG AA, verified by computing the ratio rather than judging it by eye. The palette drifted to 2.78:1 once by looking fine, and to 4.42:1 on `--line-soft` a second time, which is why `tests/test_web.py` now computes `--dim` and `--faint` against every surface token in both themes straight from the stylesheet.",
         "section": "colors"
       },
       {
         "name": "The Two Real Themes Rule",
-        "body": "Every colour is a custom property with both a prefers-color-scheme and a [data-theme=dark] value. No hardcoded hex may enter a template, and any change is checked in both themes before it ships.",
+        "body": "Every colour is a custom property with both a `prefers-color-scheme` and a `[data-theme=dark]` value. No hardcoded hex may enter a template, and any change is checked in both themes before it ships.",
         "section": "colors"
       },
       {
         "name": "The Derive-Don't-Declare Rule",
-        "body": "A pressed or hovered variant of a token is mixed from that token, never declared as a new literal. The primary button darkens with color-mix(in srgb, var(--accent) 88%, #000); #000 there is a mixing operand, not a palette entry, and the result stays correct in both themes because the accent it derives from differs per theme. A separate --accent-strong would be a second value to keep in sync for one state, so the mix is the system's way to shade a token.",
+        "body": "A pressed or hovered variant of a token is mixed from that token, never declared as a new literal. The primary button darkens with `color-mix(in srgb, var(--accent) 88%, #000)`; `#000` there is a mixing operand, not a palette entry, and the result stays correct in both themes because the accent it derives from differs per theme. A separate `--accent-strong` would be a second value to keep in sync for one state, so the mix is the system's way to shade a token.",
         "section": "colors"
       },
       {
+        "name": "The 11px Floor Rule",
+        "body": "Nothing a person reads is set under 11px: not a tab label, not a count pip, not the `/10` unit, not a placeholder. The smallest steps on the ramp are Table Header and Tab Label at exactly 11px.",
+        "section": "typography"
+      },
+      {
         "name": "The Icons-Are-Sized-Not-Typeset Rule",
-        "body": "An svg.i font-size is an icon size, never a new type step. Pick from the icon scale to match the adjacent text; do not introduce a new step to split a difference.",
+        "body": "An `svg.i` `font-size` is an icon size, never a new type step. Pick from the icon scale to match the adjacent text; do not introduce a new step to split a difference.",
         "section": "typography"
       },
       {
         "name": "The Tabular Figures Rule",
-        "body": "Any number a person might compare down a column or across a state change carries .num (font-variant-numeric: tabular-nums). Prices, scores, distances, counts, timestamps, pips. Prose numbers do not.",
+        "body": "Any number a person might compare down a column or across a state change carries `.num` (`font-variant-numeric: tabular-nums`). Prices, scores, distances, counts, timestamps, pips. Prose numbers do not.",
         "section": "typography"
       },
       {
@@ -600,12 +751,12 @@
       },
       {
         "name": "The Stranger-Text Rule",
-        "body": "Every string on screen — titles, descriptions, want names, red flags, the model's own sentences — was written by a marketplace seller or by the model, and none of it is length-checked or space-checked. body { overflow-wrap: anywhere } is therefore global: one unbroken 200-character token must break rather than run out of the card, off the page or through the score. Any new container inherits this and must not opt out.",
+        "body": "Every string on screen — titles, descriptions, want names, red flags, the model's own sentences — was written by a marketplace seller or by the model, and none of it is length-checked or space-checked. `body { overflow-wrap: anywhere }` is therefore global: one unbroken 200-character token must break rather than run out of the card, off the page or through the score. Any new container inherits this and must not opt out.",
         "section": "typography"
       },
       {
         "name": "The Head-Reports-State Rule",
-        "body": "A page head states what is waiting, not what the view is: a plain title, then a stats line of live counts, then at most one or two lines of explanation. Teaching copy belongs in the empty state, where a person has time to read it. If a fact in the head does not change between visits, it does not belong there.",
+        "body": "A page head states what is *waiting*, not what the view *is*: a plain title, then a stats line of live counts, then at most one or two lines of explanation. Teaching copy belongs in the empty state, where a person has time to read it. If a fact in the head does not change between visits, it does not belong there.",
         "section": "layout"
       },
       {
@@ -615,7 +766,7 @@
       },
       {
         "name": "The 44px Minimum Rule",
-        "body": "--tap: 44px is the floor for a tappable control on a phone, and controls reference the token rather than a literal. The card's Save, Dismiss and open-on-marketplace buttons, every triage- and control-row button, and the card's disclosure summary are all var(--tap) tall; the open button is var(--tap) wide. Compacting a row may take its padding, never its targets: at 560px and up, where the surface is a cursor, they relax to 36px. One exception is named rather than assumed — a filter chip is an inline element in a wrapping row of chips, not a control in a control row, and sits at 32px on 8px 10px padding. It is the only target under the floor, and adding a second requires the same kind of argument.",
+        "body": "`--tap: 44px` is the floor for a tappable control on a phone, and controls reference the token rather than a literal. The card's Save, Dismiss and open-on-marketplace buttons, every triage- and control-row button, and the card's disclosure summary are all `var(--tap)` tall; the open button is `var(--tap)` wide. Compacting a row may take its padding, never its targets: at 560px and up, where the surface is a cursor, they relax to 36px. One exception is named rather than assumed — a filter chip is an inline element in a wrapping row of chips, not a control in a control row, and sits at 32px on `8px 10px` padding. It is the only target under the floor, and adding a second requires the same kind of argument.",
         "section": "layout"
       },
       {
@@ -635,12 +786,12 @@
       },
       {
         "name": "The Feedback-Is-Tonal Rule",
-        "body": "Hover and press change background tone (--line-soft, then --line), never elevation, never scale, never translate. Transitions are 0.15s on background/border/colour and 0.2s on the disclosure chevron rotation.",
+        "body": "Hover and press change background tone (`--line-soft`, then `--line`), never elevation, never scale, never translate. Transitions are 0.15s on background/border/colour and 0.2s on the disclosure chevron rotation.",
         "section": "elevation"
       },
       {
         "name": "The Colour-Is-Not-Motion Rule",
-        "body": "prefers-reduced-motion: reduce is not a blanket transition kill. It disables animation and the two real movements — the chevron's rotation and the card's press transform — and leaves colour and background transitions running, because on a server-rendered page with no client JS they are the only feedback a tap gets. Removing them makes the interface feel broken rather than calm. Anything a future rule adds under reduced motion must be actual movement.",
+        "body": "`prefers-reduced-motion: reduce` is not a blanket transition kill. It disables animation and the two real movements — the chevron's rotation and the card's press transform — and leaves colour and background transitions running, because on a server-rendered page with no client JS they are the only feedback a tap gets. Removing them makes the interface feel broken rather than calm. Anything a future rule adds under reduced motion must be actual movement.",
         "section": "elevation"
       },
       {
@@ -650,40 +801,49 @@
       }
     ],
     "dos": [
-      "Do put every colour through a custom property with both a prefers-color-scheme override and a [data-theme=dark] value, and check any change in both themes.",
-      "Do mark every comparable number with .num so tabular figures line up.",
-      "Do use <svg class=\"i\"><use href=\"#i-name\"/></svg> from the sprite in base.html; add a new 24×24, 1.75-stroke symbol there when an icon is missing.",
-      "Do separate surfaces with a 1px hairline (--line to bound, --line-soft to divide inside).",
-      "Do render <table class=\"responsive\"> with a data-label on every cell whenever a table has more than three columns.",
-      "Do design the 390px view first and let 560px and 900px add room.",
-      "Do size every phone-tappable control from var(--tap) (44px), never a literal.",
-      "Do give every view an empty state that says what would fill it, and put the long teaching copy there rather than in the page head.",
-      "Do open a list view with a title and a .stats line of live counts, marking at most one group .hi when it needs a decision.",
-      "Do size icons from the icon scale via font-size on svg.i, matching the text beside them.",
-      "Do derive a hover or pressed colour with color-mix from the token it shades, rather than declaring a new one.",
-      "Do recompute contrast for both themes when any colour changes; --dim and --faint carry text and are held to AA.",
-      "Do let chips wrap. A want name or a flag is part of the reason a listing is on screen.",
-      "Do give every tappable element a deliberate minimum height from var(--tap), filter chips excepted at 32px.",
-      "Do render errors in the normal shell with the nav intact, using .pagehead and .empty.",
-      "Do delete a symbol or token that nothing references, unless it is recorded here as a reserve.",
-      "Do keep the accent under a tenth of any screen — current tab, primary action, links, selection, focus ring."
+      "**Do** put every colour through a custom property with both a `prefers-color-scheme` override and a `[data-theme=dark]` value, and check any change in both themes.",
+      "**Do** mark every comparable number with `.num` so tabular figures line up.",
+      "**Do** use `<svg class=\"i\"><use href=\"#i-name\"/></svg>` from the sprite in `base.html`; add a new 24×24, 1.75-stroke symbol there when an icon is missing.",
+      "**Do** separate surfaces with a 1px hairline (`--line` to bound, `--line-soft` to divide inside).",
+      "**Do** render `<table class=\"responsive\">` with a `data-label` on every cell whenever a table has more than three columns.",
+      "**Do** design the 390px view first and let 560px and 900px add room.",
+      "**Do** size every phone-tappable control from `var(--tap)` (44px), never a literal.",
+      "**Do** give every view an empty state that says what would fill it, and put the long teaching copy there rather than in the page head.",
+      "**Do** open a list view with a title and a `.stats` line of live counts, marking at most one group `.hi` when it needs a decision.",
+      "**Do** size icons from the icon scale via `font-size` on `svg.i`, matching the text beside them.",
+      "**Do** derive a hover or pressed colour with `color-mix` from the token it shades, rather than declaring a new one.",
+      "**Do** recompute contrast for both themes when any colour changes; `--dim` and `--faint` carry text and are held to AA.",
+      "**Do** let chips wrap. A want name or a flag is part of the reason a listing is on screen.",
+      "**Do** give every tappable element a deliberate minimum height from `var(--tap)`, filter chips excepted at 32px.",
+      "**Do** render errors in the normal shell with the nav intact, using `.pagehead` and `.empty`.",
+      "**Do** delete a symbol or token that nothing references, unless it is recorded here as a reserve.",
+      "**Do** keep the accent under a tenth of any screen — primary action, links, selection, focus ring.",
+      "**Do** mark location with the page's hue and action with blue, and give a new page a hue of its own, saturated enough to beat the grey inactive tabs.",
+      "**Do** keep one filled button per card or panel: the action of the lead fact.",
+      "**Do** set every form field at 16px or larger, and give a single value its own Save.",
+      "**Do** say in words what a run warning or a rejection reason means; keep the raw text in `title`."
     ],
     "donts": [
-      "Don't introduce a second typeface, a webfont, or a monospace face. The platform system sans is the whole type system.",
-      "Don't use emoji or Unicode glyphs (✓ ✗ ? ⚠) as icons; they are #i-check, #i-x, #i-help and #i-alert.",
-      "Don't communicate structure with shadow. If a boundary is hard to see, the answer is a border or a tone step, never a larger shadow.",
-      "Don't use green, amber or red for emphasis, ranking or decoration — only to name a state the data is in.",
-      "Don't open the judgement disclosure by default, and don't add a field inside it without adding it to the summary's count.",
-      "Don't hardcode a hex value in a template.",
-      "Don't animate position, scale or elevation on interaction; feedback is a background-tone change at 0.15s.",
-      "Don't put a repeatedly-tapped control in the top bar on a phone; the bottom tab bar and the in-card footer are where the thumb is.",
-      "Don't let buttons in a control row wrap into an uneven group; give the label its own line and let the actions share the width (flex: 1 1 0, min-width: 110px).",
-      "Don't state what a view *is* in its page head when you could state what is *waiting* in it.",
-      "Don't read an svg.i font-size as a type step, and don't add a new one to split a difference between existing icon sizes.",
-      "Don't kill colour and background transitions under prefers-reduced-motion; disable animation and real movement only.",
-      "Don't colour a chip that is merely present. Green is a score of 7+, the word FREE, and the want check glyph — nothing else.",
-      "Don't assume any on-screen string is short or space-separated; it was written by a stranger and overflow-wrap: anywhere is what keeps it inside its card.",
-      "Don't skip a heading level: the card title is an <h2> under the page's <h1>."
+      "**Don't** introduce a second typeface, a webfont, or a monospace face. The platform system sans is the whole type system.",
+      "**Don't** use emoji or Unicode glyphs (✓ ✗ ? ⚠) as icons; they are `#i-check`, `#i-x`, `#i-help` and `#i-alert`.",
+      "**Don't** communicate structure with shadow. If a boundary is hard to see, the answer is a border or a tone step, never a larger shadow.",
+      "**Don't** use green, amber or red for emphasis, ranking or decoration — only to name a state the data is in.",
+      "**Don't** open the judgement disclosure by default, and don't add a field inside it without adding it to the summary's count.",
+      "**Don't** hardcode a hex value in a template.",
+      "**Don't** animate position, scale or elevation on interaction; feedback is a background-tone change at 0.15s.",
+      "**Don't** put a repeatedly-tapped control in the top bar on a phone; the bottom tab bar and the in-card footer are where the thumb is.",
+      "**Don't** let buttons in a control row wrap into an uneven group; give the label its own line and let the actions share the width (`flex: 1 1 0`, `min-width: 110px`).",
+      "**Don't** state what a view *is* in its page head when you could state what is *waiting* in it.",
+      "**Don't** read an `svg.i` `font-size` as a type step, and don't add a new one to split a difference between existing icon sizes.",
+      "**Don't** kill colour and background transitions under `prefers-reduced-motion`; disable animation and real movement only.",
+      "**Don't** colour a chip that is merely present. Green is a score of 7+, the word FREE, and the want check glyph — nothing else.",
+      "**Don't** assume any on-screen string is short or space-separated; it was written by a stranger and `overflow-wrap: anywhere` is what keeps it inside its card.",
+      "**Don't** skip a heading level: the card title is an `<h2>` under the page's `<h1>`.",
+      "**Don't** set anything a person reads under 11px.",
+      "**Don't** make a page hue a grey, or reuse a semantic colour as a new page's hue.",
+      "**Don't** toast success the server did not confirm, and don't clamp a value silently.",
+      "**Don't** offer a button that would do nothing — Dismiss on a dismissed card, Save on a gone one.",
+      "**Don't** show a database value (`free_find`, `filtered`, `duplicate_of:…`) where a person reads it."
     ]
   }
 }
