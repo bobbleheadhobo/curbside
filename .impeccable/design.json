@@ -327,21 +327,21 @@
       },
       "settings-hue": {
         "role": "secondary",
-        "displayName": "Settings Amber",
-        "canonical": "#8a5300",
-        "dark": "#e8b155",
+        "displayName": "Settings Olive",
+        "canonical": "#5c6b0e",
+        "dark": "#b5c85a",
         "tonalRamp": [
-          "#120902",
-          "#36210a",
-          "#5d3d18",
-          "#875c2b",
-          "#a4825f",
-          "#c1a991",
-          "#dfd2c5",
-          "#f3ede8"
+          "#090d00",
+          "#232b00",
+          "#404b00",
+          "#5f6e17",
+          "#839152",
+          "#a9b485",
+          "#d0d9b8",
+          "#ecf2db"
         ],
-        "soft": "#fdf1de",
-        "note": "Settings' location colour. Shares its value with Attention Amber; a known, unresolved overlap. Marks location only: the current tab and pip, the desktop nav item, the head's figures, the current period."
+        "soft": "#eff3dc",
+        "note": "Settings' location colour: the tools. Was amber (#8a5300) until 2026-09-25, the warning colour, so its figures read as cautions. Marks location only: the desktop nav item, the head's figures."
       }
     },
     "typographyMeta": {

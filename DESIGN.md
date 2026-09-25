@@ -29,8 +29,8 @@ colors:
   skipped-hue-soft: "#fbe9f2"
   runs-hue: "#0f6d78"
   runs-hue-soft: "#e2f2f4"
-  settings-hue: "#8a5300"
-  settings-hue-soft: "#fdf1de"
+  settings-hue: "#5c6b0e"
+  settings-hue-soft: "#eff3dc"
 typography:
   page-title:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, Roboto, 'Helvetica Neue', Arial, sans-serif"
@@ -326,9 +326,10 @@ figures in the page head's stats line, and the current Stats period.
   the grey inactive ones.
 - **Runs Teal** (`#0f6d78` / `#57c7d4`, wash `#e2f2f4`): machinery, not
   merchandise.
-- **Settings Amber** (`#8a5300` / `#e8b155`, wash `#fdf1de`): the same value
-  as Attention Amber below. On Settings a page figure and a caution therefore
-  look alike. The overlap is known and unresolved; do not copy it to a new page.
+- **Settings Olive** (`#5c6b0e` / `#b5c85a`, wash `#eff3dc`): the tools. It
+  was amber until 2026-09-25, the same value as Attention Amber below, so the
+  page's own figures read as cautions. A page hue never reuses a state colour,
+  and a test holds that.
 
 ### Tertiary (semantic state)
 - **Confirmation Green** (`#0f7040` light / `#4bd08a` dark): "free" prices, a

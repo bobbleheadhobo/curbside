@@ -67,14 +67,15 @@
    yours; skipped is rose, which no other page or state uses (it was slate,
    hue 218 like wants' blue and greyed out, so its active tab read as one more
    inactive grey icon); runs is
-   teal because it is machinery, not merchandise. Both themes are real, so
+   teal because it is machinery, not merchandise; settings is olive (it was
+   amber, which is the warning colour, so its figures read as cautions). Both themes are real, so
    every hue is declared twice -- once for the system preference and once for
    an explicit [data-theme=dark] on :root, exactly like the base palette. */
 body[data-page=free]    {--tint:#0d7a4a;--tint-soft:#e4f5ec}
 body[data-page=saved]   {--tint:#6b3fb5;--tint-soft:#f0eafc}
 body[data-page=skipped] {--tint:#a3316f;--tint-soft:#fbe9f2}
 body[data-page=runs]    {--tint:#0f6d78;--tint-soft:#e2f2f4}
-body[data-page=settings]{--tint:#8a5300;--tint-soft:#fdf1de}
+body[data-page=settings]{--tint:#5c6b0e;--tint-soft:#eff3dc}
 body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
 
 @media (prefers-color-scheme:dark){
@@ -83,7 +84,7 @@ body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
   :root:not([data-theme=light]) body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
   :root:not([data-theme=light]) body[data-page=skipped] {--tint:#e882bd;--tint-soft:#2d1825}
   :root:not([data-theme=light]) body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
-  :root:not([data-theme=light]) body[data-page=settings]{--tint:#e8b155;--tint-soft:#2c2213}
+  :root:not([data-theme=light]) body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f}
   :root:not([data-theme=light]) body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
 }
 :root[data-theme=dark] body                 {--tint:#6f9dff;--tint-soft:#1a2237}
@@ -91,7 +92,7 @@ body[data-page=wants]   {--tint:#2b64d6;--tint-soft:#eaf0fe}
 :root[data-theme=dark] body[data-page=saved]   {--tint:#b79bff;--tint-soft:#221c33}
 :root[data-theme=dark] body[data-page=skipped] {--tint:#e882bd;--tint-soft:#2d1825}
 :root[data-theme=dark] body[data-page=runs]    {--tint:#57c7d4;--tint-soft:#102a2d}
-:root[data-theme=dark] body[data-page=settings]{--tint:#e8b155;--tint-soft:#2c2213}
+:root[data-theme=dark] body[data-page=settings]{--tint:#b5c85a;--tint-soft:#20240f}
 :root[data-theme=dark] body[data-page=wants]   {--tint:#6f9dff;--tint-soft:#1a2237}
 
 *{box-sizing:border-box}

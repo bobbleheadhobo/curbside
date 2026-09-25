@@ -2993,3 +2993,24 @@ def test_every_page_colour_is_a_colour_not_a_grey():
     for page, colour in tints[:7]:
         assert _contrast(colour, light["card"]) >= 4.5 or \
             _contrast(colour, "#17181b") >= 4.5, page
+
+
+def test_no_page_colour_borrows_a_state_colour():
+    """Settings' tint was #8a5300, which is --warn, so the page's own figures
+    ("3 wants", "Noon-8pm awake") read as cautions. Amber means we do not
+    know and red counts against it; a page hue says only where you are, so it
+    may be neither, in either theme. Green is left out on purpose: Free is
+    green because free is itself the green state, and its dark tint is --good."""
+    import re
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1]
+           / "dealbot/web/static/app.css").read_text()
+    state = {c.lower() for c in re.findall(
+        r"--(?:warn|bad)(?:-soft)?:\s*(#[0-9a-fA-F]{6})", css)}
+    tints = re.findall(
+        r"body\[data-page=(\w+)\]\s*\{--tint:(#[0-9a-fA-F]{6});--tint-soft:(#[0-9a-fA-F]{6})",
+        css)
+    assert tints
+    for page, tint, soft in tints:
+        assert tint.lower() not in state, f"{page} tint {tint} is a state colour"
+        assert soft.lower() not in state, f"{page} wash {soft} is a state colour"

@@ -177,9 +177,10 @@ smuggling in a point of view.
 
 **Amended 2026-09-10: one accent was too few.** The user found the result
 bland, so each destination now owns a hue (`--tint`): wants blue, free green,
-saved violet, skipped rose, runs teal, settings amber. Skipped was slate
+saved violet, skipped rose, runs teal, settings olive. Skipped was slate
 until 2026-09-24, and its active tab could not be told from the grey
-inactive ones. It is still colour with
+inactive ones. Settings was amber until 2026-09-25, which borrowed the
+warning colour. It is still colour with
 a job — it says which list you are on — and semantic green/amber/red keep their
 own meanings and are never borrowed for it. The score is a filled pill rather
 than a coloured digit. Both themes must define every hue.
