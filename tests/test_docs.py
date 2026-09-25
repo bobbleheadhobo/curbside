@@ -23,7 +23,7 @@ def test_documented_fields_exist_on_the_real_type(name):
     """A renamed field silently makes the type reference fiction."""
     import dataclasses as dc
 
-    from dealbot import models
+    from curbside import models
 
     real = {f.name for f in dc.fields(getattr(models, name))}
     block = re.search(rf"class {name}\b.*?\n\n", FLOW, re.S)
@@ -40,7 +40,7 @@ def test_the_documented_cli_is_the_real_cli():
     import contextlib
     import io
 
-    from dealbot import cli
+    from curbside import cli
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.suppress(SystemExit):
@@ -50,7 +50,7 @@ def test_the_documented_cli_is_the_real_cli():
 
     block = re.search(r"## Part 6 — CLI\n\n```\n(.*?)```", FLOW, re.S)
     assert block, "FLOW.md no longer documents the CLI"
-    documented = set(re.findall(r"^dealbot (\S+)", block.group(1), re.M))
+    documented = set(re.findall(r"^curbside (\S+)", block.group(1), re.M))
     assert documented <= real, f"FLOW.md documents {sorted(documented - real)}"
     assert real <= documented, f"FLOW.md omits {sorted(real - documented)}"
 
@@ -58,8 +58,8 @@ def test_the_documented_cli_is_the_real_cli():
 def test_no_doc_claims_something_is_unbuilt_when_it_is_built():
     """The exact phrasings that were wrong. If a feature genuinely regresses,
     change the code or reword the claim -- do not just delete the assertion."""
-    from dealbot.notify.discord import DiscordNotifier          # noqa: F401
-    from dealbot.scoring.base import build_system_prompt
+    from curbside.notify.discord import DiscordNotifier          # noqa: F401
+    from curbside.scoring.base import build_system_prompt
 
     for doc in ("CLAUDE.md", "PRODUCT.md", "README.md",
                 "docs/ARCHITECTURE.md", "docs/FLOW.md", "docs/UI.md"):
@@ -87,7 +87,7 @@ def test_the_appraisal_asks_for_a_sentence_about_the_THING():
     that is a chip on the same card -- and on an answer that is "no" for almost
     everything in that bin, since a listing that DID match is routed to a
     different one. Prose guidance, so it is deletable; this is the guard."""
-    from dealbot.scoring.base import APPRAISE_INSTRUCTION, TRIAGE_INSTRUCTION
+    from curbside.scoring.base import APPRAISE_INSTRUCTION, TRIAGE_INSTRUCTION
     low = APPRAISE_INSTRUCTION.lower()
     assert "`reasoning`" in APPRAISE_INSTRUCTION, "lost what the sentence is FOR"
     assert "do not open with whether it matched a want" in low, (
@@ -120,9 +120,9 @@ def test_every_requesting_adapter_inherits_the_shared_throttle():
     drifted: Facebook raised BudgetExhausted when its OWN budget ran out,
     Craigslist raised a plain SourceBlocked, so the one distinction the caller
     acts on was unavailable to it."""
-    from dealbot.sources.base import BudgetExhausted, SourceBlocked, Throttled
-    from dealbot.sources.craigslist import CraigslistSource
-    from dealbot.sources.facebook import FacebookSource
+    from curbside.sources.base import BudgetExhausted, SourceBlocked, Throttled
+    from curbside.sources.craigslist import CraigslistSource
+    from curbside.sources.facebook import FacebookSource
 
     for cls in (FacebookSource, CraigslistSource):
         assert issubclass(cls, Throttled), f"{cls.__name__} retypes the throttle"
@@ -137,10 +137,10 @@ def test_our_own_budget_is_distinguishable_from_the_site_gating_us():
     exceptions -- in BOTH adapters."""
     import pytest
 
-    from dealbot.models import Location
-    from dealbot.sources.base import BudgetExhausted
-    from dealbot.sources.craigslist import CraigslistSource
-    from dealbot.sources.facebook import FacebookSource
+    from curbside.models import Location
+    from curbside.sources.base import BudgetExhausted
+    from curbside.sources.craigslist import CraigslistSource
+    from curbside.sources.facebook import FacebookSource
 
     abq = Location(lat=35.0844, lng=-106.6504, radius_miles=30.0)
     for src in (FacebookSource(abq, min_interval_seconds=0),
@@ -157,7 +157,7 @@ def test_the_routing_rule_has_exactly_one_home():
     does the routing -- not a copy of its conditions."""
     import inspect
 
-    from dealbot import pipeline
+    from curbside import pipeline
 
     assert not hasattr(pipeline, "_would_bin"), "the second copy is back"
     src = inspect.getsource(pipeline.run_hunt)
@@ -176,7 +176,7 @@ def test_the_documented_serve_default_is_the_real_default():
     import contextlib
     import io
 
-    from dealbot import cli
+    from curbside import cli
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.suppress(SystemExit):
@@ -202,8 +202,8 @@ def test_every_tuned_number_lands_somewhere_real():
     does nothing"."""
     import dataclasses as dc
 
-    from dealbot.config import load
-    from dealbot.db import Store
+    from curbside.config import load
+    from curbside.db import Store
 
     cfg = load(ROOT / "config.yaml")
     for key, spec in Store.TUNING.items():
@@ -230,7 +230,7 @@ def test_the_rubric_knows_a_zero_price_can_be_a_lie():
     this one costs a message rather than money. See
     `test_the_scam_guidance_is_in_both_rubrics` for the one that is.
     """
-    from dealbot.scoring.base import load_rubric
+    from curbside.scoring.base import load_rubric
     text = load_rubric(ROOT / "prompts/rubric.md")
     low = text.lower()
     assert "contradict" in low, "lost the rule: the description can contradict $0"
@@ -266,7 +266,7 @@ def test_the_scam_guidance_is_in_both_rubrics():
     Both must also keep the exception, or the rule eats the ordinary case:
     delivery for a fee on a PRICED item is completely normal, and six listings
     in the collected data do exactly that."""
-    from dealbot.scoring.base import RUBRIC, load_rubric
+    from curbside.scoring.base import RUBRIC, load_rubric
 
     for name, text in (("prompts/rubric.md", load_rubric(ROOT / "prompts/rubric.md")),
                        ("base.RUBRIC", RUBRIC)):

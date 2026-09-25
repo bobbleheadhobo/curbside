@@ -21,7 +21,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parent.parent / "dealbot" / "web" / "static"
+OUT = Path(__file__).resolve().parent.parent / "curbside" / "web" / "static"
 
 BLUE = (43, 100, 214)          # --accent, light theme
 WHITE = (255, 255, 255)

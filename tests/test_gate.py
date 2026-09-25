@@ -1,8 +1,8 @@
 """The gate decides who costs money, so every rule gets a test."""
 from conftest import ABQ, make_listing
 
-from dealbot.filters import gate
-from dealbot.models import UpsertResult
+from curbside.filters import gate
+from curbside.models import UpsertResult
 
 
 def _gate(hunt, listings, statuses=None, last_scores=None, upserts=None,
@@ -132,7 +132,7 @@ def test_a_permanent_rejection_is_not_re_decided(hunt):
 
 
 def test_every_permanent_reason_sticks(hunt):
-    from dealbot.filters import PERMANENT_REJECTIONS
+    from curbside.filters import PERMANENT_REJECTIONS
     for reason in PERMANENT_REJECTIONS:
         gr = _gate(hunt, [make_listing()], filtered={"fixture:1": reason})
         assert gr.candidates == [], reason
@@ -193,7 +193,7 @@ def test_an_advertisement_stays_rejected(hunt):
     """`is_ad` is in PERMANENT_REJECTIONS, so a listing already dropped on it
     is not re-fetched and re-dropped every run for ever. Nothing anybody edits
     turns a retail advertisement into a neighbour with a planter."""
-    from dealbot.filters import PERMANENT_REJECTIONS
+    from curbside.filters import PERMANENT_REJECTIONS
     assert "is_ad" in PERMANENT_REJECTIONS
     gr = _gate(hunt, [make_listing()], filtered={"fixture:1": "is_ad"})
     assert gr.candidates == []

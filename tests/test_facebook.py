@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from dealbot.models import Location
-from dealbot.sources.facebook import FacebookSource, SourceBlocked
+from curbside.models import Location
+from curbside.sources.facebook import FacebookSource, SourceBlocked
 
 HTML = Path(__file__).resolve().parents[1] / "fixtures/html"
 ABQ = Location(lat=35.0844, lng=-106.6504, radius_miles=25)
@@ -135,7 +135,7 @@ def test_category_page_parses(src):
 def test_our_own_budget_is_not_reported_as_facebook_gating(src, monkeypatch):
     """Blaming Facebook for our politeness limit sends you debugging the wrong
     thing, and retrying surfaces cannot help."""
-    from dealbot.sources.facebook import BudgetExhausted
+    from curbside.sources.facebook import BudgetExhausted
     src.max_requests = 0
     hunt = type("H", (), {"queries": ("free",)})()
     with pytest.raises(BudgetExhausted, match="budget"):
@@ -146,7 +146,7 @@ def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
     """Results are kept only if every query answers, so running out part way
     throws away what the first queries bought. The receiver want spent 4 of
     its 7 that way on its first pass and kept nothing."""
-    from dealbot.sources.facebook import BudgetExhausted
+    from curbside.sources.facebook import BudgetExhausted
     asked = []
     monkeypatch.setattr(src, "_get", lambda url: asked.append(url) or "")
     src.max_requests, src._requests_made = 25, 21
@@ -172,7 +172,7 @@ def test_a_price_drop_to_free_is_not_lost_in_enrichment(src):
     """REGRESSION: `detail_price or search_price` treats 0 as falsy, so a seller
     dropping to free kept showing the old price -- defeating the free sweep and
     the price-drop signal for the transition that matters most."""
-    from dealbot.models import Listing
+    from curbside.models import Listing
     stub = Listing(id="facebook:9", source="facebook", source_id="9",
                    title="Couch", description=None, price_cents=50000,
                    currency="USD", url="u")
@@ -196,7 +196,7 @@ def test_the_strikethrough_price_is_captured(src):
 def test_a_price_drop_is_put_in_front_of_the_model(src):
     """A thing that was $500 and is now free is a different proposition from a
     thing that was always free, and that cannot be inferred from price alone."""
-    from dealbot.scoring.base import render_listing
+    from curbside.scoring.base import render_listing
     raws = src.parse_search_html((HTML / "search-free-abq.html").read_text(errors="replace"))
     desk = next(l for r in raws if (l := src.parse(r))
                 and "Pottery Barn" in l.title)
@@ -241,7 +241,7 @@ def test_photos_come_from_the_listing_not_from_the_page_around_it(src):
 def test_photos_fall_back_to_the_primary_one_rather_than_to_the_page(src):
     """One right photo beats six that may belong to somebody else. A listing
     with no photo set simply gets no image pass."""
-    from dealbot.models import Listing
+    from curbside.models import Listing
     stub = Listing(id="facebook:9", source="facebook", source_id="9",
                    title="Couch", description=None, price_cents=0,
                    currency="USD", url="u")
@@ -255,7 +255,7 @@ def test_photos_fall_back_to_the_primary_one_rather_than_to_the_page(src):
 def test_another_listings_photo_set_on_the_same_page_is_ignored(src):
     """The id check is the whole safeguard: a product-details target for some
     OTHER listing is exactly what the carousel is made of."""
-    from dealbot.models import Listing
+    from curbside.models import Listing
     stub = Listing(id="facebook:9", source="facebook", source_id="9",
                    title="Couch", description=None, price_cents=0,
                    currency="USD", url="u")
@@ -275,10 +275,10 @@ def test_a_throttled_item_page_raises_instead_of_reading_as_deleted():
     out of every bin, irreversibly."""
     import pytest
     from pathlib import Path
-    from dealbot.sources.base import SourceBlocked
+    from curbside.sources.base import SourceBlocked
     root = Path(__file__).resolve().parents[1]
     html = (root / "fixtures/html/search-throttled.html").read_text()
-    from dealbot.models import Listing
+    from curbside.models import Listing
     stub = Listing(id="facebook:9", source="facebook", source_id="9",
                    title="Couch", description=None, price_cents=0,
                    currency="USD", url="u")
@@ -290,7 +290,7 @@ def test_a_real_item_page_still_parses():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "fixtures/html/item-1354512002236671.html").read_text()
-    from dealbot.models import Listing
+    from curbside.models import Listing
     stub = Listing(id="facebook:1354512002236671", source="facebook",
                    source_id="1354512002236671", title="whatever",
                    description=None, price_cents=0, currency="USD", url="u")
@@ -311,7 +311,7 @@ def _partner_node():
 
 def test_a_partner_listing_is_read_as_an_advertisement():
     from datetime import datetime, timezone
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
     src = FacebookSource(ABQ, city="albuquerque")
     node = _partner_node()
     listing = src.parse(RawListing(source="facebook", source_id=node["id"],

@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 from conftest import ABQ
 
-from dealbot.config import load
-from dealbot.db import Store
-from dealbot.notify.dashboard import DashboardNotifier
-from dealbot.pipeline import run_hunt
-from dealbot.scoring.stub import StubScorer
-from dealbot.sources.fixture import FixtureSource
+from curbside.config import load
+from curbside.db import Store
+from curbside.notify.dashboard import DashboardNotifier
+from curbside.pipeline import run_hunt
+from curbside.scoring.stub import StubScorer
+from curbside.sources.fixture import FixtureSource
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -135,7 +135,7 @@ def test_price_history_records_moves_not_heartbeats(rig):
 
     row = store.conn.execute(
         "SELECT * FROM listings WHERE id='fixture:1001'").fetchone()
-    from dealbot.models import Listing
+    from curbside.models import Listing
     moved = Listing(id=row["id"], source=row["source"], source_id=row["source_id"],
                     title=row["title"], description=row["description"],
                     price_cents=4200, currency="USD", url=row["url"])
@@ -159,7 +159,7 @@ def test_rejected_listings_are_kept_with_their_reason(rig):
 def test_a_scoring_outage_costs_judgement_not_data(rig):
     """Fetching costs no quota, so it continues. Listings must land in the store
     and stay `new`, ready to be judged when the window reopens."""
-    from dealbot.scoring.claude_code import ScoringUnavailable
+    from curbside.scoring.claude_code import ScoringUnavailable
 
     cfg, store, source, _, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -171,7 +171,7 @@ def test_a_scoring_outage_costs_judgement_not_data(rig):
         def appraise(self, hunt, candidates):
             raise AssertionError("must not be reached")
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, Paused(), notifiers, cfg.location)
 
     # WARNING, not error: the fetch succeeded and only the judging stood
@@ -194,7 +194,7 @@ def test_free_finds_are_a_separate_axis_from_wants(rig):
     to keep anything "worth much more than it costs" -- vacuously true of
     everything free -- so it collapsed to "does it match a want" and dropped a
     working treadmill before it was ever appraised."""
-    from dealbot.models import Score
+    from curbside.models import Score
     from datetime import datetime, timezone
 
     cfg, store, source, _, notifiers = rig
@@ -205,7 +205,7 @@ def test_free_finds_are_a_separate_axis_from_wants(rig):
         """Matches nothing, but says everything is worth collecting."""
         name = "fixed"
         def triage(self, hunt, candidates):
-            from dealbot.scoring.base import TriageResult
+            from curbside.scoring.base import TriageResult
             return TriageResult(list(candidates), {})
         def appraise(self, hunt, candidates):
             return [Score(listing_id=c.listing.id, hunt_id=hunt.id, model="fixed",
@@ -215,7 +215,7 @@ def test_free_finds_are_a_separate_axis_from_wants(rig):
                           red_flags=(), reasoning="")
                     for c in candidates]
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, Fixed(), notifiers, cfg.location)
     # 6.0 clears the free-finds bar (5.0) but not the wants bar (7.0).
     assert r.n_wanted == 0
@@ -237,7 +237,7 @@ def test_a_detail_outage_leaves_the_rest_for_next_run(rig):
     """Enrichment stopping partway must not kill the run or burn the listings it
     never reached: judging a title like "Free" with no description would waste
     the one chance to score it."""
-    from dealbot.sources.facebook import SourceBlocked
+    from curbside.sources.facebook import SourceBlocked
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -253,7 +253,7 @@ def test_a_detail_outage_leaves_the_rest_for_next_run(rig):
                 raise SourceBlocked("request budget exhausted")
             return listing
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, Flaky(source), scorer, notifiers, cfg.location)
     assert "detail fetch stopped" in r.warning
     assert r.error is None                      # degraded, not failed
@@ -297,7 +297,7 @@ def test_a_degraded_run_says_so_in_the_runs_table(rig):
     degraded run recorded as a failure makes `--due` true on every tick -- and
     the hourly want hunts would start fetching every 15 minutes against a
     source that is already gating us, which is the opposite of backing off."""
-    from dealbot.sources.facebook import SourceBlocked
+    from curbside.sources.facebook import SourceBlocked
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
 
@@ -307,7 +307,7 @@ def test_a_degraded_run_says_so_in_the_runs_table(rig):
         def parse(self, raw): return source.parse(raw)
         def detail(self, listing): raise SourceBlocked("request budget exhausted")
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     run_hunt(store, hunt, Stops(), scorer, notifiers, cfg.location, no_score=True)
     row = store.conn.execute(
         "SELECT error, warning FROM runs ORDER BY id DESC LIMIT 1").fetchone()
@@ -325,7 +325,7 @@ def test_a_large_first_run_is_capped_and_the_rest_deferred(rig):
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
     hunt = replace(hunt, max_results=3)
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
     assert r.n_candidates == 3
     assert r.n_fetched == 10                       # everything still stored
@@ -340,7 +340,7 @@ def test_one_source_does_not_retire_anothers_listings(rig):
     results ever survived a run."""
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
 
     run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
     before = {k: v for k, v in store.statuses(hunt.id).items()}
@@ -362,7 +362,7 @@ def test_a_listing_must_be_missed_repeatedly_before_being_retired(rig):
     been sold, and Facebook reshuffles constantly."""
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
 
     class Empty:
@@ -397,7 +397,7 @@ def test_a_returning_listing_is_un_retired(rig):
     """REGRESSION: a listing that reached the wants bin, dropped off page one
     for a few runs, then came back stayed hidden forever. Facebook reshuffles
     constantly, so this silently loses exactly what the bot exists to find."""
-    from dealbot.models import Listing
+    from curbside.models import Listing
     cfg, store, *_ = rig
     l = Listing(id="fb:1", source="facebook", source_id="1", title="Oak console",
                 description=None, price_cents=0, currency="USD", url="u")
@@ -425,7 +425,7 @@ def test_a_listing_with_no_detail_is_deferred_not_judged_thin(rig):
         def parse(self, raw): return source.parse(raw)
         def detail(self, listing): return None      # always unavailable
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, NoDetail(), scorer, notifiers, cfg.location)
     assert r.n_fetched == 10          # still stored
     assert r.n_candidates == 0        # but nothing judged on thin data
@@ -440,7 +440,7 @@ def test_the_deferred_backlog_is_recorded_on_the_run(rig):
     cfg, store, source, scorer, notifiers = rig
     hunt = replace(next(h for h in cfg.hunts if h.name == "free-nearby"),
                    max_results=3)
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
     assert r.n_deferred >= 4
     row = store.conn.execute(
@@ -467,7 +467,7 @@ def test_only_due_hunts_run_on_a_timer_tick(rig):
     enough time has passed. Without this, a 15-minute timer would run the hourly
     want searches four times an hour."""
     from datetime import datetime, timedelta, timezone
-    from dealbot.cli import _is_due
+    from curbside.cli import _is_due
     cfg, store, *_ = rig
     sweep = next(h for h in cfg.hunts if h.interval_minutes == 15)
     want = next(h for h in cfg.hunts if h.interval_minutes == 60)
@@ -495,7 +495,7 @@ def test_a_failed_run_does_not_satisfy_the_cadence(rig):
     """A transient outage should be retried on the next tick, not wait out a
     full interval."""
     from datetime import datetime, timezone
-    from dealbot.cli import _is_due
+    from curbside.cli import _is_due
     cfg, store, *_ = rig
     want = next(h for h in cfg.hunts if h.interval_minutes == 60)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -509,8 +509,8 @@ def test_the_daily_ceiling_stops_scoring_but_not_collecting(rig):
     """An unattended bot draining a cold-start backlog shares quota with otter.
     Fetching costs no quota, so it must continue."""
     from datetime import datetime, timezone
-    from dealbot.config import ScorerConfig
-    from dealbot.scoring.claude_code import ClaudeCodeScorer, ScoringUnavailable
+    from curbside.config import ScorerConfig
+    from curbside.scoring.claude_code import ClaudeCodeScorer, ScoringUnavailable
     import pytest as _pytest
 
     cfg, store, source, _, notifiers = rig
@@ -524,7 +524,7 @@ def test_the_daily_ceiling_stops_scoring_but_not_collecting(rig):
     with _pytest.raises(ScoringUnavailable, match="daily spend ceiling"):
         sc.check_available()
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, sc, notifiers, cfg.location)
     assert r.error is None                        # the FETCH did not fail
     assert "spend ceiling" in r.warning           # only the judging stood aside
@@ -537,10 +537,10 @@ def test_a_no_score_pass_does_not_satisfy_the_cadence(rig):
     """It fetched but never judged. Letting it count pushes the real pass out by
     a full interval -- which is exactly what happened the first time the timer
     fired after a --no-score dry run."""
-    from dealbot.cli import _is_due
+    from curbside.cli import _is_due
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
 
     run_hunt(store, hunt, source, scorer, notifiers, cfg.location, no_score=True)
     assert _is_due(store, hunt, "fixture")        # still due
@@ -552,7 +552,7 @@ def test_a_no_score_pass_does_not_satisfy_the_cadence(rig):
 def test_triage_spend_is_counted_toward_the_run_and_the_ceiling(rig):
     """A run that triage-dropped everything reported $0.00 while having made a
     real batched model call -- so the daily ceiling never saw that spend."""
-    from dealbot.scoring.base import TriageResult
+    from curbside.scoring.base import TriageResult
     cfg, store, source, _, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
 
@@ -563,7 +563,7 @@ def test_triage_spend_is_counted_toward_the_run_and_the_ceiling(rig):
                                 cost_usd=0.042)
         def appraise(self, hunt, candidates): return []
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, source, DropsEverything(), notifiers, cfg.location)
     assert r.n_scored > 0            # everything was judged (and dropped)
     assert r.cost_usd == pytest.approx(0.042)
@@ -577,7 +577,7 @@ def test_a_cross_source_duplicate_is_not_appraised_twice(rig):
     from dataclasses import replace
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
 
     run_hunt(store, hunt, source, scorer, notifiers, cfg.location)
     # Must be one we already PAID to judge -- the check deliberately only skips
@@ -591,11 +591,11 @@ def test_a_cross_source_duplicate_is_not_appraised_twice(rig):
         """The same item, posted to the other marketplace."""
         name = "other"
         def search(self, hunt):
-            from dealbot.models import RawListing
+            from curbside.models import RawListing
             from datetime import datetime, timezone
             return iter([RawListing("other", "999", {}, datetime.now(timezone.utc))])
         def parse(self, raw):
-            from dealbot.models import Listing
+            from curbside.models import Listing
             return Listing(id="other:999", source="other", source_id="999",
                            title=original["title"], description="d",
                            price_cents=original["price_cents"], currency="USD",
@@ -617,21 +617,21 @@ def test_db_path_is_relative_to_the_config_not_the_cwd(tmp_path, monkeypatch):
     """A relative db_path interpreted per working directory is how the data
     ended up split across three databases, one of which held the best find."""
     import shutil
-    from dealbot.config import load
+    from curbside.config import load
     cfg_dir = tmp_path / "proj"
     cfg_dir.mkdir()
     shutil.copy(ROOT / "config.yaml", cfg_dir / "config.yaml")
 
     monkeypatch.chdir(tmp_path)          # run from somewhere else entirely
     cfg = load(cfg_dir / "config.yaml")
-    assert cfg.db_path == cfg_dir / "data/dealbot.db"
+    assert cfg.db_path == cfg_dir / "data/curbside.db"
     assert cfg.db_path.is_absolute()
 
 
 def test_home_coordinates_can_be_overridden_from_the_environment(tmp_path, monkeypatch):
     """Your real address belongs in .env, not in a committed config file."""
     import shutil
-    from dealbot.config import load
+    from curbside.config import load
     shutil.copy(ROOT / "config.yaml", tmp_path / "config.yaml")
 
     plain = load(tmp_path / "config.yaml")
@@ -686,7 +686,7 @@ def test_stale_free_listings_are_not_paid_for(rig):
             l = source.parse(raw)
             return replace(l, posted_at=datetime.now(timezone.utc) - timedelta(days=30))
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, Aged(), scorer, notifiers, cfg.location)
     assert r.n_fetched == 10          # still collected -- history is free
     assert r.n_candidates == 0        # but nothing judged
@@ -708,7 +708,7 @@ def test_an_undated_listing_is_never_dropped_for_age(rig):
         def search(self, hunt): return source.search(hunt)
         def parse(self, raw): return replace(source.parse(raw), posted_at=None)
 
-    from dealbot.pipeline import run_hunt
+    from curbside.pipeline import run_hunt
     r = run_hunt(store, hunt, Undated(), scorer, notifiers, cfg.location)
     assert r.n_candidates > 0
 
@@ -725,8 +725,8 @@ def test_want_hunts_have_no_age_limit_by_default(rig):
 def test_photos_are_only_fetched_for_listings_that_already_matter(rig):
     """An image pass costs about twice a text appraisal, and two thirds were
     being spent confirming that things scoring 3/10 are indeed poor."""
-    from dealbot.pipeline import route
-    from dealbot.models import Score
+    from curbside.pipeline import route
+    from curbside.models import Score
     from datetime import datetime, timezone
     cfg, *_ = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -765,8 +765,8 @@ def test_a_contradicted_zero_price_never_fills_the_free_bin(rig):
     the flag, and what writes a flag is not what should be trusted to act on
     it.
     """
-    from dealbot.pipeline import route
-    from dealbot.models import Score
+    from curbside.pipeline import route
+    from curbside.models import Score
     from datetime import datetime, timezone
     from conftest import make_listing
     cfg, *_ = rig
@@ -800,7 +800,7 @@ def test_an_interrupted_appraisal_still_routes_what_it_bought(rig):
     either. That is the silent loss that left two TV stands un-announced, and
     the appraisal was paid for."""
     from dataclasses import replace
-    from dealbot.scoring.claude_code import ScoringUnavailable
+    from curbside.scoring.claude_code import ScoringUnavailable
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -830,8 +830,8 @@ def test_an_interrupted_appraisal_still_routes_what_it_bought(rig):
 def test_a_triage_outage_records_the_chunks_it_paid_for(rig):
     """The cost has to reach `runs.cost_usd` -- the only thing the daily ceiling
     reads -- and a verdict already bought must not be bought again."""
-    from dealbot.scoring.base import TriageResult
-    from dealbot.scoring.claude_code import ScoringUnavailable
+    from curbside.scoring.base import TriageResult
+    from curbside.scoring.claude_code import ScoringUnavailable
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -920,8 +920,8 @@ def test_a_fairly_priced_listing_is_not_a_free_find(rig):
     Free costs a drive; a price costs the price, so the bin asks for a margin.
     """
     from datetime import datetime, timezone
-    from dealbot.pipeline import _is_a_bargain
-    from dealbot.models import Score
+    from curbside.pipeline import _is_a_bargain
+    from curbside.models import Score
     from conftest import make_listing
 
     def sc(est):
@@ -951,8 +951,8 @@ def test_a_priced_bargain_still_reaches_the_free_bin(rig):
     from dataclasses import replace
     from datetime import datetime, timezone
 
-    from dealbot.models import Score
-    from dealbot.scoring.base import TriageResult
+    from curbside.models import Score
+    from curbside.scoring.base import TriageResult
 
     cfg, store, source, _, notifiers = rig
     hunt = replace(next(h for h in cfg.hunts if h.name == "stacked-ottoman"),
@@ -993,8 +993,8 @@ def test_a_want_hunt_never_fills_the_free_bin(rig):
     from dataclasses import replace
     from datetime import datetime, timezone
 
-    from dealbot.models import Score
-    from dealbot.scoring.base import TriageResult
+    from curbside.models import Score
+    from curbside.scoring.base import TriageResult
 
     cfg, store, source, _, notifiers = rig
     want = next(h for h in cfg.hunts if h.name == "stacked-ottoman")
@@ -1088,7 +1088,7 @@ def test_a_listing_with_neither_words_nor_pictures_is_not_judged(rig):
     """An appraisal of one is the model guessing from a title, and the image
     pass has nothing to open."""
     from dataclasses import replace
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
     from datetime import datetime, timezone
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1124,7 +1124,7 @@ def test_a_photo_with_no_words_is_still_judged(rig):
     """The measured case: 5.65 average against 4.89 for listings that have a
     description, 9 of 17 over 7, one of them in the wants bin."""
     from conftest import make_listing
-    from dealbot.filters import gate
+    from curbside.filters import gate
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
     photo_only = make_listing(lid="fixture:p", price_cents=0, description=None,
@@ -1139,7 +1139,7 @@ def test_a_listing_with_no_photograph_is_not_judged(rig):
     "Gone", "Free junk metal removal", "I need HELP please", "Anyone willing
     to donate bikes for kids". Wanted-ads and noise. Eight were appraised and
     not one ever reached a bin."""
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
     from datetime import datetime, timezone
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1174,7 +1174,7 @@ def test_a_listing_with_no_photograph_is_not_judged(rig):
 # --- the batch cap has to order by a date it actually has --------------------
 
 def _cand(lid, posted=None):
-    from dealbot.models import Candidate
+    from curbside.models import Candidate
     from conftest import make_listing
     return Candidate(make_listing(lid=lid, posted_at=posted), "new")
 
@@ -1190,8 +1190,8 @@ def test_the_cap_orders_craigslist_by_when_we_first_saw_it(tmp_path):
     overflows its cap, by hundreds a day: 83 of the 84 listings stranded at the
     time had no date at all.
     """
-    from dealbot.models import UpsertResult
-    from dealbot.pipeline import freshness
+    from curbside.models import UpsertResult
+    from curbside.pipeline import freshness
 
     upserts = {
         "cl:old": UpsertResult("cl:old", False, False, None, False,
@@ -1220,8 +1220,8 @@ def test_a_real_posting_date_still_wins(tmp_path):
     """Facebook does supply one, and it is better evidence than when we
     happened to look."""
     from datetime import datetime, timezone
-    from dealbot.models import UpsertResult
-    from dealbot.pipeline import freshness
+    from curbside.models import UpsertResult
+    from curbside.pipeline import freshness
 
     # seen long ago, but posted today
     up = {"fb:1": UpsertResult("fb:1", False, False, None, False,
@@ -1234,8 +1234,8 @@ def test_a_date_we_cannot_read_sorts_last_instead_of_killing_the_run(tmp_path):
     """Fails OPEN. One hand-edited row must not take a whole run's cap with it,
     and a naive timestamp must not raise on comparison with an aware one."""
     from datetime import datetime, timezone
-    from dealbot.models import UpsertResult
-    from dealbot.pipeline import freshness
+    from curbside.models import UpsertResult
+    from curbside.pipeline import freshness
 
     bad = {"x:1": UpsertResult("x:1", False, False, None, False,
                                first_seen="not a date")}
@@ -1265,8 +1265,8 @@ def test_standing_aside_on_quota_does_not_collapse_the_cadence(tmp_path, rig):
     so. The health pill had already been taught to special-case the error
     string, which fixed how it LOOKED while leaving the cadence broken.
     """
-    from dealbot.pipeline import run_hunt
-    from dealbot.scoring.claude_code import ScoringUnavailable
+    from curbside.pipeline import run_hunt
+    from curbside.scoring.claude_code import ScoringUnavailable
     cfg, store, source, _scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
 
@@ -1295,7 +1295,7 @@ def test_neither_kind_of_scoring_standdown_counts_as_a_failed_fetch(rig, tmp_pat
     failed run and makes the hunt due on the very next tick.
     """
     import inspect
-    from dealbot import pipeline
+    from curbside import pipeline
     src = inspect.getsource(pipeline.run_hunt)
     for phrase in ("scoring skipped", "scoring interrupted"):
         assert f'result.error = f"{phrase}' not in src, (
@@ -1343,7 +1343,7 @@ def test_the_fixtures_do_not_rot_with_the_calendar(rig):
         def now(cls, tz=None):
             return future
 
-    with mock.patch("dealbot.sources.fixture.datetime", FrozenDT):
+    with mock.patch("curbside.sources.fixture.datetime", FrozenDT):
         later = ages_at(future)
     assert [round(a, 3) for a in later] == [round(a, 3) for a in ages], (
         "the fixtures still move with the calendar")
@@ -1363,7 +1363,7 @@ def test_a_permanent_reject_does_not_hold_a_candidate_slot_forever(rig):
     from datetime import datetime, timedelta, timezone
 
     from conftest import make_listing
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
 
     cfg, store, source, scorer, notifiers = rig
     hunt = replace(next(h for h in cfg.hunts if h.kind == "sweep"),
@@ -1435,7 +1435,7 @@ def test_a_repost_does_not_reach_the_alerts_twice(rig):
     from datetime import datetime, timezone
 
     from conftest import make_listing
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
 
     cfg, store, _, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1474,7 +1474,7 @@ def test_a_repost_arriving_in_a_LATER_run_is_still_caught(rig):
     from datetime import datetime, timezone
 
     from conftest import make_listing
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
 
     cfg, store, _, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1513,7 +1513,7 @@ def test_two_different_things_photographed_apart_are_not_merged(rig):
     from datetime import datetime, timezone
 
     from conftest import make_listing
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
 
     cfg, store, _, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1545,7 +1545,7 @@ def test_a_listing_two_terms_find_is_stored_once_and_credited_to_both(rig):
     is where the copies merge, so nothing downstream sees a listing twice."""
     from datetime import datetime, timezone
     from conftest import make_listing
-    from dealbot.models import RawListing
+    from curbside.models import RawListing
 
     cfg, store, _, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1583,7 +1583,7 @@ class _Market:
         self.fetched: list[str] = []
 
     def search(self, hunt):
-        from dealbot.models import RawListing
+        from curbside.models import RawListing
         return iter([RawListing("fixture", lid.split(":")[1], {}, self.now)
                      for lid in self.listings])
 
@@ -1680,7 +1680,7 @@ def test_a_stale_copy_is_judged_on_the_copy_already_held(rig):
     from datetime import datetime, timezone
     from dataclasses import replace
 
-    from dealbot.sources.base import StaleCopy
+    from curbside.sources.base import StaleCopy
 
     cfg, store, _, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
@@ -1723,7 +1723,7 @@ def test_a_stale_copy_is_judged_on_the_copy_already_held(rig):
 
 
 def _grabbable(store, price_cents=25000, hunt_id="h"):
-    from dealbot.models import Listing
+    from curbside.models import Listing
     l = Listing(id="fb:9", source="facebook", source_id="9",
                 title="Mid century walnut bookshelf", description="solid",
                 price_cents=price_cents, currency="USD", url="u")
@@ -1772,7 +1772,7 @@ def test_a_grabbed_listing_never_triggers_a_price_alert(rig):
     rule."""
     cfg, store, *_ = rig
     l = _grabbable(store, price_cents=25000)
-    from dealbot.models import Score
+    from curbside.models import Score
     from datetime import datetime, timezone
     store.save_score(Score(listing_id=l.id, hunt_id="h", model="m",
                            scored_at=datetime.now(timezone.utc), match="yes",
@@ -1909,7 +1909,7 @@ def test_running_out_of_our_own_budget_is_a_warning_not_an_error(rig):
     Nothing failed. `BudgetExhausted` is a class of its own precisely so this
     can be told from the site refusing to answer.
     """
-    from dealbot.sources.base import BudgetExhausted
+    from curbside.sources.base import BudgetExhausted
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -1940,8 +1940,8 @@ def test_a_hunt_skipped_for_budget_comes_due_on_the_next_tick(rig):
     Left due, it runs on the next tick alongside hunts that are NOT due, and
     the passes spread themselves out. Once it has fetched, its clock is set
     like any other."""
-    from dealbot.cli import _is_due
-    from dealbot.sources.base import BudgetExhausted
+    from curbside.cli import _is_due
+    from curbside.sources.base import BudgetExhausted
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
@@ -1964,7 +1964,7 @@ def test_a_hunt_skipped_for_budget_comes_due_on_the_next_tick(rig):
 def test_a_site_that_will_not_answer_is_still_an_error(rig):
     """The other half. A gated source must fail LOUDLY -- silently returning
     zero rows is how these bots die without anyone noticing."""
-    from dealbot.sources.base import SourceBlocked
+    from curbside.sources.base import SourceBlocked
 
     cfg, store, source, scorer, notifiers = rig
     hunt = next(h for h in cfg.hunts if h.name == "free-nearby")

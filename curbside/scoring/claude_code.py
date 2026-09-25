@@ -44,7 +44,7 @@ from .base import (APPRAISE_INSTRUCTION, SUGGEST_INSTRUCTION, SUGGEST_SYSTEM,
                    load_rubric, render_listing, render_want_for_suggestion)
 from .stream import extract, parse_events
 
-log = logging.getLogger("dealbot.scoring")
+log = logging.getLogger("curbside.scoring")
 
 PAUSE_UNTIL = "scoring_paused_until"
 PAUSE_REASON = "scoring_paused_reason"
@@ -302,7 +302,7 @@ class ClaudeCodeScorer:
 
         Without this the two counters overlap: `cost_since` reads what
         `finish_run` wrote AND `_spent_this_process` still holds the same
-        dollars, so a long-lived `dealbot run` converges on counting every
+        dollars, so a long-lived `curbside run` converges on counting every
         dollar twice and stops judging at roughly half `daily_cost_limit_usd`.
         The in-memory counter only has to cover the run in flight, which the
         runs table cannot see yet.
@@ -866,7 +866,7 @@ class ClaudeCodeScorer:
             return None
         self.check_available()
 
-        tmp = Path(tempfile.mkdtemp(prefix="dealbot-img-"))
+        tmp = Path(tempfile.mkdtemp(prefix="curbside-img-"))
         try:
             paths = provider.fetch(listing, tmp,
                                    limit=self.cfg.images_per_check)

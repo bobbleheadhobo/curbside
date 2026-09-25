@@ -15,13 +15,13 @@ start at boot without a login session.
 
 | unit | what it does |
 |---|---|
-| `curbside.timer` | fires every 15 min → `dealbot once --due` |
+| `curbside.timer` | fires every 15 min → `curbside once --due` |
 | `curbside.service` | oneshot; each hunt decides whether its own interval has elapsed |
 | `curbside-web.service` | dashboard on :8477, `Restart=always` |
 
 **Template edits are live; Python edits are not.** Jinja re-reads templates per
 request, uvicorn does not reload the module, so after changing anything under
-`dealbot/` you must `systemctl --user restart curbside-web` or the dashboard
+`curbside/` you must `systemctl --user restart curbside-web` or the dashboard
 keeps serving new markup on old code.
 
 Watching it:

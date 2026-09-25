@@ -11,10 +11,10 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
-from dealbot.config import load, with_store
-from dealbot.db import Store
-from dealbot.filters import matches_any
-from dealbot.web.app import create_app
+from curbside.config import load, with_store
+from curbside.db import Store
+from curbside.filters import matches_any
+from curbside.web.app import create_app
 
 from conftest import make_listing
 
@@ -57,7 +57,7 @@ def test_a_term_that_is_only_in_the_description_still_fires():
 # --- storage and the gate ---------------------------------------------------
 
 def test_a_blocked_word_reaches_the_hunt_and_drops_listings(app):
-    from dealbot.filters import gate
+    from curbside.filters import gate
     client, cfg, store = app
     client.post("/settings/exclude", data={"hunt_id": SWEEP, "term": "Mattress"})
 
@@ -171,7 +171,7 @@ def test_a_free_card_carries_what_the_script_needs(tmp_path):
     """Undo has to put the card back in the state it left, so the card states
     what that was. Without data-status an undo would guess."""
     from datetime import datetime, timezone
-    from dealbot.models import Score
+    from curbside.models import Score
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
     store = Store(cfg.db_path)
@@ -210,7 +210,7 @@ def test_the_script_and_the_markup_still_agree(tmp_path):
     """
     from pathlib import Path
     from datetime import datetime, timezone
-    from dealbot.models import Score
+    from curbside.models import Score
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
     store = Store(cfg.db_path)
@@ -234,7 +234,7 @@ def test_the_script_and_the_markup_still_agree(tmp_path):
         assert needed in body, needed
 
     script = (Path(__file__).resolve().parents[1]
-              / "dealbot/web/static/app.js").read_text()
+              / "curbside/web/static/app.js").read_text()
     # It must stay a progressive enhancement: real forms, intercepted.
     assert 'preventDefault' in script and 'X-Requested-With' in script
     assert '"/triage"' in script and '"/settings/exclude"' in script
@@ -305,7 +305,7 @@ def test_every_in_place_form_posts_to_one_of_those(tmp_path):
     import re
     from pathlib import Path
     answers = {path for path, _ in INPLACE}
-    root = Path(__file__).resolve().parents[1] / "dealbot/web/templates"
+    root = Path(__file__).resolve().parents[1] / "curbside/web/templates"
     found = 0
     for tpl in root.glob("*.html"):
         for m in re.finditer(r'<form[^>]*\bdata-inplace\b[^>]*>', tpl.read_text()):
@@ -332,7 +332,7 @@ def test_every_in_place_target_is_something_the_server_renders(app, template, ro
     import re
     from pathlib import Path
     client, _, _ = app
-    tpl = (Path(__file__).resolve().parents[1] / "dealbot/web/templates"
+    tpl = (Path(__file__).resolve().parents[1] / "curbside/web/templates"
            / template).read_text()
     targets = [t for t in re.findall(r'data-inplace="([^"]*)"', tpl) if t]
     assert len(targets) == len(re.findall(r'\bdata-inplace\b', tpl)), (
@@ -382,8 +382,8 @@ def test_the_block_control_is_on_the_listing_page_too(tmp_path):
     it properly took the control away."""
     import re
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     from tests.test_web import _client
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
@@ -409,8 +409,8 @@ def test_the_block_control_is_on_the_listing_page_too(tmp_path):
 def test_a_want_only_listing_offers_no_block(tmp_path):
     """Blocked words belong to a sweep: they stop the free trawl dragging a
     category back every half hour. A want hunt searches its own terms."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     from tests.test_web import _client
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
@@ -428,8 +428,8 @@ def test_the_card_states_its_own_title_for_the_suggester(tmp_path):
     detail page has no such element, so both now carry the title as data."""
     import re
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     from tests.test_web import _client
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)

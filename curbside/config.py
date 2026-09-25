@@ -19,7 +19,7 @@ import yaml
 from .models import Hunt, Location, Want
 from .schedule import ScheduleDefaults, parse_hhmm
 
-log = logging.getLogger("dealbot.config")
+log = logging.getLogger("curbside.config")
 
 
 @dataclass(frozen=True)
@@ -488,7 +488,7 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
         # Resolved against the CONFIG FILE, not the working directory. A
         # relative db_path interpreted per-CWD is how the data ended up split
         # across three databases -- one of which held the best find so far.
-        db_path=(config_path.parent / raw.get("db_path", "data/dealbot.db")),
+        db_path=(config_path.parent / raw.get("db_path", "data/curbside.db")),
         # `sources` is the list; `source` remains accepted as a single value.
         sources=tuple(raw.get("sources") or [raw.get("source", "fixture")]),
         facebook=facebook,

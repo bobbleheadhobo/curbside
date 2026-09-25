@@ -41,7 +41,7 @@ from ..models import Hunt, Listing, Location, RawListing
 from .base import (BudgetExhausted, SourceBlocked,    # noqa: F401  re-exported
                    StaleCopy, Throttled)
 
-log = logging.getLogger("dealbot.sources.craigslist")
+log = logging.getLogger("curbside.sources.craigslist")
 
 SEARCH_URL = "https://sapi.craigslist.org/web/v8/postings/search/full"
 DETAIL_URL = "https://sapi.craigslist.org/web/v8/postings/{uuid}"

@@ -1,4 +1,4 @@
-# deal_bot — design
+# Curbside — design
 
 A personal bot that watches Facebook Marketplace (and later other sources) for free
 and underpriced items near me, scores them, and surfaces them on a local dashboard.
@@ -155,7 +155,7 @@ optimisation: twenty listings in one call pay that floor once. The 15-minute pol
 interval also sits inside the 1-hour cache TTL, so a byte-stable prefix turns
 that creation cost into a cache read. Verify with `cache_read_input_tokens`.
 
-**Quota policy.** deal_bot and otter share one account, so they share the
+**Quota policy.** Curbside and otter share one account, so they share the
 five-hour window. Policy is to run freely and pause only on an actual rejection,
 resuming at `resetsAt` (falling back to 5h when absent -- never 0, since a falsy
 deadline reads as "resume now" and makes the pause a silent no-op). Utilization
@@ -202,15 +202,15 @@ deterministic gate.
 ## 8. Layout
 
 ```
-dealbot/
+curbside/
   config.py      models.py      db.py       pipeline.py     filters.py
   sources/  base.py  fixture.py  facebook.py
   scoring/  base.py  llm.py  heuristics.py
   notify/   base.py  dashboard.py  ntfy.py
   web/      app.py  templates/
-  cli.py         # dealbot once | run | serve | hunts | backfill
+  cli.py         # curbside once | run | serve | hunts | backfill
 docs/DESIGN.md
-data/dealbot.db
+data/curbside.db
 ```
 
 ## 9. Build order

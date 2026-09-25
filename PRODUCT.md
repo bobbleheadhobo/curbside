@@ -194,11 +194,11 @@ typography because the content is data.
 
 ## Evidence on Hand
 
-- `dealbot seed-demo` builds a realistic offline database (`config.demo.yaml`)
+- `curbside seed-demo` builds a realistic offline database (`config.demo.yaml`)
   covering the awkward states: a 140-character title, a listing with no
   photo, `$450 → $199` over three weeks, `$120 → free`, an unverified match,
   requirement evidence, red flags, something already saved, a 30-day-old
-  listing. This is the development target; `data/dealbot.db` is not.
+  listing. This is the development target; `data/curbside.db` is not.
 - `fixtures/` holds recorded real source responses, including a throttled
   Facebook page.
 - Real model output is on disk: scores, reasoning, requirements, unknowns.

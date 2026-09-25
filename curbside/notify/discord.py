@@ -29,7 +29,7 @@ import requests
 from ..db import Store
 from ..models import Hunt, Listing, Score
 
-log = logging.getLogger("dealbot.notify.discord")
+log = logging.getLogger("curbside.notify.discord")
 
 # Colour tracks the score, so the left edge of the card reads at a glance in a
 # scrolling channel.
@@ -235,7 +235,7 @@ class DiscordNotifier:
         # defers, and anything that landed in a bin while notifications were off
         # is never revisited -- next run it is `unchanged` and never surfaces.
         # Per RUN. Set only in __init__, this was really per process: one
-        # `dealbot run` daemon builds a single notifier and loops forever, so
+        # `curbside run` daemon builds a single notifier and loops forever, so
         # after ten messages it went permanently silent with nothing but an INFO
         # line to show for it. In `once` the budget was shared across every
         # hunt, so a busy free sweep left the want hunts nothing.

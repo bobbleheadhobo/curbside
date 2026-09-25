@@ -21,7 +21,7 @@ either word finds the same thing.
 ## Where things are
 
 ```
-dealbot/
+curbside/
   cli.py          entry point and composition root
   config.py       config.yaml -> Hunt objects; secrets come from .env
   models.py       the dataclasses everything passes around
@@ -43,7 +43,7 @@ systemd/          the deployed units
 ```
 
 **Changing the dashboard?** Read [`docs/UI.md`](docs/UI.md) — it covers getting
-a realistic offline database to develop against (`dealbot seed-demo`), what a
+a realistic offline database to develop against (`curbside seed-demo`), what a
 card receives, and what not to break.
 
 Read `docs/ARCHITECTURE.md` for what actually runs. `docs/DESIGN.md` explains
@@ -51,15 +51,15 @@ why the shape is what it is, including options that were rejected and why.
 
 ## Working on this safely
 
-**`dealbot once` costs real money and real plan quota**, shared with the user's
+**`curbside once` costs real money and real plan quota**, shared with the user's
 `otter` incident-triage bot and their own interactive Claude Code use. The
 default `config.yaml` points at live sources with the real scorer.
 
 ```bash
-.venv/bin/python -m dealbot.cli once --no-score     # full pipeline, spends nothing
-.venv/bin/python -m dealbot.cli once --dry-run      # fetch + gate, writes nothing
-.venv/bin/python -m dealbot.cli notify              # flush alerts, no fetch, no cost
-.venv/bin/python -m dealbot.cli recheck            # still for sale? requests, no quota
+.venv/bin/python -m curbside.cli once --no-score     # full pipeline, spends nothing
+.venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
+.venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
+.venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
 .venv/bin/python -m pytest tests/ -q                # 615 tests, all offline
 ```
 
@@ -79,7 +79,7 @@ systemctl --user restart curbside-web.service        # after changing web code
 ```
 
 The dashboard is a long-lived process: **web code changes need that restart.**
-The timer does not — each `dealbot once` is a fresh process.
+The timer does not — each `curbside once` is a fresh process.
 
 **Restart it yourself when you change web code.** Standing authorisation, given
 2026-09-10 — do not stop and ask. It is a five-second bounce of a local read-
@@ -272,7 +272,7 @@ lose judgement for a few hours, never data.
 **The two deliberate exceptions are the pause switches and the waking hours.**
 Both stop the fetching as well, and both are *decisions* rather than
 interruptions: nothing found at 3am can be collected at 3am. Only `once --due`
-is gated by the hours, so a hand-run `dealbot once` always runs.
+is gated by the hours, so a hand-run `curbside once` always runs.
 
 **Nothing is deleted.** Rejected listings keep their reason; listings keep their
 raw source payload. Three separate parser bugs have been repaired from data

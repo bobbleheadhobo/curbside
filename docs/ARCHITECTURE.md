@@ -1,4 +1,4 @@
-# How deal_bot works
+# How Curbside works
 
 What actually runs, as built. DESIGN.md covers *why*; this covers *what*.
 
@@ -7,7 +7,7 @@ What actually runs, as built. DESIGN.md covers *why*; this covers *what*.
 ### Waking hours
 
 The bot is asleep outside a window, **noon to 8pm** by default. Outside it,
-`dealbot once --due` does **nothing at all** — no fetch, no judgement, no
+`curbside once --due` does **nothing at all** — no fetch, no judgement, no
 re-check — and leaves no `runs` row.
 
 That makes it the one pause here that can lose data, which is deliberate.
@@ -18,7 +18,7 @@ those are interruptions rather than decisions.
 
 Three rules keep it from becoming a mystery:
 
-* Only `--due` is gated. A hand-run `dealbot once` always runs.
+* Only `--due` is gated. A hand-run `curbside once` always runs.
 * `start == end` means **always on**, not never on — it fails open like every
   other filter here.
 * The window may **wrap midnight**, and the hours panel states how long it
@@ -38,7 +38,7 @@ supplies the starting values and the timezone.
 A systemd **user** timer fires every **15 minutes** and runs one command:
 
 ```
-dealbot once --due
+curbside once --due
 ```
 
 That is the only scheduled thing. Each hunt then decides for itself whether it
@@ -378,7 +378,7 @@ Two different facts, deliberately kept apart:
 | | what it means | how |
 |---|---|---|
 | `gone` | stopped **appearing** in results | `mark_gone`, after 3 consecutive misses of that same source — 45 min on the free sweep, 3 h on an hourly want hunt. Reversible: seen again, the status is restored. |
-| `sold_at` / `sold_reason` | **confirmed** off the market | `dealbot recheck` asks the source. Facebook's item payload carries `is_sold` and `is_live`. Craigslist states neither and its item endpoint cannot be trusted to stop answering, so that source is asked through `CraigslistSource.liveness` — a HEAD on the posting's own page, where `410 Gone` is the site's own word for "deleted by its author". `sold` is the source saying so; `removed` is only the page no longer resolving. |
+| `sold_at` / `sold_reason` | **confirmed** off the market | `curbside recheck` asks the source. Facebook's item payload carries `is_sold` and `is_live`. Craigslist states neither and its item endpoint cannot be trusted to stop answering, so that source is asked through `CraigslistSource.liveness` — a HEAD on the posting's own page, where `410 Gone` is the site's own word for "deleted by its author". `sold` is the source saying so; `removed` is only the page no longer resolving. |
 | `listings.grabbed_at` / `paid_cents` | **you** went and got it | `mark_grabbed`, from the **Grabbed it** button on `/saved`. Also stamps `sold_at` with reason `grabbed`, which is what makes every existing `sold_at IS NULL` guard exclude it: no re-check request and no price alert is ever spent on a thing in your garage. `paid_cents` is nullable and 0 is a different answer -- 0 is free, NULL is "I did not note it". These two columns are the **only** ground truth in the database; everything else about value is the model's claim. `upsert_listing` deliberately does not know them, so no refresh can overwrite a purchase. Undo restores the row to whatever it was (`status_before_gone`), since the button is on the listing page too and the row acted on may be `wanted` or `free_find`. |
 | `scores.price_unclear` | the $0 is not real | Neither site has a "make me an offer" price, so a seller who wants one puts $0 and says so in the description ("Send me offers please over 50 wrenches"). The model sets this; the card then stops printing FREE, and `route` keeps it out of Free finds -- a price nobody knows cannot be weighed against the trip. It stays `scored` and shows on `/skipped`, marked. The flag decides the list rather than the score, so the model can still say plainly whether the thing would be worth having. |
 
@@ -548,7 +548,7 @@ dashboard and a hand edit are never fighting over one file, and they are an
 override *on top of* config: a hunt disabled in config stays disabled.
 
 A paused hunt is announced in a banner on **every** page, and marked `[PAUSED]`
-in `dealbot hunts`. A bot switched off and forgotten looks exactly like a broken
+in `curbside hunts`. A bot switched off and forgotten looks exactly like a broken
 one.
 
 **The skipped view exists so the threshold is falsifiable.** `deal_score` assumes
@@ -562,7 +562,7 @@ things keep appearing there, 7.0 is too high. It was called "near misses" at
 four days -- 225 of 619 listings with photos are Facebook -- so a browsing UI
 built on the source URLs would rot a third of its images every week. `/thumb/<id>`
 serves the local copy and falls back to the source while one exists.
-`dealbot prune-thumbs` drops copies for listings no longer on a list or triaged.
+`curbside prune-thumbs` drops copies for listings no longer on a list or triaged.
 That download is the same `images.fetch_downscaled` the vision pass uses, so the
 hardening around a stranger's URL — byte cap enforced while reading,
 content-type check, timeout, re-encode through Pillow — exists once.

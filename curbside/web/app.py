@@ -48,7 +48,7 @@ def asset_version() -> int:
     a regenerated icon never reached a phone that had already installed this."""
     return max((int(f.stat().st_mtime) for f in STATIC.iterdir() if f.is_file()),
                default=0)
-log = logging.getLogger("dealbot.web")
+log = logging.getLogger("curbside.web")
 
 # The bin views are one query with the WHERE clause swapped. They used to be
 # built by `str.replace` on each other -- QUEUE_SQL rebound to a longer string,
@@ -693,7 +693,7 @@ PASS_GAP_SECONDS = 90
 def group_passes(rows: list[dict]) -> list[dict]:
     """Runs, newest first, grouped into the passes that made them.
 
-    One `dealbot once` is ten runs (five hunts, two sites), and read as ten
+    One `curbside once` is ten runs (five hunts, two sites), and read as ten
     separate cards it could not answer the question a budget problem raises:
     what happened in that PASS. There is no pass column to group by and none
     is needed, because the loop is sequential -- a pass is a run of rows each

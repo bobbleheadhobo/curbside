@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from dealbot.config import ScorerConfig
-from dealbot.db import Store
-from dealbot.scoring.claude_code import (PAUSE_REASON, PAUSE_UNTIL,
+from curbside.config import ScorerConfig
+from curbside.db import Store
+from curbside.scoring.claude_code import (PAUSE_REASON, PAUSE_UNTIL,
                                          ClaudeCodeScorer, ScoringUnavailable)
 
 
@@ -52,7 +52,7 @@ def test_pause_blocks_scoring_until_it_expires(scorer):
 def test_an_expired_pause_does_not_block(scorer, monkeypatch):
     sc, store = scorer
     store.set_setting(PAUSE_UNTIL, str(time.time() - 1))
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     sc.check_available()          # must not raise
 
 
@@ -67,7 +67,7 @@ def test_a_missing_reset_time_still_pauses(scorer):
 
 def test_unreachable_api_blocks_before_burning_ten_minutes(scorer, monkeypatch):
     sc, _ = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: False)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: False)
     with pytest.raises(ScoringUnavailable, match="unreachable"):
         sc.check_available()
 
@@ -75,7 +75,7 @@ def test_unreachable_api_blocks_before_burning_ten_minutes(scorer, monkeypatch):
 def test_an_interruption_hands_back_appraisals_already_paid_for(scorer, monkeypatch):
     """REGRESSION: a pause partway through a batch discarded every appraisal
     completed before it -- real money spent, then charged again next run."""
-    from dealbot.models import Candidate, Hunt, Listing
+    from curbside.models import Candidate, Hunt, Listing
 
     sc, _ = scorer
     calls = {"n": 0}
@@ -112,7 +112,7 @@ def test_an_interruption_hands_back_appraisals_already_paid_for(scorer, monkeypa
 def test_a_broken_claude_path_is_an_outage_not_a_crash(scorer, monkeypatch):
     """A wrong claude_bin used to raise FileNotFoundError straight through the
     pipeline and kill the run, losing the fetch that had already succeeded."""
-    from dealbot.config import ScorerConfig
+    from curbside.config import ScorerConfig
     sc, store = scorer
     sc.cfg = ScorerConfig(backend="claude_code", claude_bin="/nonexistent/claude")
     monkeypatch.setattr(sc, "check_available", lambda: None)
@@ -187,7 +187,7 @@ def test_list_fields_survive_the_wrong_shape():
 
 
 def test_a_wild_deal_score_is_clamped(scorer, monkeypatch):
-    from dealbot.models import Candidate, Hunt, Listing
+    from curbside.models import Candidate, Hunt, Listing
     sc, _ = scorer
     class F:
         text = '{"match":"yes","deal_score":"99","est_value_usd":"$1,200"}'
@@ -211,7 +211,7 @@ def test_a_wild_deal_score_is_clamped(scorer, monkeypatch):
 def test_dismissals_become_negative_examples(scorer):
     """The dismiss button used to do nothing downstream: the parameter existed
     and every call site passed nothing."""
-    from dealbot.models import Hunt, Listing
+    from curbside.models import Hunt, Listing
     sc, store = scorer
     want = type("W", (), {"name": "w", "requires": (), "description": "d",
                           "max_price_cents": 100})()
@@ -226,7 +226,7 @@ def test_dismissals_become_negative_examples(scorer):
         store.mark_matches(hunt.id, [l])
         store.set_status(hunt.id, l.id, "dismissed")
 
-    from dealbot.scoring.base import build_system_prompt
+    from curbside.scoring.base import build_system_prompt
     prompt = build_system_prompt(hunt, sc._negative_examples(hunt))
     assert "Pink shaggy pouf" in prompt
     assert "Bean bag chair" in prompt
@@ -236,7 +236,7 @@ def test_dismissals_become_negative_examples(scorer):
 def test_negative_examples_are_snapshotted_daily(scorer):
     """Rebuilding this block every run would change the cached prefix every run
     and cost ~3x on every call, forever."""
-    from dealbot.models import Hunt, Listing
+    from curbside.models import Hunt, Listing
     sc, store = scorer
     hunt = Hunt(id="h2", name="h", kind="sweep", queries=(), max_price_cents=0,
                 exclude=(), wants=(), min_deal_score=7.0, free_find_min_score=5.0,
@@ -255,7 +255,7 @@ def test_negative_examples_are_snapshotted_daily(scorer):
 
 def _record(store, five=None, seven=None, minutes_ago=0):
     from datetime import datetime, timedelta, timezone
-    from dealbot.scoring.claude_code import UTIL_5H, UTIL_7D, UTIL_AT
+    from curbside.scoring.claude_code import UTIL_5H, UTIL_7D, UTIL_AT
     if five is not None:
         store.set_setting(UTIL_5H, str(five))
     if seven is not None:
@@ -268,7 +268,7 @@ def test_it_stands_aside_before_the_plan_is_exhausted(scorer, monkeypatch):
     """Waiting for an outright rejection means otter has already been refused
     by the time we react."""
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.72)
     with pytest.raises(ScoringUnavailable, match="5-hour"):
         sc.check_available()
@@ -278,7 +278,7 @@ def test_the_weekly_window_has_its_own_ceiling(scorer, monkeypatch):
     """A poller running every 15 minutes creeps up the 7-day window without
     ever tripping the hourly one -- and otter does not watch it at all."""
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.10, seven=0.95)
     with pytest.raises(ScoringUnavailable, match="7-day"):
         sc.check_available()
@@ -286,7 +286,7 @@ def test_the_weekly_window_has_its_own_ceiling(scorer, monkeypatch):
 
 def test_below_the_ceiling_it_carries_on(scorer, monkeypatch):
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.55, seven=0.40)
     sc.check_available()
 
@@ -295,7 +295,7 @@ def test_an_undated_stale_reading_never_seals_the_pause_shut(scorer, monkeypatch
     """A reading that named no reset instant can only be refreshed by spending a
     call, so an old one lets one pass through rather than sealing itself shut."""
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.99, minutes_ago=120)
     sc.check_available()          # let one through to refresh
 
@@ -305,9 +305,9 @@ def test_a_dated_reading_holds_without_spending_to_re_ask(scorer, monkeypatch):
     through every 31 minutes -- 13 in six hours, $0.57 -- to re-learn a number
     that cannot change until the window rolls. The reading names its own expiry,
     so hold until then."""
-    from dealbot.scoring.claude_code import RESET_7D
+    from curbside.scoring.claude_code import RESET_7D
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, seven=0.92, minutes_ago=180)
     store.set_setting(RESET_7D, str(time.time() + 21 * 3600))
     with pytest.raises(ScoringUnavailable, match="7-day"):
@@ -317,9 +317,9 @@ def test_a_dated_reading_holds_without_spending_to_re_ask(scorer, monkeypatch):
 def test_the_hold_lifts_itself_at_the_instant_it_named(scorer, monkeypatch):
     """Which is what keeps the rule from being a pause nobody can clear: past
     its reset the reading has expired, so the gate is simply gone."""
-    from dealbot.scoring.claude_code import RESET_7D
+    from curbside.scoring.claude_code import RESET_7D
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, seven=0.92, minutes_ago=180)
     store.set_setting(RESET_7D, str(time.time() - 1))
     sc.check_available()
@@ -327,7 +327,7 @@ def test_the_hold_lifts_itself_at_the_instant_it_named(scorer, monkeypatch):
 
 def test_a_fresh_reading_is_enforced(scorer, monkeypatch):
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.99, minutes_ago=5)
     with pytest.raises(ScoringUnavailable):
         sc.check_available()
@@ -337,9 +337,9 @@ def test_a_window_that_has_already_reset_stops_nothing(scorer, monkeypatch):
     """A reading is only as good as the window it describes. Ninety-nine percent
     of a window that rolled ten minutes ago is history, and standing aside for
     it keeps the bot out of a window that has already refilled."""
-    from dealbot.scoring.claude_code import RESET_5H
+    from curbside.scoring.claude_code import RESET_5H
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.99, minutes_ago=1)
     store.set_setting(RESET_5H, str(time.time() - 600))
     sc.check_available()
@@ -348,9 +348,9 @@ def test_a_window_that_has_already_reset_stops_nothing(scorer, monkeypatch):
 def test_a_window_still_running_is_enforced(scorer, monkeypatch):
     """The other half of the rule: an expiry in the future dates the reading as
     current, so the ceiling still applies."""
-    from dealbot.scoring.claude_code import RESET_5H
+    from curbside.scoring.claude_code import RESET_5H
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     _record(store, five=0.99, minutes_ago=1)
     store.set_setting(RESET_5H, str(time.time() + 600))
     with pytest.raises(ScoringUnavailable, match="5-hour"):
@@ -361,7 +361,7 @@ def test_each_reading_is_stored_with_its_own_expiry(scorer, monkeypatch):
     """Both windows report their own `resetsAt`, and it is not the top-level
     one: that belongs to whichever window tripped the threshold. Storing the
     wrong one dates a reading against the wrong clock."""
-    from dealbot.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
+    from curbside.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
                                              UTIL_7D)
     sc, store = scorer
     stream = (Path(__file__).resolve().parents[1]
@@ -370,7 +370,7 @@ def test_each_reading_is_stored_with_its_own_expiry(scorer, monkeypatch):
     class Finished:
         stdout, stderr, returncode = stream, "", 0
 
-    monkeypatch.setattr("dealbot.scoring.claude_code.subprocess.run",
+    monkeypatch.setattr("curbside.scoring.claude_code.subprocess.run",
                         lambda *a, **k: Finished())
     sc._invoke("system", "user", "sonnet")
     assert store.get_setting(UTIL_5H) == "0.41"
@@ -381,15 +381,15 @@ def test_each_reading_is_stored_with_its_own_expiry(scorer, monkeypatch):
 
 def test_no_reading_at_all_is_not_a_blocker(scorer, monkeypatch):
     sc, _ = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     sc.check_available()
 
 
 def test_the_image_pass_honours_the_photo_limit(scorer, monkeypatch):
     """Three was arbitrary and hard-coded. Each photo is ~260 tokens, so this
     is about a third of what an image appraisal costs over a text one."""
-    from dealbot.config import ScorerConfig
-    from dealbot.models import Hunt, Listing
+    from curbside.config import ScorerConfig
+    from curbside.models import Hunt, Listing
     sc, _ = scorer
     sc.cfg = ScorerConfig(images_per_check=2)
     monkeypatch.setattr(sc, "check_available", lambda: None)
@@ -407,7 +407,7 @@ def test_the_image_pass_honours_the_photo_limit(scorer, monkeypatch):
                 interval_minutes=15, max_results=60)
     listing = Listing(id="x:1", source="x", source_id="1", title="t",
                       description=None, price_cents=0, currency="USD", url="u")
-    from dealbot.models import Score
+    from curbside.models import Score
     from datetime import datetime, timezone
     score = Score(listing_id="x:1", hunt_id="h", model="m",
                   scored_at=datetime.now(timezone.utc), match="unknown",
@@ -422,7 +422,7 @@ def test_the_image_pass_honours_the_photo_limit(scorer, monkeypatch):
 # --- money already spent must survive every failure path --------------------
 
 def _hunt():
-    from dealbot.models import Hunt
+    from curbside.models import Hunt
     want = type("W", (), {"name": "w", "requires": (), "description": "d",
                           "max_price_cents": 100})()
     return Hunt(id="h", name="h", kind="sweep", queries=(), max_price_cents=0,
@@ -431,7 +431,7 @@ def _hunt():
 
 
 def _cands(n):
-    from dealbot.models import Candidate, Listing
+    from curbside.models import Candidate, Listing
     return [Candidate(Listing(id=f"x:{i}", source="x", source_id=str(i),
                               title="t", description=None, price_cents=0,
                               currency="USD", url="u"), "new")
@@ -478,7 +478,7 @@ def test_the_plan_ceiling_is_rechecked_between_listings(scorer, monkeypatch):
     under the ceiling used to run every appraisal in it -- so the standing-aside
     that is supposed to happen BEFORE otter is refused happened after."""
     from datetime import datetime, timezone
-    from dealbot.scoring.claude_code import UTIL_5H, UTIL_AT
+    from curbside.scoring.claude_code import UTIL_5H, UTIL_AT
 
     sc, store = scorer
 
@@ -501,8 +501,8 @@ def test_a_triage_outage_hands_back_the_chunks_already_paid_for(scorer, monkeypa
     returned NOTHING if a later chunk was refused. The batched calls already
     billed never reached `runs.cost_usd` -- which is what the daily ceiling
     reads -- and every listing was triaged again from scratch next run."""
-    from dealbot.config import ScorerConfig
-    from dealbot.scoring.base import TriageResult
+    from curbside.config import ScorerConfig
+    from curbside.scoring.base import TriageResult
 
     sc, _ = scorer
     sc.cfg = ScorerConfig(backend="claude_code", batch_size=2)
@@ -530,13 +530,13 @@ def test_a_triage_outage_hands_back_the_chunks_already_paid_for(scorer, monkeypa
 def test_spend_already_in_the_runs_table_is_not_counted_twice(scorer, monkeypatch):
     """REGRESSION: `check_available` added `_spent_this_process` to
     `cost_since`, but `finish_run` had already written those same dollars to
-    `runs.cost_usd`. Over a `dealbot run` daemon the count converged on twice
+    `runs.cost_usd`. Over a `curbside run` daemon the count converged on twice
     the real spend, so judging stopped at about half `daily_cost_limit_usd`."""
-    from dealbot.config import ScorerConfig
+    from curbside.config import ScorerConfig
 
     sc, store = scorer
     sc.cfg = ScorerConfig(backend="claude_code", daily_cost_limit_usd=1.0)
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
 
     run_id = store.start_run(_hunt(), "x")
     store.finish_run(run_id, cost_usd=0.60)         # a finished run, recorded
@@ -554,7 +554,7 @@ def test_spend_on_an_unreadable_appraisal_still_reaches_the_run(scorer, monkeypa
     whose output could not be parsed -- twice, which is the expensive case --
     was invisible to the daily ceiling on every later run. The ceiling then
     under-counts by exactly the listings that burn the most tokens."""
-    from dealbot.models import Candidate, Hunt, Listing
+    from curbside.models import Candidate, Hunt, Listing
 
     sc, _ = scorer
 
@@ -583,7 +583,7 @@ def test_spend_on_an_unreadable_appraisal_still_reaches_the_run(scorer, monkeypa
 
 
 def test_a_retry_that_works_reports_what_both_attempts_cost(scorer, monkeypatch):
-    from dealbot.models import Candidate, Hunt, Listing
+    from curbside.models import Candidate, Hunt, Listing
 
     sc, _ = scorer
     calls = {"n": 0}
@@ -620,9 +620,9 @@ def test_the_override_lifts_this_projects_own_ceilings(scorer, monkeypatch):
     shares. The button says spend anyway. It lifts what we chose to stop at --
     not the real limit, which refuses at the other end regardless."""
     import time
-    from dealbot.scoring.claude_code import OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL
+    from curbside.scoring.claude_code import OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
 
     store.set_setting(PAUSE_UNTIL, str(time.time() + 3600))
     store.set_setting(PAUSE_REASON, "rate limit (seven_day)")
@@ -645,9 +645,9 @@ def test_the_override_never_lifts_the_connectivity_probe(scorer, monkeypatch):
     """Not a budget: a `claude -p` with no network burns ten minutes of retry
     backoff before it fails."""
     import time
-    from dealbot.scoring.claude_code import OVERRIDE_UNTIL
+    from curbside.scoring.claude_code import OVERRIDE_UNTIL
     sc, store = scorer
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: False)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: False)
     store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
     with pytest.raises(ScoringUnavailable, match="unreachable"):
         sc.check_available()
@@ -660,7 +660,7 @@ def test_a_rate_limit_WARNING_is_not_a_refusal():
     window reset. 203 of the 246 runs that fetched and judged nothing died here.
     """
     from pathlib import Path
-    from dealbot.scoring.stream import extract, parse_events
+    from curbside.scoring.stream import extract, parse_events
     raw = (Path(__file__).resolve().parents[1]
            / "fixtures/streams/rate-limit-warning.jsonl").read_text()
     facts = extract(parse_events(raw))
@@ -678,7 +678,7 @@ def test_an_unknown_rate_limit_status_still_stops_us():
     """Fail safe: spending into a status we do not understand is the wrong
     direction to guess in."""
     import json
-    from dealbot.scoring.stream import extract, parse_events
+    from curbside.scoring.stream import extract, parse_events
     events = [{"type": "rate_limit_event",
                "rate_limit_info": {"status": "rejected",
                                    "rateLimitType": "five_hour"}},
@@ -696,13 +696,13 @@ def test_the_daily_ceiling_counts_the_users_day_not_utcs(scorer, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from zoneinfo import ZoneInfo
 
-    from dealbot.config import ScorerConfig
-    from dealbot.schedule import local_day_start
+    from curbside.config import ScorerConfig
+    from curbside.schedule import local_day_start
 
     sc, store = scorer
     sc.cfg = ScorerConfig(backend="claude_code", daily_cost_limit_usd=1.0,
                           timezone="America/Denver")
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
 
     now = datetime.now(timezone.utc)
     midnight = local_day_start(ZoneInfo("America/Denver"), now)
@@ -725,8 +725,8 @@ def test_a_want_hunt_never_pays_to_snapshot_its_dismissals(tmp_path):
     """`build_system_prompt` drops the block for a want hunt, so fetching the
     titles is wasted -- and refreshing the daily snapshot is a WRITE, which on
     the dashboard's read path is the one thing that must not happen."""
-    from dealbot.db import Store
-    from dealbot.scoring.claude_code import ClaudeCodeScorer
+    from curbside.db import Store
+    from curbside.scoring.claude_code import ClaudeCodeScorer
 
     store = Store(tmp_path / "t.db")
     scorer = ClaudeCodeScorer.__new__(ClaudeCodeScorer)
@@ -743,7 +743,7 @@ def test_a_want_hunt_never_pays_to_snapshot_its_dismissals(tmp_path):
 def _over_plan(store, used="0.79", ahead=3600):
     import time
     from datetime import datetime, timezone
-    from dealbot.scoring.claude_code import RESET_5H, UTIL_5H, UTIL_AT
+    from curbside.scoring.claude_code import RESET_5H, UTIL_5H, UTIL_AT
     store.set_setting(UTIL_5H, used)
     store.set_setting(RESET_5H, str(time.time() + ahead))
     store.set_setting(UTIL_AT, datetime.now(timezone.utc).isoformat())
@@ -755,8 +755,8 @@ def test_the_gate_the_dashboard_reads_is_the_one_the_scorer_obeys(scorer,
     run's warning, and disagreed with the scorer both ways. `judging_state` is
     now the only place the holds live: check_available raises exactly what it
     says."""
-    from dealbot.scoring.claude_code import judging_state
-    monkeypatch.setattr("dealbot.scoring.claude_code.api_reachable", lambda: True)
+    from curbside.scoring.claude_code import judging_state
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
     s, store = scorer
     assert judging_state(store, s.cfg).kind == "running"
     s.check_available()                               # nothing held, no raise
@@ -772,7 +772,7 @@ def test_the_gate_the_dashboard_reads_is_the_one_the_scorer_obeys(scorer,
 
 def test_an_override_lifts_every_hold_and_says_until_when(scorer):
     import time
-    from dealbot.scoring.claude_code import OVERRIDE_UNTIL, judging_state
+    from curbside.scoring.claude_code import OVERRIDE_UNTIL, judging_state
     s, store = scorer
     _over_plan(store)
     store.set_setting(OVERRIDE_UNTIL, str(time.time() + 600))
@@ -784,7 +784,7 @@ def test_the_spend_ceiling_is_reported_before_the_plan(scorer):
     """Same order as check_available always had: the first hold found is the
     one named."""
     from dataclasses import replace
-    from dealbot.scoring.claude_code import judging_state
+    from curbside.scoring.claude_code import judging_state
     s, store = scorer
     _over_plan(store)
     cfg = replace(s.cfg, daily_cost_limit_usd=0.5)

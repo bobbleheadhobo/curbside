@@ -1,4 +1,4 @@
-# deal_bot — features and flow
+# Curbside — features and flow
 
 Companion to DESIGN.md. This is *what it does* and *how control moves through it*.
 
@@ -63,7 +63,7 @@ look like fresh listings forever and you keep re-scoring and re-surfacing the sa
 
 ## Part 2 — Types
 
-Kept in sync with `dealbot/models.py`; the docstrings there carry the reasoning.
+Kept in sync with `curbside/models.py`; the docstrings there carry the reasoning.
 
 ```python
 @dataclass(frozen=True)
@@ -157,7 +157,7 @@ the site gates one, and worth nothing when our own budget is spent.
 
 ## Part 4 — The main flow
 
-`dealbot once --hunt power-tools`
+`curbside once --hunt power-tools`
 
 ```
 cli.once()
@@ -325,14 +325,14 @@ contradicted the read-only boundary, so it went when `grabbed` arrived.
 ## Part 6 — CLI
 
 ```
-dealbot once   [--hunt N] [--dry-run] [--no-score] [--due]  one pass
-dealbot run    [--interval 15m]                             loop on each cadence
-dealbot serve  [--host H] [--port 8080]                     dashboard, localhost
-dealbot hunts                                               hunts, last run, the window
-dealbot notify [--hunt N]                                   flush alerts; no fetch, no cost
-dealbot recheck [--limit N] [--all]                         still for sale? requests, no quota
-dealbot seed-demo [--db PATH]                               an offline database to develop on
-dealbot prune-thumbs                                        drop cached photos no longer needed
+curbside once   [--hunt N] [--dry-run] [--no-score] [--due]  one pass
+curbside run    [--interval 15m]                             loop on each cadence
+curbside serve  [--host H] [--port 8080]                     dashboard, localhost
+curbside hunts                                               hunts, last run, the window
+curbside notify [--hunt N]                                   flush alerts; no fetch, no cost
+curbside recheck [--limit N] [--all]                         still for sale? requests, no quota
+curbside seed-demo [--db PATH]                               an offline database to develop on
+curbside prune-thumbs                                        drop cached photos no longer needed
 ```
 
 `--due` is what the timer passes: each hunt decides whether enough time has

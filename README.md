@@ -44,24 +44,24 @@ pipeline is provably fine and a Facebook change is a one-file repair.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m dealbot.cli once --no-score   # one pass, spends nothing
-.venv/bin/python -m dealbot.cli serve     # dashboard on 127.0.0.1:8080
+.venv/bin/python -m curbside.cli once --no-score   # one pass, spends nothing
+.venv/bin/python -m curbside.cli serve     # dashboard on 127.0.0.1:8080
 .venv/bin/python -m pytest tests/ -q
 ```
 
-A bare `dealbot once` judges with the real scorer and **spends plan quota**. Use
+A bare `curbside once` judges with the real scorer and **spends plan quota**. Use
 `--no-score` or `--dry-run` unless that is what you mean.
 
 ```
-dealbot once --hunt free-nearby --dry-run   fetch and gate, write nothing
-dealbot once --no-score                     full pipeline, spend nothing
-dealbot once --due                          the timer's pass; respects the hours
-dealbot run                                 poll on each hunt's cadence
-dealbot hunts                               hunts, their last run, the window
-dealbot notify                              send pending alerts; no fetch, no cost
-dealbot recheck                             is it still for sale? requests, no quota
-dealbot seed-demo                           a realistic offline database to develop against
-dealbot prune-thumbs                        drop cached photos no longer needed
+curbside once --hunt free-nearby --dry-run   fetch and gate, write nothing
+curbside once --no-score                     full pipeline, spend nothing
+curbside once --due                          the timer's pass; respects the hours
+curbside run                                 poll on each hunt's cadence
+curbside hunts                               hunts, their last run, the window
+curbside notify                              send pending alerts; no fetch, no cost
+curbside recheck                             is it still for sale? requests, no quota
+curbside seed-demo                           a realistic offline database to develop against
+curbside prune-thumbs                        drop cached photos no longer needed
 ```
 
 `serve` binds localhost by default. The app has no login, so the deployed unit
@@ -70,7 +70,7 @@ opts in to `--host 0.0.0.0 --port 8477` explicitly, behind a trusted network.
 **It sleeps.** Noon to 8pm by default, editable at `/settings`. Outside the
 window a `--due` pass does nothing at all — no fetching, no judging, no
 re-checking — because nothing found at 3am can be collected at 3am. A hand-run
-`dealbot once` ignores the window, so you can always force a pass.
+`curbside once` ignores the window, so you can always force a pass.
 
 ## How it works
 

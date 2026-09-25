@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dealbot.models import Hunt, Listing, Location, Want  # noqa: E402
+from curbside.models import Hunt, Listing, Location, Want  # noqa: E402
 
 ABQ = Location(lat=35.0844, lng=-106.6504, radius_miles=25)
 

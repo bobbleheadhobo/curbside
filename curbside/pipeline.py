@@ -30,7 +30,7 @@ from .scoring.claude_code import ScoringUnavailable
 from .sources.base import (BudgetExhausted, Source, SourceBlocked, StaleCopy,
                            validate)
 
-log = logging.getLogger("dealbot.pipeline")
+log = logging.getLogger("curbside.pipeline")
 
 # How far under its value a PRICED listing has to be before the free-finds bin
 # will take it. `worth_grabbing` asks "would a sensible person collect this at

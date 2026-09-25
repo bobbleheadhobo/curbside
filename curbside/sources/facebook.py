@@ -50,7 +50,7 @@ from ..models import Hunt, Listing, Location, RawListing
 from .base import (BudgetExhausted, SourceBlocked,    # noqa: F401  re-exported
                    Throttled)
 
-log = logging.getLogger("dealbot.sources.facebook")
+log = logging.getLogger("curbside.sources.facebook")
 
 BASE = "https://www.facebook.com"
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "

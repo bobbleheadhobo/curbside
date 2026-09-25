@@ -22,7 +22,7 @@ from pathlib import Path
 from .images import fetch_downscaled
 from .models import Listing
 
-log = logging.getLogger("dealbot.thumbs")
+log = logging.getLogger("curbside.thumbs")
 
 
 def _key(listing_id: str) -> str:

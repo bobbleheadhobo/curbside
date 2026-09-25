@@ -34,7 +34,7 @@ from typing import Protocol, Sequence
 
 from ..models import MAX_QUERIES, Candidate, Hunt, Listing, Score, Want
 
-log = logging.getLogger("dealbot.scoring")
+log = logging.getLogger("curbside.scoring")
 
 # Anchored so the number means something. Without anchors the model drifts and a
 # threshold of 7 silently changes meaning week to week.

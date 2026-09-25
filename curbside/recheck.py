@@ -44,7 +44,7 @@ from .db import Store
 from .models import Listing
 from .sources.base import Source, SourceBlocked, StaleCopy
 
-log = logging.getLogger("dealbot.recheck")
+log = logging.getLogger("curbside.recheck")
 
 # What is worth a request: things you might drive to. `scored` is the vast
 # middle and nobody is going to look at it.

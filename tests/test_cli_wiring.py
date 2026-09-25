@@ -7,11 +7,11 @@ scheduled run died with RecursionError.
 """
 import pytest
 
-from dealbot.cli import _build_notifiers, _build_one_source, _build_scorer, _build_sources
-from dealbot.config import load
-from dealbot.db import Store
-from dealbot.notify.dashboard import DashboardNotifier
-from dealbot.notify.discord import DiscordNotifier
+from curbside.cli import _build_notifiers, _build_one_source, _build_scorer, _build_sources
+from curbside.config import load
+from curbside.db import Store
+from curbside.notify.dashboard import DashboardNotifier
+from curbside.notify.discord import DiscordNotifier
 
 CONFIG = "config.yaml"
 
@@ -63,8 +63,8 @@ def test_notify_command_costs_nothing_and_drains_the_queue(tmp_path, monkeypatch
     """Catch-up otherwise rides along with a hunt's cadence, so something stuck
     under an hourly want search waits up to an hour."""
     import shutil
-    from dealbot.cli import cmd_notify
-    from dealbot.models import Listing, Score
+    from curbside.cli import cmd_notify
+    from curbside.models import Listing, Score
     from datetime import datetime, timezone
 
     shutil.copy(CONFIG, tmp_path / "config.yaml")
@@ -90,7 +90,7 @@ def test_notify_command_costs_nothing_and_drains_the_queue(tmp_path, monkeypatch
 def test_a_paused_hunt_is_not_run(tmp_path):
     """The dashboard switch has to actually stop the work, not just hide it."""
     import shutil
-    from dealbot.cli import _hunts
+    from curbside.cli import _hunts
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
     st = Store(cfg.db_path)
@@ -109,11 +109,11 @@ def test_config_disabled_still_wins(tmp_path):
     """The database switch is an override on top of config, not a replacement."""
     from dataclasses import replace
     import shutil
-    from dealbot.cli import _hunts
+    from curbside.cli import _hunts
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
     st = Store(cfg.db_path)
-    from dealbot.config import WantHuntSpec
+    from curbside.config import WantHuntSpec
     cfg = replace(
         cfg,
         sweeps=tuple(replace(s, enabled=False) for s in cfg.sweeps),
@@ -130,7 +130,7 @@ def test_the_rubric_resolves_against_the_config_file_not_the_cwd(tmp_path, store
     criteria other than the ones in the file you edited and nothing looks
     wrong."""
     import shutil
-    from dealbot.scoring.claude_code import ClaudeCodeScorer
+    from curbside.scoring.claude_code import ClaudeCodeScorer
 
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     (tmp_path / "prompts").mkdir()
@@ -151,8 +151,8 @@ def test_the_request_budget_is_reset_once_per_pass_not_once_per_hunt(tmp_path,
     `once` against a source documented to throttle, silently, after about five
     rapid ones."""
     import shutil
-    from dealbot import cli
-    from dealbot.config import load as load_cfg
+    from curbside import cli
+    from curbside.config import load as load_cfg
 
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load_cfg(tmp_path / "config.yaml")
@@ -167,7 +167,7 @@ def test_the_request_budget_is_reset_once_per_pass_not_once_per_hunt(tmp_path,
         def parse(self, raw): return self.inner.parse(raw)
         def reset_budget(self): resets["n"] += 1
 
-    from dealbot.sources.fixture import FixtureSource
+    from curbside.sources.fixture import FixtureSource
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setattr(cli, "_build_sources", lambda c: [
@@ -194,11 +194,11 @@ def test_a_plan_hold_stops_the_judging_and_nothing_else(tmp_path, monkeypatch):
     from datetime import datetime, timezone
     from pathlib import Path
 
-    from dealbot import cli
-    from dealbot.config import load as load_cfg
-    from dealbot.recheck import RecheckResult
-    from dealbot.scoring.claude_code import RESET_7D, UTIL_7D, UTIL_AT
-    from dealbot.sources.fixture import FixtureSource
+    from curbside import cli
+    from curbside.config import load as load_cfg
+    from curbside.recheck import RecheckResult
+    from curbside.scoring.claude_code import RESET_7D, UTIL_7D, UTIL_AT
+    from curbside.sources.fixture import FixtureSource
 
     shutil.copy(CONFIG, tmp_path / "config.yaml")
     cfg = load_cfg(tmp_path / "config.yaml")
@@ -253,7 +253,7 @@ def test_the_pass_order_rotates_so_the_same_hunt_is_not_always_last(store):
     This matters more now that a starved fetch is a warning rather than an
     error: without rotation, last would mean never.
     """
-    from dealbot.cli import _rotated
+    from curbside.cli import _rotated
     hunts = ["sweep", "bookshelf", "pots", "ottoman"]
 
     seen = [_rotated(hunts, store) for _ in range(5)]
@@ -268,7 +268,7 @@ def test_the_pass_order_rotates_so_the_same_hunt_is_not_always_last(store):
 
 def test_a_dry_run_does_not_advance_the_rotation(store):
     """`--dry-run` promises to write nothing, and one settings row is a write."""
-    from dealbot.cli import _rotated
+    from curbside.cli import _rotated
     hunts = ["a", "b", "c"]
     assert _rotated(hunts, store, advance=False) == hunts
     assert _rotated(hunts, store, advance=False) == hunts
@@ -276,7 +276,7 @@ def test_a_dry_run_does_not_advance_the_rotation(store):
 
 
 def test_rotation_survives_a_single_hunt_and_a_junk_counter(store):
-    from dealbot.cli import _rotated
+    from curbside.cli import _rotated
     assert _rotated(["only"], store) == ["only"]
     store.set_setting("pass_rotation", "not a number")
     assert _rotated(["a", "b"], store) == ["a", "b"]

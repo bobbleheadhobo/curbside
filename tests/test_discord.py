@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from dealbot.db import Store
-from dealbot.models import Hunt, Listing, Score
-from dealbot.notify.discord import DiscordNotifier, build_embed
+from curbside.db import Store
+from curbside.models import Hunt, Listing, Score
+from curbside.notify.discord import DiscordNotifier, build_embed
 
 NOW = datetime.now(timezone.utc)
 
@@ -185,7 +185,7 @@ def test_the_cap_defers_rather_than_drops(rig):
 
     # The counter is NOT reset by hand between these. It used to have to be:
     # `_sent_this_run` was set once in __init__, so the "per-run" cap was really
-    # per process -- a `dealbot run` daemon builds one notifier and loops
+    # per process -- a `curbside run` daemon builds one notifier and loops
     # forever, and went permanently silent after ten messages with nothing but
     # an INFO line to show for it.
     n.notify(hunt, [])                      # nothing surfaced THIS run
@@ -229,7 +229,7 @@ def test_requirement_evidence_is_shown():
 
 
 def test_colour_and_badge_track_the_score():
-    from dealbot.notify.discord import DIM, FAIR, GOOD, HOT
+    from curbside.notify.discord import DIM, FAIR, GOOD, HOT
     assert build_embed(make_listing(), make_score(deal_score=9.5), "")["color"] == HOT
     assert build_embed(make_listing(), make_score(deal_score=7.5), "")["color"] == GOOD
     assert build_embed(make_listing(), make_score(deal_score=5.5), "")["color"] == FAIR
@@ -259,7 +259,7 @@ def test_the_embed_stays_inside_discord_limits():
 
 def _bin_with_score(store, lid, price, hunt="want:tv-stand", status="saved"):
     from datetime import datetime, timezone
-    from dealbot.models import Score
+    from curbside.models import Score
     from conftest import make_listing
     l = make_listing(lid=lid, price_cents=price)
     store.upsert_listing(l)
@@ -278,8 +278,8 @@ def test_a_saved_listing_getting_cheaper_is_announced_once(tmp_path):
     """What the append-only price history was for. Alerts only ever fired when
     a listing first reached a bin, so a saved $200 credenza falling to $120
     said nothing at all -- with every observation needed to spot it on disk."""
-    from dealbot.db import Store
-    from dealbot.pipeline import announce_price_drops
+    from curbside.db import Store
+    from curbside.pipeline import announce_price_drops
     from conftest import make_listing
     store = Store(tmp_path / "t.db")
     _bin_with_score(store, "x:1", 20000)
@@ -308,8 +308,8 @@ def test_a_saved_listing_getting_cheaper_is_announced_once(tmp_path):
 
 def test_a_nudge_down_is_not_a_price_drop(tmp_path):
     """Sellers move prices constantly; 15% is the same bar the gate uses."""
-    from dealbot.db import Store
-    from dealbot.pipeline import announce_price_drops
+    from curbside.db import Store
+    from curbside.pipeline import announce_price_drops
     from conftest import make_listing
     store = Store(tmp_path / "t.db")
     _bin_with_score(store, "x:2", 10000)
@@ -322,8 +322,8 @@ def test_a_nudge_down_is_not_a_price_drop(tmp_path):
 
 def test_a_drop_is_stamped_even_when_no_webhook_takes_it(tmp_path):
     """Otherwise the same drop re-queues itself on every future run."""
-    from dealbot.db import Store
-    from dealbot.pipeline import announce_price_drops
+    from curbside.db import Store
+    from curbside.pipeline import announce_price_drops
     from conftest import make_listing
     store = Store(tmp_path / "t.db")
     _bin_with_score(store, "x:3", 20000)
@@ -336,8 +336,8 @@ def test_a_drop_is_stamped_even_when_no_webhook_takes_it(tmp_path):
 
 
 def test_something_confirmed_sold_is_not_announced(tmp_path):
-    from dealbot.db import Store
-    from dealbot.pipeline import announce_price_drops
+    from curbside.db import Store
+    from curbside.pipeline import announce_price_drops
     from conftest import make_listing
     store = Store(tmp_path / "t.db")
     _bin_with_score(store, "x:4", 20000)
@@ -350,11 +350,11 @@ def test_something_confirmed_sold_is_not_announced(tmp_path):
 
 
 def test_the_drop_message_leads_with_the_move(tmp_path):
-    from dealbot.notify.discord import DiscordNotifier
-    from dealbot.db import Store
+    from curbside.notify.discord import DiscordNotifier
+    from curbside.db import Store
     from conftest import make_listing
     from datetime import datetime, timezone
-    from dealbot.models import Hunt, Score
+    from curbside.models import Hunt, Score
     store = Store(tmp_path / "t.db")
     posted = {}
     n = DiscordNotifier(store, wants_webhook="https://example/hook",

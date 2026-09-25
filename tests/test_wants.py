@@ -11,10 +11,10 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
-from dealbot.config import load, with_store
-from dealbot.db import Store
-from dealbot.models import Want
-from dealbot.web.app import create_app
+from curbside.config import load, with_store
+from curbside.db import Store
+from curbside.models import Want
+from curbside.web.app import create_app
 
 CONFIG = "config.yaml"
 
@@ -79,7 +79,7 @@ def test_a_want_added_on_the_web_becomes_a_hunt(app):
 
 
 def test_removing_a_want_stops_its_hunt_and_keeps_its_history(app):
-    from dealbot.models import Listing
+    from curbside.models import Listing
     client, cfg, store = app
     client.post("/wants/save", data={"name": "lamp", "description": "d",
                                      "max_price": "20", "queries": "lamp"})
@@ -209,14 +209,14 @@ def test_a_want_with_no_terms_says_so_rather_than_looking_normal(app):
     and older wants predate the rule. It has no hunt of its own, so only the
     free sweep sees it -- and the sweep searches "free", not the thing you
     asked for. That is much less than it looks like, so the row says it."""
-    from dealbot.models import Want
+    from curbside.models import Want
     client, _, store = app
     store.save_want(Want("lamp", "d", 2000, queries=()))
     assert "no search terms" in client.get("/").text
 
 
 def test_a_free_only_want_does_not_say_up_to_0(app):
-    from dealbot.models import Want
+    from curbside.models import Want
     client, _, store = app
     store.save_want(Want("kayak", "d", 0, queries=("kayak",)))
     body = client.get("/").text
@@ -227,7 +227,7 @@ def test_a_free_only_want_does_not_say_up_to_0(app):
 def test_a_want_added_to_the_file_later_still_arrives(tmp_path):
     """The seed used to be one global flag, so anything added to config.yaml
     after a database's first open never appeared and never said why."""
-    from dealbot.models import Want
+    from curbside.models import Want
     store = Store(tmp_path / "t.db")
     store.seed_wants([Want("tv-stand", "d", 25000, ("tv stand",))])
     assert [w.want.name for w in store.wants()] == ["tv-stand"]
@@ -240,7 +240,7 @@ def test_a_want_added_to_the_file_later_still_arrives(tmp_path):
 def test_but_a_deleted_want_is_still_not_resurrected(tmp_path):
     """Safe only because deleting ARCHIVES: the row stays, so the name stays
     taken and per-name seeding cannot bring it back."""
-    from dealbot.models import Want
+    from curbside.models import Want
     store = Store(tmp_path / "t.db")
     store.seed_wants([Want("lamp", "a lamp", 2000, ("lamp",))])
     store.archive_want("lamp")
@@ -250,7 +250,7 @@ def test_but_a_deleted_want_is_still_not_resurrected(tmp_path):
 
 
 def test_seeding_never_overwrites_an_edited_want(tmp_path):
-    from dealbot.models import Want
+    from curbside.models import Want
     store = Store(tmp_path / "t.db")
     store.seed_wants([Want("lamp", "from the file", 2000, ("lamp",))])
     store.save_want(Want("lamp", "edited on the phone", 9900, ("lamp",)))
@@ -349,8 +349,8 @@ def test_a_price_cap_of_zero_means_free_things_only(app):
     listings and nothing else. It is how you say "I want one of these, but only
     if someone is giving it away", and it leaves the search terms free to mean
     what they say rather than doubling as a free-only switch."""
-    from dealbot.filters import gate
-    from dealbot.models import Listing, Location
+    from curbside.filters import gate
+    from curbside.models import Listing, Location
 
     client, cfg, store = app
     r = client.post("/wants/save", follow_redirects=False,
@@ -570,9 +570,9 @@ def test_drafting_uses_the_model_the_config_names(tmp_path):
     against the daily ceiling, which is the overlapping-counters bug
     `begin_run` exists to prevent."""
     from dataclasses import replace as dc_replace
-    from dealbot.config import load
-    from dealbot.db import Store
-    from dealbot.scoring.claude_code import ClaudeCodeScorer
+    from curbside.config import load
+    from curbside.db import Store
+    from curbside.scoring.claude_code import ClaudeCodeScorer
 
     cfg = load(CONFIG)
     store = Store(tmp_path / "t.db")
@@ -612,7 +612,7 @@ def test_drafting_uses_the_model_the_config_names(tmp_path):
 def _want_with_listings(client, cfg, store, name="lamp"):
     """A want holding one of each status archiving has an opinion about."""
     from datetime import datetime, timezone
-    from dealbot.models import Listing, Score, Want
+    from curbside.models import Listing, Score, Want
     store.seed_wants((Want(name=name, description="a lamp",
                            max_price_cents=10000, queries=("lamp",)),))
     hid = f"want:{name}"
@@ -773,7 +773,7 @@ def test_nothing_to_clear_offers_no_button(app):
 def _dismiss_at(store, hunt_id, n, score, start=100):
     """`n` dismissals on `hunt_id`, each scored `score`."""
     from datetime import datetime, timezone
-    from dealbot.models import Listing, Score
+    from curbside.models import Listing, Score
     for i in range(n):
         lid = f"d:{hunt_id}:{start + i}"
         l = Listing(id=lid, source="x", source_id=str(start + i),
@@ -855,7 +855,7 @@ def test_the_nudge_is_about_one_want_not_about_you(app):
     disagreements and say nothing about any of them. The count is per hunt, so
     none of those three wants is nudged."""
     client, cfg, store = app
-    from dealbot.models import Want
+    from curbside.models import Want
     for n in ("one", "two", "three"):
         store.seed_wants((Want(name=n, description=n, max_price_cents=10000,
                                queries=(n,)),))
@@ -876,7 +876,7 @@ def test_the_nudge_is_about_one_want_not_about_you(app):
 # four brand searches that may find nothing the plain one does not.
 
 def test_a_term_past_the_cap_is_refused_and_nothing_typed_is_lost(app):
-    from dealbot.models import MAX_QUERIES
+    from curbside.models import MAX_QUERIES
     client, _, store = app
     terms = "\n".join(f"term {i}" for i in range(MAX_QUERIES + 1))
     r = client.post("/wants/save", data={
@@ -896,7 +896,7 @@ def test_a_term_past_the_cap_is_refused_and_nothing_typed_is_lost(app):
 
 def test_a_full_list_does_not_pay_to_draft_more(tmp_path):
     """Anything drafted would be thrown away, so nothing is spent drafting."""
-    from dealbot.models import MAX_QUERIES
+    from curbside.models import MAX_QUERIES
     scorer = _FakeScorer()
     client, _, _ = _app_with(tmp_path, scorer)
     r = client.post("/wants/save", headers={"X-Requested-With": "fetch"}, data={
@@ -910,7 +910,7 @@ def test_a_full_list_does_not_pay_to_draft_more(tmp_path):
 def test_drafting_stops_at_the_cap(tmp_path):
     """Typed terms first, drafted ones after, and never more than a save would
     accept -- otherwise the button hands back a form that cannot be saved."""
-    from dealbot.models import MAX_QUERIES
+    from curbside.models import MAX_QUERIES
     typed = [f"t{i}" for i in range(MAX_QUERIES - 1)]
     client, _, _ = _app_with(tmp_path, _FakeScorer(("a", "b", "c")))
     r = client.post("/wants/save", headers={"X-Requested-With": "fetch"}, data={
@@ -922,7 +922,7 @@ def test_drafting_stops_at_the_cap(tmp_path):
 def test_the_form_says_what_the_terms_cost(app):
     """A want saved before the cap keeps working, and its editor says it is
     over rather than waiting for the save to refuse it."""
-    from dealbot.models import MAX_QUERIES
+    from curbside.models import MAX_QUERIES
     client, _, store = app
     store.save_want(Want("receiver", "d", 15000,
                          tuple(f"t{i}" for i in range(MAX_QUERIES + 1))))
@@ -971,7 +971,7 @@ def test_made_the_bar_is_the_hunts_own_bar(tmp_path):
     request, rather than merely busy."""
     from datetime import datetime, timezone
     from conftest import make_listing
-    from dealbot.models import Score
+    from curbside.models import Score
     store = Store(tmp_path / "t.db")
     for n in (1, 2, 3):
         store.upsert_listing(make_listing(lid=f"x:{n}", title=f"receiver {n}"))

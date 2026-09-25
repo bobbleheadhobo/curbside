@@ -1,4 +1,4 @@
-# deal_bot configuration.
+# Curbside configuration.
 #
 # `wants` are things you actually want. `sweeps` are broad trawls (free stuff)
 # that get scored against every want plus a general "is this worth grabbing
@@ -21,12 +21,12 @@ defaults:
   free_find_min_score: 5.0   # bar for free finds -- browsing, so a lower bar
   max_results_per_run: 5     # per hunt per source per run; bounds one run
 
-db_path: data/dealbot.db
+db_path: data/curbside.db
 
-# Waking hours. Outside this window `dealbot once --due` does nothing at all --
+# Waking hours. Outside this window `curbside once --due` does nothing at all --
 # no fetching, no judging, no re-checks -- because nothing found at 3am can be
 # collected at 3am, and every hour awake is requests against two sources that
-# throttle. A bare `dealbot once` ignores the window, so you can always run one
+# throttle. A bare `curbside once` ignores the window, so you can always run one
 # by hand.
 #
 # These are STARTING values. The window is edited from /settings and lives in

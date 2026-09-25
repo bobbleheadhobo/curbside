@@ -1,8 +1,8 @@
-<!-- deal_bot scoring rubric.
+<!-- Curbside scoring rubric.
 
 Edit this file to change how the model judges listings. It is loaded at the top
 of every scoring prompt, ahead of your wants. If the file is missing or empty the
-built-in default in dealbot/scoring/base.py is used instead.
+built-in default in curbside/scoring/base.py is used instead.
 
 KEEP IT BYTE-STABLE. Prompt caching is prefix-matched, and this text is the
 prefix. An edit costs one cache miss (~3x on the next call, then back to normal);

@@ -1,7 +1,7 @@
 """Dashboard rendering of data we collect. All of this existed in the database
 and none of it was visible."""
 import pytest
-from dealbot.web.app import _sparkline
+from curbside.web.app import _sparkline
 
 
 def test_sparkline_needs_two_real_observations():
@@ -23,9 +23,9 @@ def test_sparkline_of_a_firm_seller_is_not_highlighted():
 def test_rejection_reasons_are_countable(tmp_path):
     """"118 rejected on over_price" says the cap is wrong far faster than
     reading listings one at a time."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
-    from dealbot.web.app import REJECT_REASONS_SQL
+    from curbside.db import Store
+    from curbside.models import Listing
+    from curbside.web.app import REJECT_REASONS_SQL
     s = Store(tmp_path / "t.db")
     for i, reason in enumerate(["over_price", "over_price", "too_far"]):
         l = Listing(id=f"x:{i}", source="x", source_id=str(i), title="t",
@@ -42,8 +42,8 @@ def _client(tmp_path):
     """A dashboard wired to a throwaway database."""
     import shutil
     from fastapi.testclient import TestClient
-    from dealbot.config import load
-    from dealbot.web.app import create_app
+    from curbside.config import load
+    from curbside.web.app import create_app
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     shutil.copy(root / "config.yaml", tmp_path / "config.yaml")
@@ -59,8 +59,8 @@ def test_every_view_renders_on_an_empty_database(tmp_path):
 
 def test_saved_and_near_miss_views_show_the_right_rows(tmp_path):
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -89,8 +89,8 @@ def test_saved_and_near_miss_views_show_the_right_rows(tmp_path):
 def _saved_listing(cfg, lid="x:sold", price_cents=12000, **sold):
     """One saved listing, optionally marked off the market."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
     l = Listing(id=lid, source="x", source_id=lid.split(":")[-1],
@@ -160,8 +160,8 @@ def test_the_detail_page_says_it_before_anything_you_could_act_on(tmp_path):
 def test_thumb_falls_back_to_the_source_url(tmp_path):
     """Until a local copy exists, the original still works -- for about four
     days, in Facebook's case."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     s.upsert_listing(Listing(id="x:9", source="x", source_id="9", title="t",
@@ -177,7 +177,7 @@ def test_sweeps_pause_from_settings_and_resume_from_runs(tmp_path):
     hours. It used to be the first thing on /runs, which is the page the pill
     opens to explain itself. /runs offers the way back when it matters."""
     client, cfg = _client(tmp_path)
-    from dealbot.db import Store
+    from curbside.db import Store
     s = Store(cfg.db_path)
     sweep = next(h for h in cfg.hunts if h.kind == "sweep")
 
@@ -205,9 +205,9 @@ def test_the_demo_database_populates_every_view(tmp_path):
     import shutil
     from fastapi.testclient import TestClient
     from pathlib import Path
-    from dealbot.config import load
-    from dealbot.demo import build
-    from dealbot.web.app import create_app
+    from curbside.config import load
+    from curbside.demo import build
+    from curbside.web.app import create_app
     from dataclasses import replace
 
     root = Path(__file__).resolve().parents[1]
@@ -233,7 +233,7 @@ def test_everything_pauses_from_settings_and_resumes_from_runs(tmp_path):
     sweep switch and the hours on /settings; /runs, where the pill sends you,
     says everything is paused and offers Resume."""
     client, cfg = _client(tmp_path)
-    from dealbot.db import Store
+    from curbside.db import Store
     s = Store(cfg.db_path)
 
     assert "pause all searching" in client.get("/settings").text.lower()
@@ -285,8 +285,8 @@ def test_a_later_status_change_does_not_wipe_the_dismissal_note(tmp_path):
     parameter defaults to None, so every transition erased the note explaining
     the last one. Reachable from the dashboard: dismiss with a reason, later
     save the same listing, and the reason is gone."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     s = Store(tmp_path / "t.db")
     l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
                 price_cents=0, currency="USD", url="u")
@@ -345,7 +345,7 @@ def test_the_worker_never_caches_a_page(tmp_path):
     a free sofa is still on the kerb sends someone across town for nothing."""
     from pathlib import Path
     sw = (Path(__file__).resolve().parents[1]
-          / "dealbot/web/static/sw.js").read_text()
+          / "curbside/web/static/sw.js").read_text()
     assert "'/thumb/'" in sw and "'/static/'" in sw
     # Pages are fetched and only fall back to the offline notice.
     assert "fetch(request).catch" in sw
@@ -389,7 +389,7 @@ def test_the_empty_wants_view_also_points_at_adding_one(tmp_path):
 
 def _one_run(cfg, minutes_ago, error=None):
     from datetime import datetime, timedelta, timezone
-    from dealbot.db import Store
+    from curbside.db import Store
     store = Store(cfg.db_path)
     when = (datetime.now(timezone.utc)
             - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
@@ -403,7 +403,7 @@ def test_asleep_is_not_reported_as_a_quiet_day_or_a_broken_scraper(tmp_path, mon
     """Eight hours of deliberate silence and a scraper that died on Tuesday
     look identical unless the interface says which."""
     from datetime import datetime
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     client, cfg = _client(tmp_path)
     _one_run(cfg, minutes_ago=9 * 60)
     monkeypatch.setattr(Schedule, "now",
@@ -416,7 +416,7 @@ def test_asleep_is_not_reported_as_a_quiet_day_or_a_broken_scraper(tmp_path, mon
 def test_the_first_minutes_after_waking_are_not_a_warning(tmp_path, monkeypatch):
     """Waking at noon, the last run is legitimately as old as the night."""
     from datetime import datetime
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     client, cfg = _client(tmp_path)
     _one_run(cfg, minutes_ago=9 * 60)
     monkeypatch.setattr(Schedule, "now",
@@ -430,7 +430,7 @@ def test_paused_outranks_asleep(tmp_path, monkeypatch):
     "Asleep till 12pm" over a bot that was simply off. Asleep resolves itself
     at noon; a pause does not resolve until you do something about it."""
     from datetime import datetime
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     client, cfg = _client(tmp_path)
     _one_run(cfg, minutes_ago=30)
     monkeypatch.setattr(Schedule, "now",
@@ -456,24 +456,24 @@ def test_the_card_actions_row_carries_two_labels_and_no_more(tmp_path):
     moved to the listing page, which is one tap away."""
     from pathlib import Path
     base = (Path(__file__).resolve().parents[1]
-            / "dealbot/web/templates/_card.html").read_text()
+            / "curbside/web/templates/_card.html").read_text()
     assert "btn open" not in base                    # the link-out is gone
     assert 'aria-label="Never show me things like this"' in base
     assert "white-space:nowrap" in (
         Path(__file__).resolve().parents[1]
-        / "dealbot/web/static/app.css").read_text()
+        / "curbside/web/static/app.css").read_text()
 
     client, _ = _client(tmp_path)
     # ...and the listing page still offers it.
     assert "Open on the marketplace" in (
         Path(__file__).resolve().parents[1]
-        / "dealbot/web/templates/listing.html").read_text()
+        / "curbside/web/templates/listing.html").read_text()
 
 
 def test_a_failing_fetch_still_outranks_the_schedule(tmp_path, monkeypatch):
     """Asleep is not a reason to stop reporting that the last run died."""
     from datetime import datetime
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     client, cfg = _client(tmp_path)
     _one_run(cfg, minutes_ago=30, error="HTTPError: 429")
     monkeypatch.setattr(Schedule, "now",
@@ -486,8 +486,8 @@ def test_one_listing_shows_in_exactly_one_bin(tmp_path):
     thing could be a card in Wants and a card in Free finds at once. That is
     defensible and still reads as a bug."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     store = Store(cfg.db_path)
     lst = Listing(id="x:1", source="x", source_id="1", title="A sectional",
@@ -518,8 +518,8 @@ def test_the_tab_counts_match_the_cards_on_the_page(tmp_path):
     """"12 waiting" over a list of ten reads as a bug, so the counts are
     deduplicated exactly like the bins are."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     store = Store(cfg.db_path)
     lst = Listing(id="x:2", source="x", source_id="2", title="A thing",
@@ -547,7 +547,7 @@ def test_every_section_hue_is_declared_in_both_themes(tmp_path):
     import re
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     sections = set(re.findall(r"body\[data-page=(\w+)\]\s*\{--tint", css))
     assert {"free", "saved", "skipped", "runs", "settings", "wants"} <= sections
     for page in sections:
@@ -570,7 +570,7 @@ def test_the_browser_code_is_syntactically_valid(tmp_path):
     import shutil
     import subprocess
     from pathlib import Path
-    js = Path(__file__).resolve().parents[1] / "dealbot/web/static/app.js"
+    js = Path(__file__).resolve().parents[1] / "curbside/web/static/app.js"
     node = shutil.which("node")
     if node is None:
         pytest.skip("no node to parse with")
@@ -616,7 +616,7 @@ def _hunts(n=3):
 
 
 def _sched(open_=True):
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     from datetime import datetime
     at = datetime(2026, 9, 11, 13 if open_ else 3, 0)
     s = Schedule(enabled=True, start_minute=12 * 60, end_minute=20 * 60)
@@ -631,7 +631,7 @@ def _sched(open_=True):
 def test_the_health_ladder_picks_the_most_actionable_true_fact():
     """Asleep, paused and quiet are usually all true at once, and picking the
     wrong one is how the pill starts lying -- which it has done twice."""
-    from dealbot.web.app import health
+    from curbside.web.app import health
     hunts = _hunts()
 
     # every hunt off beats everything, including a stale error and the clock
@@ -676,7 +676,7 @@ def test_the_pill_only_claims_activity_while_a_pass_is_in_flight():
     number reads as work in progress. What it has judged is a fact about the
     last hour rather than a state, so it belongs in the detail and on /runs.
     """
-    from dealbot.web.app import health
+    from curbside.web.app import health
     hunts = _hunts()
 
     live = health(_row(mins_ago=0), [], hunts, _sched(),
@@ -710,8 +710,8 @@ def test_a_listing_with_no_words_wears_an_amber_badge(tmp_path):
     """Not a fault, a caution: the seller wrote nothing, so every judgement on
     the card rests on the photographs."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     store = Store(cfg.db_path)
     for lid, desc in (("x:9", None), ("x:8", "a real description")):
@@ -786,7 +786,7 @@ def test_the_bin_queries_are_built_from_a_clause_not_from_each_other():
 
     So: each bin query must actually carry its own WHERE, and only the two that
     are bins may carry the one-row-per-listing clause."""
-    from dealbot.web.app import NEAR_MISS_SQL, ONE_BIN, QUEUE_SQL, SAVED_SQL
+    from curbside.web.app import NEAR_MISS_SQL, ONE_BIN, QUEUE_SQL, SAVED_SQL
 
     assert "WHERE m.status = ?" in QUEUE_SQL
     assert "WHERE m.status IN ('saved', 'grabbed')" in SAVED_SQL
@@ -808,7 +808,7 @@ def _run_js_harness(name):
         pytest.skip("no node to run the browser code with")
     r = subprocess.run(
         [node, str(root / "tests/js" / name),
-         str(root / "dealbot/web/static/app.js")],
+         str(root / "curbside/web/static/app.js")],
         capture_output=True, text=True, cwd=root)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "FAIL" not in r.stdout, r.stdout
@@ -852,8 +852,8 @@ def test_a_card_offers_two_destinations_and_does_not_nest_links(tmp_path):
     single <a class="card-main" href=...>, this fails."""
     import re
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -897,7 +897,7 @@ def test_a_standdown_reason_is_found_even_beside_another_warning():
     """A run can lose a detail fetch AND stand aside, and `pipeline` joins the
     two with "; ". Matching only the start of the column meant that run
     reported neither pause."""
-    from dealbot.web.app import standdown_reason
+    from curbside.web.app import standdown_reason
     assert standdown_reason("scoring skipped: 5-hour plan window at 72% "
                             "(ceiling 70%) -- standing aside") \
         == "5-hour plan window at 72% (ceiling 70%)"
@@ -918,7 +918,7 @@ def test_no_health_label_is_too_long_for_the_top_bar():
     19 is "Asleep till 12:30pm", the longest the ladder can legitimately
     produce. A new label over that budget fails here rather than on the phone.
     """
-    from dealbot.web.app import health
+    from curbside.web.app import health
     hunts = _hunts()
     cases = [
         (_row(error="boom"), hunts, hunts, _sched(open_=False), _act()),
@@ -944,8 +944,8 @@ def test_no_health_label_is_too_long_for_the_top_bar():
 
 def _judged(cfg, lid, title, hunt_id, source, score, model="sonnet"):
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     s = Store(cfg.db_path)
     l = Listing(id=lid, source=source, source_id=lid.split(":")[-1], title=title,
                 description="d", price_cents=1000, currency="USD", url="u")
@@ -975,8 +975,8 @@ def _priced_as_free(cfg, lid="facebook:9", status="scored", price_unclear=1,
     not the number.
     """
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     s = Store(cfg.db_path)
     hunt_id = hunt_id or next(h.id for h in cfg.hunts if h.kind == "sweep")
     l = Listing(id=lid, source="facebook", source_id=lid.split(":")[-1],
@@ -1018,7 +1018,7 @@ def test_a_zero_price_the_seller_contradicted_survives_a_round_trip(tmp_path):
     reach the database AND come back: the column was written and `row_to_score`
     did not read it, so everything outside the web SQL -- the Discord card most
     of all -- was handed a listing that looked ordinarily free."""
-    from dealbot.db import Store
+    from curbside.db import Store
     _, cfg = _client(tmp_path)
     hunt = next(h for h in cfg.hunts if h.kind == "sweep")
     lid = _priced_as_free(cfg, status="free_find", hunt_id=hunt.id)
@@ -1111,7 +1111,7 @@ def test_a_pass_in_flight_says_which_hunt_and_which_site(tmp_path):
     """"Looking now" in the pill, and the rest of it here. The row is bounded
     by the same hour the pill uses, so a process killed mid-pass stops being
     reported as live rather than saying it forever."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     s.start_run(type("H", (), {"id": "sweep:free-nearby"})(), "facebook")
@@ -1126,7 +1126,7 @@ def test_how_long_a_run_took_is_derived_from_the_stamps_it_already_keeps():
     """`started_at` and `finished_at` were both recorded from the first day
     and neither was ever shown. A `duration` column would be a third copy of
     a fact those two state between them, free to disagree with them."""
-    from dealbot.web.app import took
+    from curbside.web.app import took
     assert took("2026-09-16T10:00:00+00:00", "2026-09-16T10:00:42+00:00") == "42s"
     assert took("2026-09-16T10:00:00+00:00", "2026-09-16T10:01:05+00:00") == "1m 05s"
     assert took("2026-09-16T10:00:00+00:00", "2026-09-16T12:03:05+00:00") == "2h 03m"
@@ -1138,7 +1138,7 @@ def test_how_long_a_run_took_is_derived_from_the_stamps_it_already_keeps():
 
 
 def test_the_runs_page_shows_how_long_each_run_took(tmp_path):
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -1165,7 +1165,7 @@ def test_the_pill_and_runs_ask_the_gate_not_the_last_run(tmp_path):
     at 79% and nothing could be judged, and /runs said "Running" in one panel
     and "judging stands aside" in the next. They ask `judging_state` now, which
     is what the scorer itself obeys."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     s.finish_run(s.start_run(cfg.hunts[0], "x"))       # clean, nothing to judge
@@ -1191,8 +1191,8 @@ def test_the_pill_and_runs_ask_the_gate_not_the_last_run(tmp_path):
 
 def _detail(tmp_path, status="wanted"):
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -1234,7 +1234,7 @@ def test_the_detail_page_defaults_to_somewhere_real(tmp_path):
 def test_a_back_off_this_dashboard_is_refused(tmp_path):
     """`back` is now a query parameter as well as a form field, so it is
     reader-supplied and ends up in a Location header."""
-    from dealbot.web.app import _safe_back
+    from curbside.web.app import _safe_back
     for hostile in ("https://evil.test/x", "//evil.test/x", "javascript:x"):
         assert _safe_back(hostile) == "/"
     assert _safe_back("/free") == "/free"
@@ -1260,7 +1260,7 @@ def test_stats_costs_come_from_runs_not_scores(tmp_path):
     totalled $16.58: triage is saved on its score row with a zero cost and is
     only ever counted at the run level. Sum the score rows and a third of the
     money is gone."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spent(s, "want:tv-stand", "facebook", 2.00, n_scored=10)
@@ -1275,8 +1275,8 @@ def test_stats_shows_what_a_hunt_cost_against_what_it_found(tmp_path):
     """A cost on its own says nothing. The same $4 is cheap or pure waste
     depending on whether anything came back, and on the first five days of
     live data one want had spent that and saved nothing at all."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -1297,7 +1297,7 @@ def test_stats_shows_what_a_hunt_cost_against_what_it_found(tmp_path):
 def test_a_hunt_that_found_nothing_still_appears(tmp_path):
     """An inner join would hide exactly the rows worth reading: the hunts that
     cost money and matched nothing."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spent(s, "want:ghost", "facebook", 2.50, n_scored=40)
@@ -1315,7 +1315,7 @@ def test_a_hunt_that_found_nothing_still_appears(tmp_path):
 
 def test_a_deleted_want_keeps_its_spend_on_the_page(tmp_path):
     """Deleting a want archives it. What it spent is still your money."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spent(s, "want:long-gone", "facebook", 1.25, n_scored=9)
@@ -1327,7 +1327,7 @@ def test_a_deleted_want_keeps_its_spend_on_the_page(tmp_path):
 def test_a_young_database_does_not_repeat_the_same_figure_three_times(tmp_path):
     """Five days of history makes "last 7 days", "last 30 days" and "all time"
     the same number, and three identical figures read as a bug."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spent(s, "want:tv-stand", "facebook", 6.00, n_scored=20)
@@ -1339,8 +1339,8 @@ def test_the_funnel_does_not_claim_repeats_are_distinct_listings(tmp_path):
     """`n_fetched` sums per-run counts, so every run re-reads the whole feed:
     85,028 "fetched" against 1,348 listings on file. Calling that "listings
     seen" is a claim the number does not support."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spent(s, cfg.hunts[0].id, "facebook", 1.0, n_fetched=900, n_scored=3)
@@ -1400,7 +1400,7 @@ def test_the_spend_chart_flags_a_day_lost_to_quota_not_every_day():
     """Colouring any standdown painted all five live days amber, which is a
     legend that describes every bar and so says nothing. Half the day's runs
     is where the bill stops meaning what the bot would normally spend."""
-    from dealbot.web.app import _daybars
+    from curbside.web.app import _daybars
     mostly = _daybars([{"day": "2026-09-11", "usd": 2.76, "runs": 346,
                         "degraded": 295}], ceiling=10.0)
     assert "var(--warn)" in mostly
@@ -1413,7 +1413,7 @@ def test_the_spend_chart_flags_a_day_lost_to_quota_not_every_day():
 def test_a_day_the_bot_did_not_run_is_a_gap_not_a_zero():
     """A silent day and a day that found nothing are different facts, and a
     zero-height bar claims the second."""
-    from dealbot.web.app import _daybars, _fill_days
+    from curbside.web.app import _daybars, _fill_days
     filled = _fill_days([], 5)
     assert len(filled) == 5 and all(d["usd"] is None for d in filled)
     assert "<rect" not in _daybars(filled, ceiling=10.0)
@@ -1437,8 +1437,8 @@ def test_no_page_head_stat_line_is_too_long_for_a_phone(tmp_path):
     rendered words, so shortening a label fixes it and adding a fifth figure
     fails here rather than on the phone."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -1472,8 +1472,8 @@ def test_the_stage_split_matches_the_names_the_scorer_actually_writes():
     in the remainder, so the page would add up to more than was spent."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    assert ':triage"' in (root / "dealbot/pipeline.py").read_text()
-    assert '+images"' in (root / "dealbot/scoring/claude_code.py").read_text()
+    assert ':triage"' in (root / "curbside/pipeline.py").read_text()
+    assert '+images"' in (root / "curbside/scoring/claude_code.py").read_text()
 
 
 def test_the_stage_split_adds_up_to_what_was_actually_spent(tmp_path):
@@ -1483,8 +1483,8 @@ def test_the_stage_split_adds_up_to_what_was_actually_spent(tmp_path):
     harmless -- and would double-count the day they cost anything, once under
     appraisal and once inside the remainder."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     _client(tmp_path)
     s = Store(tmp_path / "t2.db")
     hunt = type("H", (), {"id": "want:x"})()
@@ -1518,7 +1518,7 @@ def test_a_back_that_only_looks_local_is_refused():
     stripped BEFORE parsing, and a backslash is normalised to a slash, so
     "/<tab>/evil.test" and "/\\evil.test" are both "//evil.test" by the time
     they reach the network."""
-    from dealbot.web.app import _safe_back
+    from curbside.web.app import _safe_back
     for hostile in ("//evil.test/x", "https://evil.test", "javascript:x",
                     "/\\evil.test/x", "/\t/evil.test", "/\r\n/evil.test", ""):
         assert _safe_back(hostile) == "/", hostile
@@ -1531,7 +1531,7 @@ def test_a_standdown_with_no_reason_does_not_report_its_own_prefix():
     """Splitting on ": " returns the whole clause when there is no separator,
     so a bare "scoring skipped" came back as its own reason and the pill read
     "Judging paused: scoring skipped"."""
-    from dealbot.web.app import standdown_reason
+    from curbside.web.app import standdown_reason
     for bare in ("scoring skipped", "scoring skipped:", "scoring skipped: "):
         assert standdown_reason(bare) == "reason not recorded", bare
     # and it still has to report the pause, not fall through and hide it
@@ -1543,7 +1543,7 @@ def test_a_standdown_with_no_reason_does_not_report_its_own_prefix():
 def _today_iso(cfg=None):
     """The user's midnight, as the page and the spend ceiling both compute it."""
     from zoneinfo import ZoneInfo
-    from dealbot.schedule import local_day_start
+    from curbside.schedule import local_day_start
     name = cfg.schedule.tz_name if cfg else None
     return local_day_start(ZoneInfo(name) if name else None)
 
@@ -1562,7 +1562,7 @@ def _spend_today(store, cfg, hunt_id, source, usd, **counts):
 def test_today_breaks_down_where_the_money_went(tmp_path):
     """The Today figure says how much. This says what on."""
     client, cfg = _client(tmp_path)
-    from dealbot.db import Store
+    from curbside.db import Store
     s = Store(cfg.db_path)
     _spend_today(s, cfg, "want:tv-stand", "facebook", 2.00,
                  n_scored=20, n_wanted=2)
@@ -1582,7 +1582,7 @@ def test_what_a_day_cost_is_one_tap_on_its_bar(tmp_path):
     links to its own day instead, and that day gets the whole page."""
     import re
     from datetime import timedelta
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spend_today(s, cfg, "want:tv-stand", "facebook", 1.23, n_scored=9)
@@ -1603,7 +1603,7 @@ def test_what_a_day_cost_is_one_tap_on_its_bar(tmp_path):
 def test_a_week_is_not_listed_twice(tmp_path):
     """Every breakdown on the page follows one period switch. It used to split
     spend by stage and by source for today, and again for all time."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     _spend_today(Store(cfg.db_path), cfg, "want:tv-stand", "facebook", 1.0,
                  n_scored=3)
@@ -1618,7 +1618,7 @@ def test_today_ignores_yesterday_evening(tmp_path):
     midnight. UTC's is 6pm in Albuquerque, so an evening's spend used to show
     up as the next morning's."""
     from datetime import timedelta
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
 
@@ -1642,7 +1642,7 @@ def test_the_stage_split_says_first_pass_not_triage(tmp_path):
 
     The three are listed in the order the money is spent, which is what "by
     stage" claims -- "First pass" sitting last read as a contradiction."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     _spend_today(Store(cfg.db_path), cfg, "sweep:free-nearby", "craigslist",
                  0.75, n_scored=4)
@@ -1662,8 +1662,8 @@ def test_the_listing_that_cost_the_most_today_is_findable(tmp_path):
     British for the same thing on a page of dollar figures, where it reads as
     a price floor rather than a cost ranking."""
     from datetime import timedelta
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     _spend_today(s, cfg, "sweep:free-nearby", "craigslist", 1.0, n_scored=2)
@@ -1697,8 +1697,8 @@ def test_a_free_judgement_is_not_listed_as_something_we_paid_for(tmp_path):
     """Triage rows carry a zero cost. A list of what money went on must not be
     padded with things that cost nothing."""
     from datetime import timedelta
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     _client(tmp_path)
     s = Store(tmp_path / "dearest.db")
     l = Listing(id="x:1", source="x", source_id="1", title="t", description=None,
@@ -1728,7 +1728,7 @@ def test_the_photo_verdict_has_three_states_not_two():
     did not appear to. It did, as a chip that showed up when they HAD been --
     so "judged on the text alone" and "asked for a look and never got one"
     were the same blank space. 207 collected scores are the second."""
-    from dealbot.web.app import photo_verdict
+    from curbside.web.app import photo_verdict
 
     checked = photo_verdict([_score_row(images_checked=1, deal_score=6.0)])
     assert checked["checked"] and not checked["asked"]
@@ -1746,7 +1746,7 @@ def test_the_score_before_the_photos_is_kept_and_shown():
     """Both rows are kept for exactly this reason: the text judgement stays
     next to the one that looked. Every sampled pair moved, and one went DOWN
     from 7.0 to 6.0 when the photos showed a corner unit."""
-    from dealbot.web.app import photo_verdict
+    from curbside.web.app import photo_verdict
     v = photo_verdict([_score_row(images_checked=1, deal_score=6.0),
                        _score_row(deal_score=7.0)])
     assert v["before"] == 7.0 and v["after"] == 6.0
@@ -1756,7 +1756,7 @@ def test_a_before_score_from_another_hunt_is_not_borrowed():
     """One listing can be judged by several hunts, and their scores answer
     different questions. A 9.0 from the free sweep is not the 'before' of a
     tv-stand appraisal."""
-    from dealbot.web.app import photo_verdict
+    from curbside.web.app import photo_verdict
     v = photo_verdict([_score_row(images_checked=1, deal_score=6.0),
                        _score_row(hunt_id="sweep:free-nearby", deal_score=9.0)])
     assert v["before"] is None
@@ -1767,8 +1767,8 @@ def _asked_and_not_looked(tmp_path, deal_score: float):
     and never did. `deal_score` decides which side of the hunt's bar it lands
     on, which is what decides WHY the photos were never bought."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -1827,7 +1827,7 @@ def test_a_stamp_is_shown_in_the_readers_hours_not_utc():
     a run at "19:50" in the table happened at 1:50pm where the user is, so
     every timestamp on the site was six hours out."""
     from zoneinfo import ZoneInfo
-    from dealbot.web.app import local_stamp
+    from curbside.web.app import local_stamp
     abq = ZoneInfo("America/Denver")
 
     assert local_stamp("2026-09-14T19:50:14+00:00", abq) == "14 Sep, 1:50pm"
@@ -1841,7 +1841,7 @@ def test_a_stamp_is_shown_in_the_readers_hours_not_utc():
 def test_a_stamp_with_no_zone_is_read_as_utc():
     """Everything this project stores is UTC. A naive one is not local time."""
     from zoneinfo import ZoneInfo
-    from dealbot.web.app import local_stamp
+    from curbside.web.app import local_stamp
     abq = ZoneInfo("America/Denver")
     assert local_stamp("2026-09-14T19:50:14", abq) == \
         local_stamp("2026-09-14T19:50:14+00:00", abq)
@@ -1850,7 +1850,7 @@ def test_a_stamp_with_no_zone_is_read_as_utc():
 def test_an_unreadable_stamp_is_shown_rather_than_swallowed():
     """Failing open: a value that will not parse is still a value, and an
     empty cell would hide that something is wrong with it."""
-    from dealbot.web.app import local_stamp
+    from curbside.web.app import local_stamp
     assert local_stamp("not a date") == "not a date"
     assert local_stamp("") == "" and local_stamp(None) == ""
 
@@ -1860,7 +1860,7 @@ def test_no_template_prints_a_raw_utc_timestamp():
     If a new table needs a date, it goes through `when()`."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    for tpl in (root / "dealbot/web/templates").glob("*.html"):
+    for tpl in (root / "curbside/web/templates").glob("*.html"):
         text = tpl.read_text()
         assert "replace('T',' ')" not in text, tpl.name
         assert 'replace("T"," ")' not in text, tpl.name
@@ -1871,8 +1871,8 @@ def test_the_listing_page_says_when_the_seller_posted_it(tmp_path):
     every listing -- and the card carried only a relative age, so the exact
     date existed nowhere but the database."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     l = Listing(id="x:1", source="x", source_id="1", title="A media console",
@@ -1885,8 +1885,8 @@ def test_the_listing_page_says_when_the_seller_posted_it(tmp_path):
 def test_a_listing_with_no_posted_date_says_so(tmp_path):
     """Craigslist only reveals it on the item page, so one that was never
     enriched genuinely has none. Silence would read as "posted today"."""
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     l = Listing(id="x:2", source="x", source_id="2", title="A media console",
@@ -1904,7 +1904,7 @@ def test_a_listing_with_no_posted_date_says_so(tmp_path):
 def _window(used, ceiling=0.70, resets_in=3600, expired=False, stale=False,
             now=None):
     import time
-    from dealbot.scoring.claude_code import PlanUsage, PlanWindow
+    from curbside.scoring.claude_code import PlanUsage, PlanWindow
     now = time.time() if now is None else now
     return PlanUsage((PlanWindow(label="5-hour", used=used, ceiling=ceiling,
                                  resets_at=now + resets_in, expired=expired,
@@ -1915,7 +1915,7 @@ def test_a_spent_window_cannot_overflow_its_own_track():
     """The wire really does report 1.01 once a window is spent, and the percent
     is written straight into a CSS width."""
     import time
-    from dealbot.web.app import plan_usage_view
+    from curbside.web.app import plan_usage_view
     now = time.time()
     w = plan_usage_view(_window(1.01, now=now), now)["windows"][0]
     assert w["pct"] == 100 and w["over"] and w["ceiling_pct"] == 70
@@ -1926,7 +1926,7 @@ def test_an_expired_reading_draws_no_bar():
     """The window it measured has rolled, so a bar would assert a fact about a
     window that no longer exists."""
     import time
-    from dealbot.web.app import plan_usage_view
+    from curbside.web.app import plan_usage_view
     now = time.time()
     w = plan_usage_view(_window(0.99, resets_in=-60, expired=True, now=now),
                         now)["windows"][0]
@@ -1936,7 +1936,7 @@ def test_an_expired_reading_draws_no_bar():
 def test_a_countdown_longer_than_a_day_is_said_in_days():
     """The seven-day window is routinely more than a day out, and "in 114h 9m"
     is correct and unreadable."""
-    from dealbot.web.app import ago_words, until_words
+    from curbside.web.app import ago_words, until_words
     assert until_words(4 * 86400 + 18 * 3600) == "in 4d 18h"
     assert until_words(-5) == "" and until_words(None) == ""
     assert ago_words(0) == "just now" and ago_words(90) == "1h ago"
@@ -1946,8 +1946,8 @@ def _record_reading(cfg, five="0.42", seven=None, minutes_ago=0, ahead=3600,
                     dated=True):
     import time
     from datetime import datetime, timedelta, timezone
-    from dealbot.db import Store
-    from dealbot.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
+    from curbside.db import Store
+    from curbside.scoring.claude_code import (RESET_5H, RESET_7D, UTIL_5H,
                                              UTIL_7D, UTIL_AT)
     s = Store(cfg.db_path)
     s.set_setting(UTIL_5H, five)
@@ -2014,8 +2014,8 @@ def test_with_nothing_read_yet_the_panel_teaches_instead_of_lying(tmp_path):
 def _saved_card(tmp_path, price_cents=25000):
     """A saved listing with a score, ready to be grabbed off /saved."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     l = Listing(id="fb:7", source="facebook", source_id="7",
@@ -2206,11 +2206,11 @@ def test_the_bot_never_messaged_a_seller_so_nothing_says_contacted():
     concept creeping back is to fail if its name reappears in the CODE. The docs
     still name it, deliberately -- this project records what it rejected and why,
     and "a status a dozen places maintained for months while holding zero rows"
-    is worth keeping written down. Only `dealbot/` must be clean."""
+    is worth keeping written down. Only `curbside/` must be clean."""
     import subprocess
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    out = subprocess.run(["grep", "-rn", "contacted", "dealbot"],
+    out = subprocess.run(["grep", "-rn", "contacted", "curbside"],
                          cwd=root, capture_output=True, text=True).stdout
     assert not out.strip(), f"`contacted` is back in the code:\n{out}"
 
@@ -2230,7 +2230,7 @@ def test_a_labelled_action_that_is_not_a_form_still_shares_the_row():
     """
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     assert ".actions .grabtoggle{flex:1 1 0;min-width:0}" in css, (
         "a bare button in .actions must declare its own flex basis, or it "
         "inherits width:100% as one and starves everything beside it")
@@ -2323,7 +2323,7 @@ def test_the_motivated_chip_does_not_repeat_the_price_line(tmp_path):
     guarded against. The word is the chip."""
     from pathlib import Path
     card = (Path(__file__).resolve().parents[1]
-            / "dealbot/web/templates/_card.html").read_text()
+            / "curbside/web/templates/_card.html").read_text()
     motivated = card.split("{% if motivated %}")[1].split("{% elif")[0]
     assert "motivated seller" in motivated
     assert "i-down" not in motivated, "the price line above already says this"
@@ -2341,7 +2341,7 @@ def test_a_flag_does_not_wear_the_colour_of_uncertainty():
     one photo"."""
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     chip = css.split(".chip.flag{")[1].split("}")[0]
     assert "var(--bad-soft)" in chip and "var(--bad)" in chip
 
@@ -2365,8 +2365,8 @@ def test_the_listing_page_colours_its_flags_too(tmp_path):
     claims 'Ethan Allen Country French Bergere' but then says the set is 'from
     JC Penny's', contradictory" is one flag that reads as two."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     l = Listing(id="x:5", source="x", source_id="5", title="A tv stand",
@@ -2402,8 +2402,8 @@ def test_the_listing_page_colours_its_flags_too(tmp_path):
 def _scored_listing(tmp_path, *scores):
     """A listing on the detail page carrying the scores given."""
     from datetime import datetime, timezone, timedelta
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     l = Listing(id="x:6", source="x", source_id="6", title="A tv stand",
@@ -2488,7 +2488,7 @@ def test_one_filled_block_per_panel(tmp_path):
     inside it became left rules: same colour coding, no shouting."""
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     for sel in (".flags li{", ".unknowns{"):
         block = css.split(sel)[1].split("}")[0]
         assert "border-left" in block, sel
@@ -2509,10 +2509,10 @@ def test_the_listing_page_does_not_borrow_a_class_that_is_already_positioned():
     taken already."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    page = (root / "dealbot/web/templates/listing.html").read_text()
+    page = (root / "curbside/web/templates/listing.html").read_text()
     assert 'class="verdict"' not in page
 
-    css = (root / "dealbot/web/static/app.css").read_text()
+    css = (root / "curbside/web/static/app.css").read_text()
     badge = css.split(".verdict{")[1].split("}")[0]
     assert "position:absolute" in badge, (
         "if the badge is no longer absolute this test has lost its point, "
@@ -2526,8 +2526,8 @@ def test_a_deleted_want_can_still_explain_itself(tmp_path):
     least useful of its three answers. That hit 254 of 1,378 listings here,
     every one judged by `want:tv-stand` before it was deleted."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score, Want
+    from curbside.db import Store
+    from curbside.models import Listing, Score, Want
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     s.seed_wants((Want(name="bookcase", description="a bookcase",
@@ -2589,8 +2589,8 @@ def test_a_listing_in_no_bin_is_not_offered_the_button(tmp_path):
     """You have not decided anything about it yet, so there is nothing to
     record having collected."""
     client, cfg = _client(tmp_path)
-    from dealbot.db import Store
-    from dealbot.models import Listing
+    from curbside.db import Store
+    from curbside.models import Listing
     s = Store(cfg.db_path)
     l = Listing(id="x:20", source="x", source_id="20", title="A thing",
                 description=None, price_cents=0, currency="USD", url="u")
@@ -2648,7 +2648,7 @@ def test_a_listing_you_own_stops_offering_to_open_the_marketplace(tmp_path):
 def test_a_run_warning_is_said_the_way_a_person_would_say_it():
     """The journal's words are for grepping. This one, from the live box, was
     printed on /runs verbatim."""
-    from dealbot.web.app import plain_error, plain_warning
+    from curbside.web.app import plain_error, plain_warning
     said = plain_warning(
         "detail fetch stopped: BudgetExhausted: request budget exhausted "
         "(25 this run); scoring skipped: 5-hour plan window at 79% "
@@ -2680,7 +2680,7 @@ def _run(id, start, end, hunt="want:a", source="facebook", **kw):
 def test_runs_are_grouped_into_the_passes_that_made_them():
     """One pass is ten runs, each starting as the last finished; passes are
     minutes apart. No pass column is needed to tell them apart."""
-    from dealbot.web.app import group_passes
+    from curbside.web.app import group_passes
     rows = [
         _run(1, "2026-09-24T17:00:00+00:00", "2026-09-24T17:01:00+00:00"),
         _run(2, "2026-09-24T17:01:00+00:00", "2026-09-24T17:02:30+00:00",
@@ -2702,7 +2702,7 @@ def test_the_status_card_leads_with_what_the_pill_says(tmp_path):
     """The pill opens /runs, which used to open on three switches. The top of
     it is now the rest of the pill's sentence, each fact with the one action
     it calls for."""
-    from dealbot.web.app import now_lines
+    from curbside.web.app import now_lines
     hunts = _hunts()
     for h in hunts:
         h.kind = "want"
@@ -2733,7 +2733,7 @@ def test_runs_puts_the_hunts_above_the_log(tmp_path):
     """The hunt list, the only per-hunt view of the backlog, was 46,000px down
     the page on a phone, under 200 run cards. The log is ten passes now, with
     the rest one tap away."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     for _ in range(3):
@@ -2751,14 +2751,14 @@ def test_every_cadence_is_set_in_one_place(tmp_path):
     """The sweep's cadence was on /settings and each want's on its own editor.
     One form now sets them all; a field for a hunt that does not exist is
     ignored rather than written."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     form = {f"iv:{h.id}": "120" for h in cfg.hunts}
     form["iv:want:nobody"] = "15"
     r = client.post("/settings/intervals", data=form, follow_redirects=False)
     assert r.status_code == 303
-    from dealbot.config import with_store
+    from curbside.config import with_store
     assert {h.interval_minutes for h in with_store(cfg, s).hunts} == {120}
     assert s.get_setting("hunt_interval:want:nobody") is None
     page = client.get("/settings").text
@@ -2772,8 +2772,8 @@ def test_each_limit_saves_without_touching_the_others(tmp_path):
     also resubmitted three you had not touched. Each has its own form now,
     and the endpoint leaves alone any field it is not sent."""
     import re
-    from dealbot.config import with_store
-    from dealbot.db import Store
+    from curbside.config import with_store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     page = client.get("/settings").text
     assert len(re.findall(r'<form[^>]*action="/settings/tuning"', page)) == 4
@@ -2815,7 +2815,7 @@ def test_the_grey_text_is_readable_on_every_surface_in_both_themes():
     from the stylesheet, so a later token edit cannot slip back under."""
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     for start in (":root{", ":root[data-theme=dark]{"):
         t = _tokens(css, start)
         for fg in ("dim", "faint"):
@@ -2828,7 +2828,7 @@ def test_the_grey_text_is_readable_on_every_surface_in_both_themes():
 def test_runs_all_pages_by_fifty_and_filters_on_the_page(tmp_path):
     """200 runs as stacked cards were 42,719px on a phone. Fifty a page, a
     compact line each on a phone, and the hunt filter on the page itself."""
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     hunt = cfg.hunts[0]
@@ -2856,7 +2856,7 @@ def test_runs_shows_five_judged_and_folds_the_rest(tmp_path):
 
 
 def test_the_card_says_the_last_pass_as_an_age_like_the_pill(tmp_path):
-    from dealbot.db import Store
+    from curbside.db import Store
     client, cfg = _client(tmp_path)
     s = Store(cfg.db_path)
     s.finish_run(s.start_run(cfg.hunts[0], "facebook"))
@@ -2869,8 +2869,8 @@ def test_the_card_says_the_last_pass_as_an_age_like_the_pill(tmp_path):
 def _hunt_fixture(cfg):
     """One want hunt holding a listing in each state worth telling apart."""
     from datetime import datetime, timezone
-    from dealbot.db import Store
-    from dealbot.models import Listing, Score
+    from curbside.db import Store
+    from curbside.models import Listing, Score
     s = Store(cfg.db_path)
     hunt = next(h for h in cfg.hunts if h.kind == "want")
     def put(lid, title, status, score=None, reason=None):
@@ -2981,7 +2981,7 @@ def test_every_page_colour_is_a_colour_not_a_grey():
     import re
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     tints = re.findall(r"body\[data-page=(\w+)\]\s*\{--tint:(#[0-9a-fA-F]{6})", css)
     assert {p for p, _ in tints} >= {"free", "saved", "skipped", "runs",
                                      "settings", "wants"}
@@ -3004,7 +3004,7 @@ def test_no_page_colour_borrows_a_state_colour():
     import re
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     state = {c.lower() for c in re.findall(
         r"--(?:warn|bad)(?:-soft)?:\s*(#[0-9a-fA-F]{6})", css)}
     tints = re.findall(
@@ -3024,7 +3024,7 @@ def test_settings_figures_match_the_pages_they_point_at():
     import re
     from pathlib import Path
     css = (Path(__file__).resolve().parents[1]
-           / "dealbot/web/static/app.css").read_text()
+           / "curbside/web/static/app.css").read_text()
     blocks = re.findall(r"^(.*?)body\[data-page=(\w+)\]\s*\{([^}]*)\}", css, re.M)
     by_theme = {}
     for prefix, page, body in blocks:

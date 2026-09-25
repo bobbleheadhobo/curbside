@@ -10,9 +10,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from dealbot import schedule as sched_mod
-from dealbot.db import Store
-from dealbot.schedule import Schedule, ScheduleDefaults, fmt_clock, fmt_hhmm, parse_hhmm
+from curbside import schedule as sched_mod
+from curbside.db import Store
+from curbside.schedule import Schedule, ScheduleDefaults, fmt_clock, fmt_hhmm, parse_hhmm
 
 
 def at(hour, minute=0):
@@ -122,8 +122,8 @@ def _run_count(cfg):
 def test_a_timer_tick_outside_the_window_does_nothing_at_all(tmp_path, monkeypatch):
     """Not "fetches but does not judge" -- nothing. Unlike the quota pause,
     this one stops collecting too, so it must leave no runs row behind."""
-    from dealbot.cli import cmd_once
-    from dealbot.config import load
+    from curbside.cli import cmd_once
+    from curbside.config import load
 
     monkeypatch.setattr(Schedule, "now", lambda self: at(3))
     args = _args(tmp_path)
@@ -134,8 +134,8 @@ def test_a_timer_tick_outside_the_window_does_nothing_at_all(tmp_path, monkeypat
 def test_a_hand_run_ignores_the_window(tmp_path, monkeypatch):
     """`--due` is the timer. A person at a keyboard asking for a pass gets one,
     because refusing would be obstinate rather than thrifty."""
-    from dealbot.cli import cmd_once
-    from dealbot.config import load
+    from curbside.cli import cmd_once
+    from curbside.config import load
 
     monkeypatch.setattr(Schedule, "now", lambda self: at(3))
     args = _args(tmp_path, due=False)
@@ -152,7 +152,7 @@ def test_the_hours_control_says_how_long_the_window_actually_is():
     see: a control the user misreads is a control that lies.
     """
     from zoneinfo import ZoneInfo
-    from dealbot.schedule import Schedule
+    from curbside.schedule import Schedule
     tz = ZoneInfo("America/Denver")
 
     wrapped = Schedule(enabled=True, start_minute=23 * 60, end_minute=20 * 60, tz=tz)
@@ -179,10 +179,10 @@ def test_the_settings_page_shows_the_span(tmp_path):
     """It has to reach the page, not just exist on the object."""
     import shutil
     from fastapi.testclient import TestClient
-    from dealbot.config import load
-    from dealbot.db import Store
-    from dealbot.web.app import create_app
-    from dealbot import schedule as sched_mod
+    from curbside.config import load
+    from curbside.db import Store
+    from curbside.web.app import create_app
+    from curbside import schedule as sched_mod
 
     shutil.copy("config.yaml", tmp_path / "config.yaml")
     cfg = load(tmp_path / "config.yaml")
@@ -203,7 +203,7 @@ def test_a_day_starts_where_the_user_is_not_where_utc_is():
     handed the bot a second full allowance for the rest of it."""
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
-    from dealbot.schedule import local_day_start
+    from curbside.schedule import local_day_start
 
     abq = ZoneInfo("America/Denver")
     # 10:25 on a Monday morning, which is when this was noticed.
@@ -221,7 +221,7 @@ def test_a_day_starts_where_the_user_is_not_where_utc_is():
 def test_the_day_boundary_follows_daylight_saving():
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
-    from dealbot.schedule import local_day_start
+    from curbside.schedule import local_day_start
 
     abq = ZoneInfo("America/Denver")
     summer = local_day_start(abq, datetime(2026, 7, 1, 20, 0, tzinfo=timezone.utc))
@@ -237,6 +237,6 @@ def test_no_timezone_falls_back_to_the_machine_rather_than_to_utc():
     is one running on the machine's clock, which is what it did before the
     zone was configurable at all."""
     from datetime import datetime, timezone
-    from dealbot.schedule import local_day_start
+    from curbside.schedule import local_day_start
     now = datetime(2026, 9, 14, 16, 25, tzinfo=timezone.utc)
     assert local_day_start(None, now).astimezone().hour == 0

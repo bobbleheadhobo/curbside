@@ -5,14 +5,14 @@ you are changing what it looks like.
 
 ## Get a database to work against, first
 
-**Do not develop against `data/dealbot.db`.** A timer writes to it every fifteen
+**Do not develop against `data/curbside.db`.** A timer writes to it every fifteen
 minutes, its lists hold a handful of rows, nothing has ever been saved, and half
 the views render empty. You will design against the wrong thing and fight a
 moving target.
 
 ```bash
-.venv/bin/python -m dealbot.cli seed-demo
-.venv/bin/python -m dealbot.cli --config config.demo.yaml serve --port 8478
+.venv/bin/python -m curbside.cli seed-demo
+.venv/bin/python -m curbside.cli --config config.demo.yaml serve --port 8478
 ```
 
 That is offline, free, deterministic, and repeatable — fixture source, stub
@@ -38,7 +38,7 @@ Re-run `seed-demo` any time; it rebuilds from scratch.
 
 **Restart the server after touching Python. Jinja will lie to you.** Templates
 are re-read on every request, but uvicorn does not reload `app.py`. A
-long-running `dealbot serve` therefore shows your new templates running against
+long-running `curbside serve` therefore shows your new templates running against
 the *old* module: context variables silently render empty and new routes 404,
 while the page looks broadly right. This bit twice in one session, once on the
 demo server and once on production, where `/skipped` had been 404ing from the
@@ -47,7 +47,7 @@ nav for hours. `systemctl --user restart curbside-web` after any Python change.
 ## Layout
 
 ```
-dealbot/web/
+curbside/web/
   app.py            routes and the SQL behind them
   templates/
     base.html       shell, nav, all CSS, the icon sprite, the paused banner

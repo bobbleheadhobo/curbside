@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from dealbot.models import Location
-from dealbot.sources.craigslist import (CraigslistSource, SourceBlocked,
+from curbside.models import Location
+from curbside.sources.craigslist import (CraigslistSource, SourceBlocked,
                                         StaleCopy)
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures/craigslist"
@@ -138,7 +138,7 @@ def test_the_description_arrives_as_text_not_html(src, detail_payload, stub_list
     (None, None),
 ])
 def test_markup_is_taken_out_but_the_words_are_kept(body, want):
-    from dealbot.sources.craigslist import _plain_text
+    from curbside.sources.craigslist import _plain_text
     assert _plain_text(body) == want
 
 
@@ -201,7 +201,7 @@ def test_a_search_that_cannot_finish_is_never_started(src, monkeypatch):
     """Same rule as Facebook's: nothing is spent on a search whose results
     would be thrown away. A free sweep is one category browse, whatever its
     queries say."""
-    from dealbot.sources.base import BudgetExhausted
+    from curbside.sources.base import BudgetExhausted
     asked = []
     monkeypatch.setattr(src, "_get", lambda *a, **k: asked.append(a) or {})
     src.max_requests, src._requests_made = 60, 58
@@ -302,7 +302,7 @@ def test_the_stamp_survives_a_round_trip_through_the_store(src, stub_listing,
     Anything carrying state from the store to a source belongs in a column and
     in `row_to_listing`, and the test has to go through both.
     """
-    from dealbot.db import Store
+    from curbside.db import Store
     store = Store(tmp_path / "t.db")
     try:
         monkeypatch.setattr(src, "_get", lambda *a, **k: _payload(2000, 125))

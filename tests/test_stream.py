@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dealbot.scoring.stream import extract, parse_events
+from curbside.scoring.stream import extract, parse_events
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/streams/minimal-result.jsonl"
 

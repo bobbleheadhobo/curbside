@@ -10,9 +10,9 @@ from dataclasses import replace
 import pytest
 from conftest import make_listing
 
-from dealbot.db import Store
-from dealbot.recheck import availability, recheck
-from dealbot.sources.base import SourceBlocked
+from curbside.db import Store
+from curbside.recheck import availability, recheck
+from curbside.sources.base import SourceBlocked
 
 
 @pytest.fixture
@@ -235,13 +235,13 @@ def test_a_missing_facebook_payload_never_retires_anything():
     `due_for_recheck` skips anything stamped, and `mark_seen` will not un-gone
     it -- so reading a throttle as "removed" quietly emptied a bin of things
     the user had saved, permanently."""
-    from dealbot.recheck import availability
+    from curbside.recheck import availability
     assert availability(None, "facebook") == "unknown"
     assert availability(None, "craigslist") == "removed"
 
 
 def test_positive_evidence_still_retires():
-    from dealbot.recheck import availability
+    from curbside.recheck import availability
     from conftest import make_listing
     assert availability(make_listing(raw={"is_sold": True}), "facebook") == "sold"
     assert availability(make_listing(raw={"is_live": False}), "facebook") == "removed"
@@ -252,7 +252,7 @@ class _Blocked:
     """A source that is out of request budget."""
     name = "facebook"
     def detail(self, listing):
-        from dealbot.sources.base import SourceBlocked
+        from curbside.sources.base import SourceBlocked
         raise SourceBlocked("budget exhausted")
 
 
@@ -281,8 +281,8 @@ def test_one_exhausted_source_does_not_starve_the_others(tmp_path):
     """recheck runs last and shares the pass's single request budget, so
     Facebook is routinely spent by the sweep before this. Breaking outright
     skipped every Craigslist listing queued behind it."""
-    from dealbot.db import Store
-    from dealbot.recheck import recheck
+    from curbside.db import Store
+    from curbside.recheck import recheck
     store = Store(tmp_path / "t.db")
     _bin_listing(store, "facebook:1", "facebook", ["want:tv-stand"])
     _bin_listing(store, "craigslist:2", "craigslist", ["want:tv-stand"])
@@ -297,8 +297,8 @@ def test_one_exhausted_source_does_not_starve_the_others(tmp_path):
 def test_a_listing_in_two_bins_is_only_asked_about_once(tmp_path):
     """One row per (hunt, listing), so a listing matched by two hunts was two
     requests for one answer -- against the very budget above."""
-    from dealbot.db import Store
-    from dealbot.recheck import recheck
+    from curbside.db import Store
+    from curbside.recheck import recheck
     store = Store(tmp_path / "t.db")
     _bin_listing(store, "craigslist:9", "craigslist",
                  ["want:tv-stand", "sweep:free-nearby"])

@@ -1,13 +1,13 @@
 """Thumbnail cache. No network: the fetch is replaced with a real PNG on disk.
 
-The fetch itself lives in `dealbot.images.fetch_downscaled`, shared with the
+The fetch itself lives in `curbside.images.fetch_downscaled`, shared with the
 vision pass, so that is what these patch."""
 from pathlib import Path
 
 import pytest
 
-from dealbot.models import Listing
-from dealbot.thumbs import ThumbnailStore
+from curbside.models import Listing
+from curbside.thumbs import ThumbnailStore
 
 FIXTURE_PNG = Path(__file__).resolve().parents[1] / "fixtures/images/3101-0.png"
 
@@ -29,7 +29,7 @@ def fake_get(monkeypatch):
         def __enter__(self): return self
         def __exit__(self, *a): return False
 
-    monkeypatch.setattr("dealbot.images.requests.get", lambda *a, **k: Resp())
+    monkeypatch.setattr("curbside.images.requests.get", lambda *a, **k: Resp())
 
 
 def test_a_thumbnail_is_downscaled_and_stored(tmp_path, fake_get):
@@ -55,7 +55,7 @@ def test_an_unreachable_image_never_breaks_a_run(tmp_path, monkeypatch):
     """A listing whose photo 404s is still a perfectly good listing."""
     def boom(*a, **k):
         raise OSError("connection reset")
-    monkeypatch.setattr("dealbot.images.requests.get", boom)
+    monkeypatch.setattr("curbside.images.requests.get", boom)
     assert ThumbnailStore(tmp_path).store(listing()) is None
 
 

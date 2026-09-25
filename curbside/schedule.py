@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone, tzinfo
 
-log = logging.getLogger("dealbot.schedule")
+log = logging.getLogger("curbside.schedule")
 
 SETTING_ENABLED = "schedule.enabled"
 SETTING_START = "schedule.start"
