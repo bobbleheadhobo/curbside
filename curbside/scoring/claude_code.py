@@ -42,6 +42,7 @@ from ..models import MAX_QUERIES, Candidate, Hunt, Score
 from .base import (APPRAISE_INSTRUCTION, SUGGEST_INSTRUCTION, SUGGEST_SYSTEM,
                    TRIAGE_INSTRUCTION, TriageResult, build_system_prompt,
                    load_rubric, render_listing, render_want_for_suggestion)
+from .model_names import learn_model
 from .stream import extract, parse_events
 
 log = logging.getLogger("curbside.scoring")
@@ -483,6 +484,9 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable(
                 f"{facts.terminal_reason}: {facts.text[:300]}")
 
+        # Every kind of call, drafting included, so the settings page learns a
+        # new model from whichever call meets it first.
+        learn_model(self.store, model, facts.model)
         return facts
 
     # --- coercing model output ------------------------------------------------
@@ -565,6 +569,7 @@ class ClaudeCodeScorer:
             # BOTH attempts, so a retry that worked still reports what the
             # first one cost.
             cache_read_tokens=facts.cache_read_tokens, cost_usd=cost_usd,
+            resolved_model=facts.model,
         )
 
     # How many drafted terms are worth having. Each one is a whole search
@@ -733,11 +738,13 @@ class ClaudeCodeScorer:
         kept: list[Candidate] = []
         notes: dict[str, str] = {}
         cost = tin = tout = 0.0
+        resolved = None
         batch = self.cfg.batch_size
 
         def so_far() -> TriageResult:
             return TriageResult(kept, notes, cost_usd=cost,
-                                input_tokens=int(tin), output_tokens=int(tout))
+                                input_tokens=int(tin), output_tokens=int(tout),
+                                resolved_model=resolved)
 
         system = self._system(hunt)
         for i in range(0, len(candidates), batch):
@@ -760,6 +767,7 @@ class ClaudeCodeScorer:
             cost += facts.cost_usd
             tin += facts.input_tokens
             tout += facts.output_tokens
+            resolved = facts.model or resolved
 
             verdicts = {v.get("id"): v for v in self._json_objects(facts.text)}
             if not verdicts:

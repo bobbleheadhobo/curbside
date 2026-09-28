@@ -391,6 +391,8 @@ def cmd_run(args) -> int:
             # for a week should not be running last week's hunts to last
             # week's hours.
             cfg = config_mod.with_store(cfg, store)
+            if hasattr(scorer, "cfg"):
+                scorer.cfg = cfg.scorer         # the model chosen on /settings
             sched = schedule_mod.load(store, cfg.schedule)
             if not sched.is_open():
                 if not asleep:

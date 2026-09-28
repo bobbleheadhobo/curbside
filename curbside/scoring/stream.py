@@ -24,6 +24,11 @@ against recorded streams. Every rule here was measured, not assumed:
     top-level one belongs to whichever window tripped the threshold; each
     window's own sits in `unifiedWindows.<name>.resetsAt`. Reading the top one
     as the five-hour window's expiry dates a reading against the wrong clock.
+  * The model that answered is `message.model` on the LAST main-loop
+    `assistant` event (no `parent_tool_use_id`). Never `modelUsage` from the
+    result: it also lists Claude Code's own background Haiku calls, so a
+    Sonnet run would read as Haiku. Errors carry "<synthetic>", so only a
+    `claude-` ID counts.
 """
 from __future__ import annotations
 
@@ -46,6 +51,7 @@ class StreamFacts:
     cache_creation_tokens: int = 0
     duration_ms: int = 0
     session_id: str | None = None
+    model: str | None = None            # the ID that answered: claude-sonnet-5-5
     # rate limits (newest snapshot)
     rate_limit_status: str | None = None
     rate_limit_type: str | None = None
@@ -101,6 +107,11 @@ def extract(events: Iterable[dict[str, Any]]) -> StreamFacts:
 
         if etype == "system" and ev.get("subtype") == "api_retry":
             facts.api_retries += 1
+
+        elif etype == "assistant" and not ev.get("parent_tool_use_id"):
+            m = (ev.get("message") or {}).get("model")
+            if isinstance(m, str) and m.startswith("claude-"):
+                facts.model = m
 
         elif etype == "rate_limit_event":
             info = ev.get("rate_limit_info", ev)

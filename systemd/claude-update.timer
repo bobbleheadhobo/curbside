@@ -1,0 +1,13 @@
+[Unit]
+Description=Update Claude Code every 8 hours
+
+[Timer]
+# The model aliases only move when Claude Code does. Every 8 hours gets a new
+# model into the bot within a working day; once a day missed one by ~17 hours.
+OnCalendar=*-*-* 04,12,20:00 America/Denver
+RandomizedDelaySec=15min
+# Catch up on the next boot if the machine was off at a scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

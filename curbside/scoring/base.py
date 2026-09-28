@@ -257,6 +257,7 @@ class TriageResult:
     cost_usd: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    resolved_model: str | None = None   # the ID that answered the last chunk
 
 
 class Scorer(Protocol):

@@ -88,6 +88,7 @@ def test_an_interruption_hands_back_appraisals_already_paid_for(scorer, monkeypa
             text = ('{"match":"no","deal_score":3,"worth_grabbing":true,'
                     '"reasoning":"ok"}')
             input_tokens = output_tokens = cache_read_tokens = 0
+            model = None
             cost_usd = 0.01
         return F()
 
@@ -192,6 +193,7 @@ def test_a_wild_deal_score_is_clamped(scorer, monkeypatch):
     class F:
         text = '{"match":"yes","deal_score":"99","est_value_usd":"$1,200"}'
         input_tokens = output_tokens = cache_read_tokens = 0
+        model = None
         cost_usd = 0.0
     monkeypatch.setattr(sc, "_invoke", lambda *a, **k: F())
     monkeypatch.setattr(sc, "check_available", lambda: None)
@@ -379,6 +381,26 @@ def test_each_reading_is_stored_with_its_own_expiry(scorer, monkeypatch):
     assert store.get_setting(RESET_7D) == "1789160400"     # its own, not 5h's
 
 
+def test_every_call_teaches_the_settings_page_its_model(scorer, monkeypatch):
+    """Learned in `_invoke`, so drafting and the image pass count too. Only
+    for the family the call was launched as: an Opus run that fell back to
+    Sonnet must not relabel Opus."""
+    from curbside.scoring.model_names import seen_models
+    sc, store = scorer
+    stream = (Path(__file__).resolve().parents[1]
+              / "fixtures/streams/minimal-result.jsonl").read_text()
+
+    class Finished:
+        stdout, stderr, returncode = stream, "", 0
+
+    monkeypatch.setattr("curbside.scoring.claude_code.subprocess.run",
+                        lambda *a, **k: Finished())
+    assert sc._invoke("system", "user", "opus").model == "claude-sonnet-5"
+    assert seen_models(store) == {}
+    sc._invoke("system", "user", "sonnet")
+    assert seen_models(store) == {"sonnet": "claude-sonnet-5"}
+
+
 def test_no_reading_at_all_is_not_a_blocker(scorer, monkeypatch):
     sc, _ = scorer
     monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
@@ -440,6 +462,7 @@ def _cands(n):
 
 class _Facts:
     input_tokens = output_tokens = cache_read_tokens = 0
+    model = None
     cost_usd = 0.01
 
     def __init__(self, text):
@@ -562,6 +585,7 @@ def test_spend_on_an_unreadable_appraisal_still_reaches_the_run(scorer, monkeypa
         class F:
             text = "I am afraid I cannot do that"     # never parses, so it retries
             input_tokens = output_tokens = cache_read_tokens = 0
+            model = None
             cost_usd = 0.02
         return F()
 
@@ -595,6 +619,7 @@ def test_a_retry_that_works_reports_what_both_attempts_cost(scorer, monkeypatch)
                     '{"match":"no","deal_score":3,"worth_grabbing":true,'
                     '"reasoning":"ok"}')
             input_tokens = output_tokens = cache_read_tokens = 0
+            model = None
             cost_usd = 0.02
         return F()
 

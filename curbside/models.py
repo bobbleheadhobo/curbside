@@ -336,6 +336,10 @@ class Score:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cost_usd: float = 0.0
+    # The model ID that actually answered ("claude-sonnet-5-5"), read from the
+    # stream. `model` is the family it was launched as, which is all a stored
+    # score had before this and all a stub or a triage drop may have.
+    resolved_model: str | None = None
 
 
 @dataclass(frozen=True)

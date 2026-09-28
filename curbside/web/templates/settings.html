@@ -119,6 +119,28 @@
 </div>
 {% endif %}
 
+{# Stored as a family, so a Claude Code update moves it to the newest model
+   with nothing to change here. #}
+<div class="panel" id="model" style="margin-bottom:18px">
+  <h2>Model</h2>
+  <form method="post" action="/settings/model" data-inplace="#model"
+        data-toast="Saved.">
+    <input type="hidden" name="back" value="/settings">
+    <div class="field">
+      <label class="lbl" for="m-family">Judges every listing</label>
+      <select id="m-family" name="model">
+        {% for fam, label in models.choices %}
+        <option value="{{ fam }}" {% if fam == models.current %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">Always the newest version. Sonnet costs least here.
+        {%- if models.claude_version %} Claude Code {{ models.claude_version }},
+        updated every 8 hours.{% endif %}</p>
+    </div>
+    <div class="formactions"><button class="primary">Save</button></div>
+  </form>
+</div>
+
 {# The four numbers worth a thumb. Each one says what it is currently costing,
    because a threshold you cannot see the effect of is one you guess at. #}
 {# Each number saves on its own. One Save under all four meant changing the

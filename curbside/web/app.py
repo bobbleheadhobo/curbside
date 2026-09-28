@@ -25,6 +25,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import config as config_mod
 from .. import schedule as schedule_mod
+from ..scoring import model_names
 from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL,
                                    JudgingState, PlanUsage, judging_state,
                                    read_plan_usage)
@@ -994,8 +995,29 @@ def health(row, paused, hunts, sched, activity, judging=None) -> dict:
                        f"Nothing new to judge in the last hour. {detail}")}
 
 
+def _claude_version(claude_bin: str) -> str | None:
+    """The Claude Code build the scorer runs, from where its symlink points
+    (~/.local/share/claude/versions/2.1.284). No subprocess on a page load;
+    None where the install is not laid out that way."""
+    import shutil
+    try:
+        name = Path(shutil.which(claude_bin) or claude_bin).resolve().name
+    except OSError:
+        return None
+    return name if re.fullmatch(r"\d+(\.\d+)+", name) else None
+
+
+def _score_model(score: dict) -> str:
+    """What judged a score row, as a person would say it. Older rows only know
+    the family they were launched as."""
+    if resolved := score.get("resolved_model"):
+        return model_names.model_name(resolved)
+    return score["model"]
+
+
 TEMPLATES.env.globals.update(status_label=status_label,
-                             reason_label=reason_label)
+                             reason_label=reason_label,
+                             score_model=_score_model)
 
 
 def create_app(base_cfg: Config, scorer=None) -> FastAPI:
@@ -1582,6 +1604,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             # number here goes stale the moment a want is added.
             "combos": len([h for h in cfg.hunts if h.id not in off]) * len(cfg.sources),
         }
+        # Labelled with the newest version a run has reported, so the list says
+        # "Sonnet 5.5" once one has run on it and just "Sonnet" before.
+        seen = model_names.seen_models(store)
+        models = {"current": cfg.scorer.appraise_model,
+                  "choices": [(f, model_names.model_name(seen.get(f, f)))
+                              for f in model_names.MODEL_FAMILIES],
+                  "claude_version": _claude_version(cfg.scorer.claude_bin)}
         # Every hunt's cadence in one list. The sweep's was here and each
         # want's was on its own editor, so "how often does it search" had two
         # answers in two places.
@@ -1590,7 +1619,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             request, cfg=cfg, sched=sched, n_wants=len(store.wants()),
             sweeps=sweeps, cadence=cadence,
             intervals=INTERVAL_CHOICES, ilabels=dict(INTERVAL_CHOICES),
-            err=err, tuning=tuning,
+            err=err, tuning=tuning, models=models,
             start=schedule_mod.fmt_hhmm(sched.start_minute),
             end=schedule_mod.fmt_hhmm(sched.end_minute)))
 
@@ -1607,6 +1636,19 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             store, enabled=enabled == "1",
             start_minute=current.start_minute if start_m is None else start_m,
             end_minute=current.end_minute if end_m is None else end_m)
+        return _answer(request, back)
+
+    @app.post("/settings/model")
+    def save_model(request: Request, model: str = Form(""),
+                   back: str = Form("/settings")):
+        """The family every judgement runs on. Stored as the alias, never an
+        ID, so a Claude Code update moves it to the newest model by itself."""
+        fam = model_names.resolve_model(model)
+        if fam is None:
+            if request.headers.get("x-requested-with") == "fetch":
+                return {"ok": False, "error": "Pick one of the three."}
+            return _answer(request, back)
+        store.set_setting(model_names.MODEL_SETTING, fam)
         return _answer(request, back)
 
     @app.post("/settings/tuning")
@@ -1761,6 +1803,10 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         """
         if scorer is None or not hasattr(scorer, "suggest_queries"):
             return ()
+        # Built once at startup, so it would draft on whatever model was
+        # chosen then. The live one is the model the poller keeps warm.
+        if hasattr(scorer, "cfg"):
+            scorer.cfg = _live().scorer
         try:
             return tuple(scorer.suggest_queries(name, description, requires))
         except Exception as exc:                           # noqa: BLE001

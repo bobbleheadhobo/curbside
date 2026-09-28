@@ -107,3 +107,7 @@ def test_overage_is_sticky_across_the_run():
         {"type": "rate_limit_event", "rate_limit_info": {"isUsingOverage": False}},
     ])
     assert f.ever_used_overage
+
+
+def test_the_real_capture_says_which_model_answered():
+    assert _facts().model == "claude-sonnet-5"

@@ -60,7 +60,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 615 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 643 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -146,6 +146,9 @@ from the dashboard instead:
 * **the blocked words** — `hunt_exclude:<id>`, also seeded once
 * **the tuned limits** — the wants bar, the free bar, the batch cap, the
   radius and the image budget, in `settings` rows keyed `tune:<name>`
+* **the model** — a family (`haiku`/`sonnet`/`opus`) in `scorer_model`. It
+  replaces all three `*_model` settings, drafting included, because the
+  harness cache is per model (see "Cheap models" below)
 
 `Store.TUNING` carries each of those as `(cast, floor, ceiling, destination)`,
 and `config.with_store` applies them generically from it, so adding a sixth is
@@ -153,7 +156,7 @@ one line there plus its form field. Without the destination written down it was
 a hand-written `replace` per landing place, in a second file, with nothing
 connecting the two.
 
-The first, second, fourth and fifth live on `/settings`. The wants are edited
+The first, second, fourth, fifth and sixth live on `/settings`. The wants are edited
 on `/`,
 in a panel folded away above the cards, because that page is the list's output
 and a gear reads as configuration. `app.MANAGE_URL` is the one place that link
@@ -381,6 +384,15 @@ where sonnet spent 40, thinking and padding around a JSON object rather than
 just returning it. Measured: haiku cold $0.0197, haiku warm $0.0050, sonnet warm
 $0.0030. **Introducing a second model for an infrequent call is usually a cost
 increase**, whatever the price card says.
+
+**Pass the family, never a pinned model ID.** `--model sonnet` is an alias
+Claude Code resolves to the newest Sonnet, and `claude-update.timer` keeps
+Claude Code current so the alias moves when a model ships. A pinned
+`claude-sonnet-5` in `config.yaml` is read as `sonnet` at load. What actually
+answered comes from the stream (`StreamFacts.model`, the last main-loop
+`assistant` event, never `modelUsage`, which lists Claude Code's own Haiku
+calls) onto `scores.resolved_model`, and `model_names.learn_model` keeps the
+newest per family in `model_seen:<family>` to label the settings dropdown.
 
 **The dashboard can spend quota, but only when asked.** `cmd_serve` hands
 `create_app` a scorer for exactly one job: the *Suggest terms* button on the

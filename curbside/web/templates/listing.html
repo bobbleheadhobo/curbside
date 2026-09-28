@@ -139,7 +139,7 @@
             {% else %}<svg class="i" aria-hidden="true"><use href="#i-check"/></svg>{% endif %}
             {{latest.matched_want}}</span></p>
           {% endif %}
-          <p class="judgement-facts">{{latest.hunt_id}} &middot; {{latest.model}}
+          <p class="judgement-facts">{{latest.hunt_id}} &middot; {{ score_model(latest) }}
             &middot; {{ when(latest.scored_at) }}</p>
         </div>
       </div>
@@ -198,7 +198,7 @@
       <div class="pass-top">
         <p class="score {{ 's-hi' if s.deal_score>=7 else ('s-mid' if s.deal_score>=5 else 's-lo') }}">
           <b class="num">{{ '%.1f'|format(s.deal_score) }}</b><span class="num">/10</span></p>
-        <p class="judgement-facts">{{s.hunt_id}} &middot; {{s.model}}
+        <p class="judgement-facts">{{s.hunt_id}} &middot; {{ score_model(s) }}
           &middot; {{ when(s.scored_at) }}</p>
       </div>
       {% if s.red_flags %}

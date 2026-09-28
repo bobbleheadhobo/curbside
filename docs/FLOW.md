@@ -94,6 +94,7 @@ class Score:
     red_flags: tuple[str, ...]; reasoning: str
     needs_images: bool; image_question: str | None; images_checked: bool
     input_tokens: int; output_tokens: int; cache_read_tokens: int; cost_usd: float
+    resolved_model: str | None     # the ID that answered; `model` is the family
 
 @dataclass(frozen=True)
 class Candidate:                   # survived the gate, headed for the model

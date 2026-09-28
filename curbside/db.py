@@ -139,7 +139,8 @@ CREATE TABLE IF NOT EXISTS scores (
   input_tokens       INTEGER NOT NULL DEFAULT 0,
   output_tokens      INTEGER NOT NULL DEFAULT 0,
   cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
-  cost_usd           REAL NOT NULL DEFAULT 0
+  cost_usd           REAL NOT NULL DEFAULT 0,
+  resolved_model     TEXT                 -- claude-sonnet-5-5; `model` is the family
 );
 CREATE INDEX IF NOT EXISTS ix_scores_lookup ON scores(hunt_id, listing_id, scored_at);
 
@@ -246,7 +247,8 @@ class Store:
                         ("worth_grabbing", "INTEGER NOT NULL DEFAULT 0"),
                         ("needs_images", "INTEGER NOT NULL DEFAULT 0"),
                         ("image_question", "TEXT"),
-                        ("images_checked", "INTEGER NOT NULL DEFAULT 0"))),
+                        ("images_checked", "INTEGER NOT NULL DEFAULT 0"),
+                        ("resolved_model", "TEXT"))),
             ("listings", (("dup_key", "TEXT"),
                           ("img_key", "TEXT"),
                           ("previous_price_cents", "INTEGER"),
@@ -885,7 +887,8 @@ class Store:
             requirements=tuple(json.loads(r["requirements"] or "[]")),
             red_flags=tuple(json.loads(r["red_flags"] or "[]")),
             reasoning=r["reasoning"], images_checked=bool(r["images_checked"]),
-            price_unclear=bool(r["price_unclear"]))
+            price_unclear=bool(r["price_unclear"]),
+            resolved_model=r["resolved_model"])
 
     def was_notified(self, hunt_id: str, listing_id: str) -> bool:
         row = self.conn.execute(
@@ -981,8 +984,9 @@ class Store:
                  matched_want, worth_grabbing, price_unclear, needs_images,
                  image_question, images_checked, red_flags, reasoning,
                  priced_at_cents,
-                 input_tokens, output_tokens, cache_read_tokens, cost_usd)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 input_tokens, output_tokens, cache_read_tokens, cost_usd,
+                 resolved_model)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (score.listing_id, score.hunt_id, score.model,
              score.scored_at.isoformat(timespec="seconds"), score.match,
              score.deal_score, json.dumps(list(score.unknowns)),
@@ -993,7 +997,7 @@ class Store:
              int(score.images_checked),
              json.dumps(list(score.red_flags)), score.reasoning,
              priced_at_cents, score.input_tokens, score.output_tokens,
-             score.cache_read_tokens, score.cost_usd),
+             score.cache_read_tokens, score.cost_usd, score.resolved_model),
         )
 
     def last_scores(self, hunt_id: str) -> dict[str, sqlite3.Row]:

@@ -18,6 +18,7 @@ import yaml
 
 from .models import Hunt, Location, Want
 from .schedule import ScheduleDefaults, parse_hhmm
+from .scoring.model_names import DEFAULT_FAMILY, MODEL_SETTING, resolve_model
 
 log = logging.getLogger("curbside.config")
 
@@ -271,6 +272,19 @@ class Config:
             max_age_days=spec.max_age_days, enabled=spec.enabled)
 
 
+def _family(raw) -> str:
+    """A model setting as the family alias Claude Code resolves to its newest
+    model. A pinned ID ("claude-sonnet-5") would never move when a new model
+    ships, so it is read as its family; anything unrecognised is the default
+    rather than a `--model` every call would fail on."""
+    if raw is None:
+        return DEFAULT_FAMILY
+    fam = resolve_model(raw)
+    if fam is None:
+        log.warning("unknown scorer model %r; using %s", raw, DEFAULT_FAMILY)
+    return fam or DEFAULT_FAMILY
+
+
 def with_store(cfg: Config, store) -> Config:
     """Overlay what the dashboard owns: the want list and the cadences.
 
@@ -296,6 +310,12 @@ def with_store(cfg: Config, store) -> Config:
     for key, (*_, dest) in store.TUNING.items():
         if key in tune:
             landing.setdefault(dest, {})[key] = tune[key]
+    # The model chosen on /settings replaces all three: drafting has to stay on
+    # the model the poller keeps warm (see ScorerConfig.suggest_model).
+    fam = resolve_model(store.get_setting(MODEL_SETTING))
+    if fam:
+        landing.setdefault("scorer", {}).update(
+            triage_model=fam, appraise_model=fam, suggest_model=fam)
     tuned = {dest: replace(getattr(cfg, dest), **fields)
              for dest, fields in landing.items()}
     return replace(cfg, **tuned,
@@ -416,9 +436,9 @@ def load(path: str | os.PathLike[str] = "config.yaml") -> Config:
     sc = raw.get("scorer") or {}
     scorer = ScorerConfig(
         backend=sc.get("backend", "stub"),
-        triage_model=sc.get("triage_model", "sonnet"),
-        suggest_model=sc.get("suggest_model", "sonnet"),
-        appraise_model=sc.get("appraise_model", "sonnet"),
+        triage_model=_family(sc.get("triage_model")),
+        suggest_model=_family(sc.get("suggest_model")),
+        appraise_model=_family(sc.get("appraise_model")),
         claude_bin=sc.get("claude_bin", "claude"),
         timeout_seconds=int(sc.get("timeout_seconds", 180)),
         batch_size=int(sc.get("batch_size", 20)),

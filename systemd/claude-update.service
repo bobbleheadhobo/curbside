@@ -1,0 +1,14 @@
+[Unit]
+Description=Update Claude Code, so --model sonnet means the newest Sonnet
+Documentation=file:///home/joey/code/curbside/systemd/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Swaps the ~/.local/bin/claude symlink to the new build. A scoring call
+# already in flight keeps the binary it started with; the next one gets the new
+# one. User units do not inherit a login shell's PATH.
+Environment=PATH=/home/joey/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/joey/.local/bin/claude update
+TimeoutStartSec=10min

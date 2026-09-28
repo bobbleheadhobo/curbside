@@ -161,7 +161,8 @@ def freshness(cand: Candidate, upserts: Mapping[str, UpsertResult]) -> datetime:
 
 
 def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
-                         notes: dict[str, str], model_name: str) -> int:
+                         notes: dict[str, str], model_name: str,
+                         resolved_model: str | None = None) -> int:
     """Record a triage drop as a SCORE, not as a filter rejection.
 
     Without this the gate has no memory of it -- `last_scores` stays empty, the
@@ -178,7 +179,8 @@ def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
             est_value_cents=None, condition=None, matched_want=None,
             worth_grabbing=False, unknowns=(), requirements=(), red_flags=(),
             reasoning="dropped in triage: "
-                      + (notes.get(cand.listing.id) or "no reason given"))
+                      + (notes.get(cand.listing.id) or "no reason given"),
+            resolved_model=resolved_model)
         store.save_score(score, priced_at_cents=cand.listing.price_cents)
         store.set_status(hunt.id, cand.listing.id, "scored")
     return len(dropped)
@@ -599,7 +601,7 @@ def run_hunt(
             result.n_scored += _record_triage_drops(
                 store, hunt,
                 [c for c in gr.candidates if c.listing.id in done.notes],
-                done.notes, scorer.name)
+                done.notes, scorer.name, done.resolved_model)
         if hasattr(scorer, "drain_unbilled"):
             result.cost_usd += scorer.drain_unbilled()
         # `warning`, NOT `error`. The fetch succeeded -- this run collected
@@ -620,7 +622,7 @@ def run_hunt(
     kept_ids = {c.listing.id for c in survivors}
     n_dropped = _record_triage_drops(
         store, hunt, [c for c in gr.candidates if c.listing.id not in kept_ids],
-        triage_notes, scorer.name)
+        triage_notes, scorer.name, triaged.resolved_model)
 
     interrupted = None
     try:
