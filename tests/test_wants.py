@@ -108,6 +108,51 @@ def test_re_adding_a_removed_name_brings_it_back(app):
     assert not store.get_want("lamp").archived
 
 
+def test_forgetting_a_removed_want_takes_it_off_the_panel_and_keeps_it(app):
+    """The removed list only ever grew. Forgetting hides a row; it cannot
+    delete one, because the listing pages rebuild old scores' hunts from it."""
+    from curbside.models import Listing
+    client, cfg, store = app
+    client.post("/wants/save", data={"name": "lamp", "description": "d",
+                                     "max_price": "20", "queries": "lamp"})
+    lst = Listing(id="x:1", source="x", source_id="1", title="lamp",
+                  description=None, price_cents=500, currency="USD", url="u")
+    store.upsert_listing(lst)
+    store.mark_matches("want:lamp", [lst])
+    client.post("/wants/archive", data={"name": "lamp"})
+    assert 'name="forget"' in client.get("/?manage=1").text
+
+    client.post("/wants/archive", data={"name": "lamp", "forget": "1"})
+    assert store.get_want("lamp").forgotten
+    page = client.get("/?manage=1").text
+    assert "removed-wants" not in page, "nothing left to fold away"
+    assert client.get("/hunt/want:lamp").status_code == 200
+    assert store.statuses("want:lamp")[lst.id] == "new", "its listings stay put"
+
+
+def test_a_live_want_cannot_be_forgotten(tmp_path):
+    """Forgetting a live want would hide a hunt that is still spending
+    requests, with no row left to stop it from."""
+    store = Store(tmp_path / "t.db")
+    store.save_want(Want("lamp", "d", 2000, ("lamp",)))
+    store.forget_want("lamp")
+    assert not store.get_want("lamp").forgotten
+
+
+def test_re_adding_a_forgotten_name_brings_it_back(app):
+    client, cfg, store = app
+    client.post("/wants/save", data={"name": "lamp", "description": "first",
+                                     "max_price": "20", "queries": "lamp"})
+    client.post("/wants/archive", data={"name": "lamp"})
+    client.post("/wants/archive", data={"name": "lamp", "forget": "1"})
+    r = client.post("/wants/save", data={"name": "lamp", "description": "second",
+                                         "max_price": "30", "queries": "lamp"})
+    assert error_in(r.text) is None
+    back = store.get_want("lamp")
+    assert not back.archived and not back.forgotten
+    assert "want:lamp" in [h.id for h in with_store(cfg, store).hunts]
+
+
 def test_the_name_is_frozen_once_it_exists(app):
     """It is the hunt id, the URL, and the key every score is filed under.
     Renaming would orphan the lot, silently."""

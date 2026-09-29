@@ -4,7 +4,7 @@
 {% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
 {% set gratis = items|selectattr('price_cents','equalto',0)|list|length %}
 {% set live = wants|rejectattr('stored.archived')|list %}
-{% set gone = wants|selectattr('stored.archived')|list %}
+{% set gone = wants|selectattr('stored.archived')|rejectattr('stored.forgotten')|list %}
 <div class="pagehead">
   <div class="headrow">
     <h1>Wants</h1>
@@ -77,13 +77,21 @@
   </div>
   {% endfor %}
 
+  {# Folded shut: wants you have finished with should not sit under the live
+     ones. Forget takes one off this list for good; its row stays, so the
+     listing pages can still explain what it scored. #}
   {% if gone %}
-  <h3 class="subhead">Removed</h3>
+  <details class="removed-wants" id="removed-wants">
+  <summary>
+    <span class="what">Removed</span>
+    <span class="count num">{{ gone|length }}</span>
+    <svg class="i chev" aria-hidden="true"><use href="#i-chev"/></svg>
+  </summary>
   {% for r in gone %}
   <div class="wantrow off">
     <a class="grow" href="/hunt/{{ r.hunt_id }}">
       <b>{{ r.w.name }}</b>
-      <small>Stopped searching. {{ r.matched }} match{{ 'es' if r.matched != 1 }}
+      <small>{{ r.matched }} match{{ 'es' if r.matched != 1 }}
         still readable.</small>
     </a>
     {# A want removed BEFORE the tick existed still has its listings in your
@@ -104,8 +112,16 @@
       <input type="hidden" name="restore" value="1">
       <button><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg>Restore</button>
     </form>
+    <form method="post" action="/wants/archive" data-inplace="#manage"
+          data-toast="Forgotten.">
+      <input type="hidden" name="name" value="{{ r.w.name }}">
+      <input type="hidden" name="forget" value="1">
+      <button title="Take it off this list. Its listings stay readable, and adding the name again brings it back">
+        <svg class="i" aria-hidden="true"><use href="#i-x"/></svg>Forget</button>
+    </form>
   </div>
   {% endfor %}
+  </details>
   {% endif %}
 
   <div class="formactions">

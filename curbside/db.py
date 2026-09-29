@@ -192,6 +192,9 @@ CREATE TABLE IF NOT EXISTS wants (
   -- so /hunt/want:<name> still explains everything it ever matched, and the
   -- name stays taken so a seed cannot resurrect it.
   archived_at     TEXT,
+  -- Off the manage panel as well. Only a removed want can be forgotten, and
+  -- the row stays for the same reasons as above; restoring clears both.
+  forgotten_at    TEXT,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -263,6 +266,7 @@ class Store:
                               ("notified_at", "TEXT"),
                               ("rechecked_at", "TEXT"),
                               ("alerted_price_cents", "INTEGER"))),
+            ("wants", (("forgotten_at", "TEXT"),)),
             ("runs", (("warning", "TEXT"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_free_find", "INTEGER NOT NULL DEFAULT 0"),
@@ -1455,9 +1459,19 @@ class Store:
                WHERE hunt_id = ? AND status = 'archived'""", (_now(), hunt_id))
         return cur.rowcount
 
+    def forget_want(self, name: str) -> None:
+        """Take a removed want off the manage panel. The row is kept: the
+        listing pages need it to explain the scores it gave, so this hides it
+        and deletes nothing. A live want is left alone -- remove it first."""
+        self.conn.execute(
+            """UPDATE wants SET forgotten_at=?, updated_at=?
+               WHERE name=? AND archived_at IS NOT NULL""",
+            (_now(), _now(), name))
+
     def restore_want(self, name: str) -> None:
         self.conn.execute(
-            "UPDATE wants SET archived_at=NULL, updated_at=? WHERE name=?",
+            """UPDATE wants SET archived_at=NULL, forgotten_at=NULL, updated_at=?
+               WHERE name=?""",
             (_now(), name))
 
     def wants(self, include_archived: bool = False) -> list[StoredWant]:
@@ -1483,6 +1497,7 @@ class Store:
             ),
             origin=r["origin"],
             archived_at=r["archived_at"],
+            forgotten_at=r["forgotten_at"],
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )

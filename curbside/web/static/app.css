@@ -765,12 +765,25 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
 .manage[open]>summary{border-bottom-color:var(--line-soft)}
 .manage[open]>summary .chev{transform:rotate(180deg)}
 .manage{margin-bottom:18px}
-/* A heading inside the panel, for the wants that were removed. */
-.subhead{
-  margin:0;padding:11px 15px 7px;font-size:11px;font-weight:620;
+/* The wants that were removed, folded shut inside the panel. The summary is
+   the small uppercase heading this used to be, made tappable. */
+.removed-wants{border-top:1px solid var(--line-soft)}
+.removed-wants>summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
+  min-height:var(--tap);padding:0 15px;font-size:11px;font-weight:620;
   letter-spacing:.03em;text-transform:uppercase;color:var(--faint);
-  border-top:1px solid var(--line-soft)
+  -webkit-tap-highlight-color:transparent
 }
+.removed-wants>summary::-webkit-details-marker{display:none}
+.removed-wants>summary:hover{background:var(--line-soft);color:var(--dim)}
+.removed-wants>summary .what{flex:1;min-width:0}
+.removed-wants>summary .count{
+  letter-spacing:0;text-transform:none;font-size:11.5px;color:var(--dim);
+  background:var(--line-soft);border-radius:99px;padding:2px 8px
+}
+.removed-wants>summary .chev{font-size:15px;transition:transform .2s ease}
+.removed-wants[open]>summary .chev{transform:rotate(180deg)}
+.removed-wants[open]>summary{border-bottom:1px solid var(--line-soft)}
 
 .wantrow,.judgedrow{
   display:flex;align-items:center;gap:12px;padding:12px 15px;
@@ -1227,6 +1240,7 @@ button.danger:hover{background:var(--bad-soft);border-color:var(--bad)}
   .card.collapsing{transition-duration:.01ms}
   .toast{transition-duration:.01ms}
   .why>summary .chev{transition:none}
+  .removed-wants>summary .chev{transition:none}
   .card-main:active{transform:none}
 }
 

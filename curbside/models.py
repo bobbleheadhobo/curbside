@@ -73,12 +73,17 @@ class StoredWant:
     want: Want
     origin: str = "web"              # "config" when seeded from config.yaml
     archived_at: str | None = None
+    forgotten_at: str | None = None  # removed AND off the manage panel
     created_at: str | None = None
     updated_at: str | None = None
 
     @property
     def archived(self) -> bool:
         return self.archived_at is not None
+
+    @property
+    def forgotten(self) -> bool:
+        return self.forgotten_at is not None
 
     @property
     def hunt_id(self) -> str:

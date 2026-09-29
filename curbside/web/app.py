@@ -1990,7 +1990,7 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
     @app.post("/wants/archive")
     def archive_want(request: Request, name: str = Form(...),
                      restore: str = Form("0"), clear: str = Form("0"),
-                     back: str = Form(MANAGE_URL)):
+                     forget: str = Form("0"), back: str = Form(MANAGE_URL)):
         """Deleting a want stops its hunt. It does NOT delete anything: every
         listing it matched, every score and every dismissal stays where it is,
         readable at /hunt/want:<name>, because nothing in this project is ever
@@ -2005,8 +2005,16 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
 
         Restoring always unarchives. Asking a second question at that point
         would be asking whether you meant it.
+
+        `forget` takes a removed want off the panel, which otherwise only ever
+        grows. It hides the row and keeps it: the listing pages rebuild an old
+        score's hunt from it (`hunts_including_archived`). It leaves the want's
+        listings where they are, like Remove without the tick. Adding the name
+        again brings it back, because saving restores.
         """
-        if restore == "1":
+        if forget == "1":
+            store.forget_want(name)
+        elif restore == "1":
             store.restore_want(name)
             store.unarchive_matches(f"want:{name}")
         else:

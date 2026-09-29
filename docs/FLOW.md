@@ -106,6 +106,7 @@ class StoredWant:                  # a want as the DATABASE holds it
     want: Want
     origin: str                    # "config" when seeded from the file
     archived_at: str | None        # soft delete; the name stays taken
+    forgotten_at: str | None       # removed AND off the manage panel
     created_at: str | None; updated_at: str | None
 ```
 
