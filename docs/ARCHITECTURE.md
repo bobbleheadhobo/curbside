@@ -508,6 +508,20 @@ the next alert needs a further real drop from there. The bar is the same 15%
 the gate uses, because sellers nudge prices constantly. A drop to free counts,
 and is the headline case.
 
+## 8b. Logged out
+
+A logged-out `claude -p` fails every call in about a second, and each run
+records it as a `scoring skipped` warning, which is correct: fetching is fine.
+It is also invisible from outside. On 2026-09-30 the OAuth session expired and
+the bot went nine hours collecting and judging nothing.
+
+`_invoke` recognises the failure from the result text and stamps
+`claude_logged_out_at`; the next call that succeeds clears it.
+`announce_login` runs after each pass and compares that with
+`claude_logged_out_announced`, so the wants channel gets one message when the
+login goes and one when it comes back. It is only marked announced once a post
+actually went, so a Discord outage delays the alert rather than losing it.
+
 ## 9. Signals surfaced in the dashboard
 
 All of this was collected and none of it was visible:

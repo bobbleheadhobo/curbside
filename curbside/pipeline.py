@@ -26,7 +26,7 @@ from .models import (Candidate, Hunt, Listing, Location, RawListing,
                      RunResult, Score, UpsertResult)
 from .notify.base import Notifier
 from .scoring.base import Scorer, TriageResult
-from .scoring.claude_code import ScoringUnavailable
+from .scoring.claude_code import LOGGED_OUT_AT, ScoringUnavailable
 from .sources.base import (BudgetExhausted, Source, SourceBlocked, StaleCopy,
                            validate)
 
@@ -779,4 +779,37 @@ def announce_price_drops(store: Store, notifiers: Sequence[Notifier], *,
         sent += bool(told)
     if sent:
         log.info("announced %d price drop(s)", sent)
+    return sent
+
+
+# The `LOGGED_OUT_AT` value last announced, or "" once the recovery has been.
+# Comparing the two is the whole state machine: one message when the login
+# goes, one when it comes back, and nothing on the ticks in between.
+LOGIN_ANNOUNCED = "claude_logged_out_announced"
+
+
+def announce_login(store: Store, notifiers: Sequence[Notifier]) -> bool:
+    """Say on Discord when Claude Code is logged out, and when it is back.
+
+    Without it a logged-out bot looks healthy from outside: fetching carries
+    on, every run finishes, and the only sign is a warning on /runs.
+
+    Marked announced only when a message actually went, so a Discord outage
+    retries on the next pass rather than swallowing the alert.
+    """
+    down = store.get_setting(LOGGED_OUT_AT) or ""
+    told = store.get_setting(LOGIN_ANNOUNCED) or ""
+    if bool(down) == bool(told):
+        return False
+    waiting = sum(store.unjudged_counts().values())
+    sent = False
+    for n in notifiers:
+        if not hasattr(n, "notify_login"):
+            continue
+        try:
+            sent = n.notify_login(bool(down), waiting) or sent
+        except Exception:                                  # noqa: BLE001
+            log.exception("login notice failed via %s", n.name)
+    if sent:
+        store.set_setting(LOGIN_ANNOUNCED, down)
     return sent

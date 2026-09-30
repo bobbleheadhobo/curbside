@@ -17,7 +17,8 @@ from .env import load_env
 from .images import FixtureImageProvider, HttpImageProvider
 from .notify.dashboard import DashboardNotifier
 from .notify.discord import DiscordNotifier
-from .pipeline import announce_price_drops, dry_run, run_hunt
+from .pipeline import (announce_login, announce_price_drops, dry_run,
+                       run_hunt)
 from .recheck import recheck
 from .scoring.claude_code import ClaudeCodeScorer
 from .scoring.stub import StubScorer
@@ -229,6 +230,8 @@ def cmd_once(args) -> int:
     # quota, no requests: it reads what is already on disk.
     if not args.dry_run:
         announce_price_drops(store, notifiers)
+        # After the pass, which is what just found out.
+        announce_login(store, notifiers)
 
     store.close()
     return 0
@@ -279,6 +282,7 @@ def cmd_notify(args) -> int:
                 log.exception("notifier %s failed", n.name)
         total += len(pending)
     total += announce_price_drops(store, notifiers)
+    announce_login(store, notifiers)
     still = sum(len(store.pending_notifications(h.id)) for h in hunts)
     print(f"queued {total}, {still} still pending (per-run caps defer the rest)")
     store.close()
@@ -426,6 +430,7 @@ def cmd_run(args) -> int:
                           + (f"ERROR {r.error}" if r.error
                              else f"wanted={r.n_wanted} free={r.n_free_find}"))
                 next_due[hunt.id] = now + hunt.interval_minutes * 60
+            announce_login(store, notifiers)
             time.sleep(10)
     except KeyboardInterrupt:
         print("\nstopped")

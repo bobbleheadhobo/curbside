@@ -372,3 +372,42 @@ def test_the_drop_message_leads_with_the_move(tmp_path):
     assert n.notify_price_drop(hunt, listing, score, 20000) is True
     assert "$200" in posted["content"] and "$120" in posted["content"]
     assert "40%" in posted["embeds"][0]["title"]
+
+
+def test_a_logout_is_announced_once_and_so_is_the_return(tmp_path):
+    """One message when the login goes and one when it comes back, nothing on
+    the ticks between, and a failed post tries again next pass."""
+    from curbside.pipeline import LOGIN_ANNOUNCED, announce_login
+    from curbside.scoring.claude_code import LOGGED_OUT_AT
+    store = Store(tmp_path / "t.db")
+    sent, up = [], {"ok": True}
+
+    class Fake:
+        name = "fake"
+        def notify_login(self, logged_out, waiting):
+            sent.append(logged_out)
+            return up["ok"]
+
+    assert not announce_login(store, [Fake()])          # never logged out
+    store.set_setting(LOGGED_OUT_AT, "2026-09-30T17:06:45+00:00")
+    up["ok"] = False
+    assert not announce_login(store, [Fake()])          # Discord was down...
+    up["ok"] = True
+    assert announce_login(store, [Fake()])              # ...so it retries
+    assert not announce_login(store, [Fake()])          # and only once
+    assert store.get_setting(LOGIN_ANNOUNCED) == "2026-09-30T17:06:45+00:00"
+
+    store.set_setting(LOGGED_OUT_AT, "")
+    assert announce_login(store, [Fake()])
+    assert not announce_login(store, [Fake()])
+    assert sent == [True, True, False]
+
+
+def test_the_logout_message_goes_to_the_wants_channel_with_a_mention(rig):
+    _, _, n, sent = rig
+    assert n.notify_login(True, 12)
+    assert n.notify_login(False, 12)
+    (hook, down), (_, back) = sent
+    assert hook == "https://w"
+    assert down["content"].startswith("<@123> ") and "logged out" in down["content"]
+    assert "12 waiting" in back["content"] and "<@" not in back["content"]

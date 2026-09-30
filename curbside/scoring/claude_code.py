@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
@@ -60,6 +61,20 @@ UTIL_5H, UTIL_7D, UTIL_AT = "util_five_hour", "util_seven_day", "util_recorded_a
 # it a reading has no expiry date, and a number that cannot expire is one the
 # bot keeps standing aside for after the window it describes has already rolled.
 RESET_5H, RESET_7D = "util_five_hour_resets_at", "util_seven_day_resets_at"
+# When Claude Code's login was found expired, cleared by the next call that
+# succeeds. A logged-out `claude -p` fails every call in about a second, so
+# every run records "scoring skipped" as a warning and nothing else changes:
+# on 2026-09-30 it went nine hours with fetching healthy and nothing judged.
+# `pipeline.announce_login` reads this and says so on Discord.
+LOGGED_OUT_AT = "claude_logged_out_at"
+# Matched against the text of a failed call, the only place the cause is
+# stated. Seen: "Failed to authenticate: OAuth session expired and could not
+# be refreshed". The others are how Claude Code words a missing login.
+_AUTH_FAILURE = re.compile(r"authenticat|oauth|/login|not logged in", re.I)
+
+
+def is_auth_failure(text: str | None) -> bool:
+    return bool(text and _AUTH_FAILURE.search(text))
 
 
 def _tz(name: str | None):
@@ -398,6 +413,13 @@ class ClaudeCodeScorer:
         log.warning("scoring paused until %s (%s)",
                     datetime.fromtimestamp(resume_at, timezone.utc).isoformat(), reason)
 
+    def _logged_out(self) -> None:
+        # The first sighting is kept, so the time is when it started.
+        if not self.store.get_setting(LOGGED_OUT_AT):
+            self.store.set_setting(
+                LOGGED_OUT_AT,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
     # --- invocation ---------------------------------------------------------
 
     def _invoke(self, system: str, user: str, model: str,
@@ -474,6 +496,8 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable("rate limited")
 
         if not facts.saw_result:
+            if is_auth_failure(proc.stderr):
+                self._logged_out()
             raise ScoringUnavailable(
                 f"no result event (exit {proc.returncode}); "
                 f"stderr: {proc.stderr[:200]}")
@@ -481,8 +505,14 @@ class ClaudeCodeScorer:
         if facts.failed:
             # The result TEXT is the only place the cause is stated, and an
             # expired OAuth session reads nothing like a network failure.
+            if is_auth_failure(facts.text):
+                self._logged_out()
             raise ScoringUnavailable(
                 f"{facts.terminal_reason}: {facts.text[:300]}")
+
+        # Read before written, so a healthy call costs one read and no write.
+        if self.store.get_setting(LOGGED_OUT_AT):
+            self.store.set_setting(LOGGED_OUT_AT, "")
 
         # Every kind of call, drafting included, so the settings page learns a
         # new model from whichever call meets it first.

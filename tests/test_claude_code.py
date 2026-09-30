@@ -822,3 +822,48 @@ def test_the_spend_ceiling_is_reported_before_the_plan(scorer):
 def time_now():
     import time
     return time.time()
+
+
+def test_a_logged_out_call_is_recorded_and_the_next_success_clears_it(
+        scorer, monkeypatch):
+    """A logged-out `claude -p` fails every call as a warning and nothing
+    else changes, so the bot went nine hours fetching and judging nothing.
+    The failure is recorded where `announce_login` can see it."""
+    import json
+    from curbside.scoring.claude_code import LOGGED_OUT_AT, ScoringUnavailable
+    sc, store = scorer
+    good = (Path(__file__).resolve().parents[1]
+            / "fixtures/streams/minimal-result.jsonl").read_text()
+    bad = json.dumps({
+        "type": "result", "subtype": "success", "is_error": True,
+        "terminal_reason": "api_error",
+        "result": "Failed to authenticate: OAuth session expired and could "
+                  "not be refreshed"})
+    out = {"stdout": bad}
+
+    class Finished:
+        stderr, returncode = "", 1
+        @property
+        def stdout(self):
+            return out["stdout"]
+
+    monkeypatch.setattr("curbside.scoring.claude_code.subprocess.run",
+                        lambda *a, **k: Finished())
+    with pytest.raises(ScoringUnavailable, match="OAuth"):
+        sc._invoke("system", "user", "sonnet")
+    first = store.get_setting(LOGGED_OUT_AT)
+    assert first
+    with pytest.raises(ScoringUnavailable):
+        sc._invoke("system", "user", "sonnet")
+    assert store.get_setting(LOGGED_OUT_AT) == first, "kept from the first"
+
+    out["stdout"] = good
+    sc._invoke("system", "user", "sonnet")
+    assert store.get_setting(LOGGED_OUT_AT) == ""
+
+
+def test_other_failures_are_not_a_logout():
+    from curbside.scoring.claude_code import is_auth_failure
+    assert is_auth_failure("Invalid API key · Please run /login")
+    assert not is_auth_failure("Overloaded")
+    assert not is_auth_failure(None)

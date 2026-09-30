@@ -229,6 +229,21 @@ class DiscordNotifier:
             payload["content"] = f"<@{self.mention_user_id}> " + payload["content"]
         return self._post(self.wants_webhook, payload)
 
+    def notify_login(self, logged_out: bool, waiting: int) -> bool:
+        """Claude Code's login went, or came back. The wants channel, because
+        the free one is muted and this needs you to act."""
+        if not self.wants_webhook:
+            return False
+        if logged_out:
+            text = ("**Claude Code is logged out.** Listings are still "
+                    "collected but nothing is judged. Run `claude` on the "
+                    "server and `/login`.")
+            if self.mention_user_id:
+                text = f"<@{self.mention_user_id}> " + text
+        else:
+            text = f"**Logged back in.** Judging resumes, {waiting} waiting."
+        return self._post(self.wants_webhook, {"content": text})
+
     def notify(self, hunt: Hunt, surfaced: Sequence[tuple[Listing, Score]]) -> None:
         # Work from everything in a bin that has never been announced, not just
         # what this run produced. Otherwise the per-run cap DROPS rather than
