@@ -378,10 +378,10 @@
   }
 
   /* What /triage will take back. A card only ever sits in a bin, but the
-     detail page opens on ANY listing -- `filtered`, `new`, `gone` -- and
+     detail page opens on ANY listing -- `filtered`, `gone` -- and
      offering to restore a status the endpoint rejects is an Undo button that
      answers 400. Offer nothing rather than something that does not work. */
-  var UNDOABLE = ["saved", "dismissed", "wanted", "free_find", "scored"];
+  var UNDOABLE = ["saved", "dismissed", "wanted", "free_find", "scored", "new"];
 
   /* The other half: offer it once, on the page we landed on. */
   function undoFromLastPage() {

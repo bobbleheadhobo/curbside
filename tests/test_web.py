@@ -2951,6 +2951,44 @@ def test_each_card_offers_only_what_its_state_allows(tmp_path):
     assert buttons("gone", "Long gone") == ([], False)
 
 
+def test_waiting_cards_can_be_decided_by_hand_and_undone(tmp_path):
+    """Waiting offered nothing, so when judging was held the only new finds
+    could not be looked through. Deciding one takes it out of the judging
+    queue, and putting back an unjudged dismissal returns it to waiting."""
+    import re
+    from curbside.db import Store
+    from curbside.models import Listing
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+    s = Store(cfg.db_path)
+    l = Listing(id="facebook:20", source="facebook", source_id="20",
+                title="Not judged yet", description="d", price_cents=5000,
+                currency="USD", url="u", images=("a.jpg",))
+    s.upsert_listing(l)
+    s.mark_matches(hunt.id, [l])
+    s.conn.commit()
+
+    page = client.get(f"/hunt/{hunt.id}?view=waiting").text
+    card = page[page.index('data-title="Not judged yet"'):]
+    card = card[:card.index('</article>')]
+    assert re.findall(r'name="status" value="(\w+)"', card) == ["saved", "dismissed"]
+
+    form = {"hunt_id": hunt.id, "listing_id": "facebook:20"}
+    assert client.post("/triage", data={**form, "status": "dismissed"},
+                       headers={"X-Requested-With": "fetch"}).status_code in (204, 303)
+    page = client.get(f"/hunt/{hunt.id}?view=dismissed").text
+    card = page[page.index('data-title="Not judged yet"'):]
+    card = card[:card.index('</article>')]
+    assert re.findall(r'name="status" value="(\w+)"', card) == ["new"]
+    assert "Put back" in card
+
+    # Undo, and Put back, both land it in the queue again.
+    client.post("/triage", data={**form, "status": "new"})
+    assert s.conn.execute(
+        "SELECT status FROM hunt_matches WHERE listing_id='facebook:20'"
+    ).fetchone()[0] == "new"
+
+
 def test_rejections_are_grouped_named_and_each_shows_its_own(tmp_path):
     """Every duplicate was its own `duplicate_of:<id>` tag, and every tag
     linked to all the rejections rather than its own."""

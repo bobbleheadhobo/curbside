@@ -1278,16 +1278,24 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # gone or rejected one offers nothing, and only the undecided get
         # Save and Dismiss. Put back returns it where `route` would have put
         # it, which is the one rule for that.
+        #
+        # Waiting is undecided too. When judging is held -- a spend ceiling,
+        # an expired login -- that queue is the only place new finds are, and
+        # deciding one by hand also takes it out of the queue, since the gate
+        # never judges a triaged listing. A dismissal with no score was one of
+        # those, so it goes back to waiting.
         hunt = hunts.get(hunt_id)
         for i in items:
             st = i["status"]
-            if st in ("wanted", "free_find", "scored"):
+            if st in ("wanted", "free_find", "scored", "new"):
                 i["actions"] = ["saved", "dismissed"]
             elif st == "saved":
                 i["actions"] = ["dismissed"]
-            elif st == "dismissed" and i.get("deal_score") is not None:
+            elif st == "dismissed":
                 i["actions"] = ["restore"]
-                i["restore_to"] = _put_back_status(hunt, i)
+                i["restore_to"] = (_put_back_status(hunt, i)
+                                   if i.get("deal_score") is not None
+                                   else "new")
             else:
                 i["actions"] = []
 
@@ -1431,11 +1439,13 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
         # `scored` is here for undo, not for the buttons: a card on /skipped
         # is `scored`, and undoing a dismiss there has to put it back exactly
         # where it was or the list lies about what the database holds.
+        # `new` is here for the same reason: a waiting card can be saved or
+        # dismissed by hand, and undoing that puts it back in the queue.
         # `grabbed` is NOT here. It carries a figure and clears the listing
         # out of every other bin, so it gets its own endpoint rather than
         # riding a form field this one would have to special-case.
         if status not in ("saved", "dismissed", "wanted",
-                          "free_find", "scored"):
+                          "free_find", "scored", "new"):
             raise StarletteHTTPException(400, f"unknown status {status!r}")
         if not store.set_status(hunt_id, listing_id, status, note or None):
             # Nothing matched. Say so: the card is already folding away and the
