@@ -224,7 +224,7 @@ class JudgingState:
 
 
 def judging_state(store: Store, cfg: ScorerConfig, *, now: float | None = None,
-                  spent_extra: float = 0.0) -> JudgingState:
+                  spent_extra: float = 0.0, login: bool = True) -> JudgingState:
     """THE judging gate, read only. `check_available` enforces it and the
     dashboard draws it, so the two cannot disagree.
 
@@ -239,6 +239,12 @@ def judging_state(store: Store, cfg: ScorerConfig, *, now: float | None = None,
     below it, and the first hold found is the one reported. Connectivity is not
     here: it is a probe, not a state anything can read.
     """
+    # First, because no override can lift it and it is the one hold only you
+    # can fix. `check_available` passes `login=False`: this is the one hold it
+    # does not enforce, because a call is the only way to learn the login came
+    # back, and a refused call costs nothing and takes about a second.
+    if login and store.get_setting(LOGGED_OUT_AT):
+        return JudgingState("logged_out", "Claude Code is logged out")
     now = time.time() if now is None else now
     override = _as_number(store.get_setting(OVERRIDE_UNTIL))
     if override is not None and now < override:
@@ -377,7 +383,8 @@ class ClaudeCodeScorer:
         # This process's own spend is added here because the runs table cannot
         # see a run still in flight.
         state = judging_state(self.store, self.cfg,
-                              spent_extra=self._spent_this_process)
+                              spent_extra=self._spent_this_process,
+                              login=False)
         if state.held:
             raise ScoringUnavailable(state.reason)
         # Still the connectivity probe, override or not: it is not a budget,

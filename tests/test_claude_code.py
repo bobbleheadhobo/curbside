@@ -867,3 +867,21 @@ def test_other_failures_are_not_a_logout():
     assert is_auth_failure("Invalid API key · Please run /login")
     assert not is_auth_failure("Overloaded")
     assert not is_auth_failure(None)
+
+
+def test_a_logout_is_shown_but_not_enforced(scorer, monkeypatch):
+    """The pill and /runs show a logout as a hold, but the scorer still
+    calls: a call is the only way to learn the login came back, and refusing
+    it would keep the bot logged out forever. Other holds still apply."""
+    from curbside.scoring.claude_code import LOGGED_OUT_AT, judging_state
+    monkeypatch.setattr("curbside.scoring.claude_code.api_reachable", lambda: True)
+    s, store = scorer
+    store.set_setting(LOGGED_OUT_AT, "2026-09-30T17:06:45+00:00")
+    state = judging_state(store, s.cfg)
+    assert state.held and state.kind == "logged_out"
+    s.check_available()                               # not enforced
+
+    _over_plan(store)
+    assert judging_state(store, s.cfg).kind == "logged_out", "shown first"
+    with pytest.raises(ScoringUnavailable, match="plan window"):
+        s.check_available()                           # the plan still holds

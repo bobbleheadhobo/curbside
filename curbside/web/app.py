@@ -27,8 +27,8 @@ from .. import config as config_mod
 from .. import schedule as schedule_mod
 from ..scoring import model_names
 from ..scoring.claude_code import (OVERRIDE_UNTIL, PAUSE_REASON, PAUSE_UNTIL,
-                                   JudgingState, PlanUsage, judging_state,
-                                   read_plan_usage)
+                                   JudgingState, PlanUsage, is_auth_failure,
+                                   judging_state, read_plan_usage)
 from ..config import Config
 from ..db import Store
 from ..filters import matches_any
@@ -610,6 +610,8 @@ def plain_reason(reason: str | None) -> str:
         return f"Claude asked it to wait ({m[1]})"
     if "unreachable" in text:
         return "there was no connection to Claude"
+    if is_auth_failure(text):
+        return "Claude Code is logged out"
     return text or "something stopped it"
 
 
@@ -673,10 +675,14 @@ def judging_view(state: JudgingState, now: float | None = None) -> dict:
                 "why": "", "resumes": "", "raw": ""}
     why = plain_reason(state.reason)
     left = until_words((state.until or 0) - now) if state.until else ""
+    # Nothing lifts a logout by itself, so where the others say when they
+    # end, this says how to end it.
+    resumes = ("Run claude on the server and /login."
+               if state.kind == "logged_out"
+               else f"Resumes {left}." if left else "")
     return {"held": True, "override": False, "kind": state.kind,
             "why": why[:1].upper() + why[1:],
-            "resumes": f"Resumes {left}." if left else "",
-            "raw": state.reason}
+            "resumes": resumes, "raw": state.reason}
 
 
 # How many passes /runs shows; the rest are one tap away on /runs/all.
@@ -769,13 +775,16 @@ def now_lines(*, judging: dict, paused: list, hunts: list, sched,
                       "text": f"{plain_error(last['error'])} It tries again "
                               f"next pass.", "raw": last["error"]})
     if judging["held"]:
-        lines.append({"tone": "warn", "title": "Judging is paused",
-                      "text": " ".join(t for t in (
-                          f"{judging['why']}.", judging["resumes"],
-                          "Still collecting.") if t),
-                      "raw": judging["raw"],
-                      "action": {"override": 120,
-                                 "label": "Judge anyway for 2 hours"}})
+        line = {"tone": "warn", "title": "Judging is paused",
+                "text": " ".join(t for t in (
+                    f"{judging['why']}.", judging["resumes"],
+                    "Still collecting.") if t),
+                "raw": judging["raw"]}
+        # Judging anyway cannot get past a logout: the other end refuses.
+        if judging.get("kind") != "logged_out":
+            line["action"] = {"override": 120,
+                              "label": "Judge anyway for 2 hours"}
+        lines.append(line)
     elif judging["override"]:
         lines.append({"tone": "ok", "title": "Judging anyway",
                       "text": judging["why"],
@@ -934,7 +943,9 @@ def health(row, paused, hunts, sched, activity, judging=None) -> dict:
         # links to, and /runs used to contradict it by reading "Running" while
         # this went amber. Fixing that is what makes a short label honest.
         resumes = f" {judging['resumes']}" if judging.get("resumes") else ""
-        return {"state": "warn", "label": "Judging paused",
+        return {"state": "warn",
+                "label": ("Logged out" if judging.get("kind") == "logged_out"
+                          else "Judging paused"),
                 "detail": f"{judging['why']}.{resumes} Collecting normally. "
                           f"{detail}"}
 

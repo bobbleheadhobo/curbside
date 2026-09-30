@@ -522,6 +522,12 @@ the bot went nine hours collecting and judging nothing.
 login goes and one when it comes back. It is only marked announced once a post
 actually went, so a Discord outage delays the alert rather than losing it.
 
+The dashboard shows it too. `judging_state` reports `logged_out` ahead of every
+other hold, so the pill reads **Logged out** and `/runs` says how to fix it,
+without the "Judge anyway" button, which cannot get past it.
+`check_available` passes `login=False` and still calls: that call is how the
+bot finds out you logged back in.
+
 ## 9. Signals surfaced in the dashboard
 
 All of this was collected and none of it was visible:

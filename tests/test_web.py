@@ -3073,3 +3073,30 @@ def test_settings_figures_match_the_pages_they_point_at():
         s = pages["settings"]
         assert s["fig-wants"] == pages["wants"]["tint"], theme
         assert s["fig-hours"] == pages["runs"]["tint"], theme
+
+
+def test_a_logout_says_so_on_the_pill_and_runs(tmp_path):
+    """It showed as a green pill over nine hours of nothing judged, with the
+    OAuth text raw in each run's warning. Judging anyway cannot get past it,
+    so that button is not offered."""
+    from curbside.db import Store
+    from curbside.scoring.claude_code import LOGGED_OUT_AT
+    from curbside.web.app import plain_warning
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.finish_run(s.start_run(cfg.hunts[0], "x"))
+    s.set_setting(LOGGED_OUT_AT, "2026-09-30T17:06:45+00:00")
+
+    page = client.get("/runs").text
+    assert ">Logged out<" in page
+    assert "Claude Code is logged out." in page
+    assert "/login" in page
+    assert "Judge anyway" not in page
+
+    s.set_setting(LOGGED_OUT_AT, "")
+    assert ">Logged out<" not in client.get("/runs").text
+
+    assert plain_warning(
+        "scoring skipped: api_error: Failed to authenticate: OAuth session "
+        "expired and could not be refreshed") == [
+        "Not judged: Claude Code is logged out."]
