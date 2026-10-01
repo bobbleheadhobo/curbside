@@ -67,14 +67,28 @@ RESET_5H, RESET_7D = "util_five_hour_resets_at", "util_seven_day_resets_at"
 # on 2026-09-30 it went nine hours with fetching healthy and nothing judged.
 # `pipeline.announce_login` reads this and says so on Discord.
 LOGGED_OUT_AT = "claude_logged_out_at"
-# Matched against the text of a failed call, the only place the cause is
-# stated. Seen: "Failed to authenticate: OAuth session expired and could not
-# be refreshed". The others are how Claude Code words a missing login.
-_AUTH_FAILURE = re.compile(r"authenticat|oauth|/login|not logged in", re.I)
+# Claude Code's own wording for a login problem. Seen: "Failed to
+# authenticate: OAuth session expired and could not be refreshed". The others
+# are how it words a missing login.
+_AUTH_FAILURE = re.compile(
+    r"failed to authenticate|oauth (?:session|token)|not logged in"
+    r"|invalid api key|please run /login", re.I)
 
 
-def is_auth_failure(text: str | None) -> bool:
-    return bool(text and _AUTH_FAILURE.search(text))
+def is_auth_failure(text: str | None, *, anywhere: bool = False) -> bool:
+    """Whether `text` is a login failure.
+
+    By default it must OPEN with the wording. A failed call's text can be the
+    model's own answer, and that is about a stranger's listing: "authenticated
+    designer bag" matched the loose pattern this replaced, and would have sent
+    a false logout to Discord. `anywhere` is for text we built around the
+    error ourselves -- a run's warning, or stderr, which the model never
+    writes."""
+    if not text:
+        return False
+    if anywhere:
+        return bool(_AUTH_FAILURE.search(text))
+    return bool(_AUTH_FAILURE.match(text.lstrip()))
 
 
 def _tz(name: str | None):
@@ -503,7 +517,7 @@ class ClaudeCodeScorer:
             raise ScoringUnavailable("rate limited")
 
         if not facts.saw_result:
-            if is_auth_failure(proc.stderr):
+            if is_auth_failure(proc.stderr, anywhere=True):
                 self._logged_out()
             raise ScoringUnavailable(
                 f"no result event (exit {proc.returncode}); "

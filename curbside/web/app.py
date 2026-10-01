@@ -616,7 +616,7 @@ def plain_reason(reason: str | None) -> str:
         return f"Claude asked it to wait ({m[1]})"
     if "unreachable" in text:
         return "there was no connection to Claude"
-    if is_auth_failure(text):
+    if is_auth_failure(text, anywhere=True):
         return "Claude Code is logged out"
     return text or "something stopped it"
 

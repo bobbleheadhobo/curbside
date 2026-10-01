@@ -863,10 +863,20 @@ def test_a_logged_out_call_is_recorded_and_the_next_success_clears_it(
 
 
 def test_other_failures_are_not_a_logout():
+    """A failed call's text can be the model writing about a listing, so the
+    wording has to open the text, not appear somewhere in it."""
     from curbside.scoring.claude_code import is_auth_failure
     assert is_auth_failure("Invalid API key · Please run /login")
+    assert is_auth_failure("Not logged in")
     assert not is_auth_failure("Overloaded")
     assert not is_auth_failure(None)
+    model = ('{"reasoning": "Authenticated designer bag, OAuth token '
+             'receipt included. Seller says failed to authenticate once."}')
+    assert not is_auth_failure(model)
+    assert not is_auth_failure("authentic leather, not logged in anywhere")
+    # Text we built around the error, where it is not at the start.
+    assert is_auth_failure("scoring skipped: api_error: Failed to "
+                           "authenticate: OAuth session expired", anywhere=True)
 
 
 def test_a_logout_is_shown_but_not_enforced(scorer, monkeypatch):
