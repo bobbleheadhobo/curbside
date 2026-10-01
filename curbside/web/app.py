@@ -685,6 +685,9 @@ def judging_view(state: JudgingState, now: float | None = None) -> dict:
             "resumes": resumes, "raw": state.reason}
 
 
+# How long "Run for an hour" keeps the bot awake outside its hours.
+WAKE_MINUTES = 60
+
 # How many passes /runs shows; the rest are one tap away on /runs/all.
 PASSES_SHOWN = 10
 
@@ -811,8 +814,13 @@ def now_lines(*, judging: dict, paused: list, hunts: list, sched,
                       "title": "Asleep until "
                                + schedule_mod.fmt_clock(sched.start_minute),
                       "text": "Nothing runs outside the waking hours.",
-                      "action": {"href": "/settings#running",
-                                 "label": "Change hours"}})
+                      "action": {"wake": WAKE_MINUTES,
+                                 "label": "Run for an hour"}})
+    elif sched.woken() and not all_off:
+        lines.append({"tone": "ok",
+                      "title": f"Awake until {sched.woken_clock()}",
+                      "text": "Woken by hand. Asleep again after that.",
+                      "action": {"wake": 0, "label": "Back to sleep"}})
     if not lines:
         lines.append({"tone": "ok", "title": "Working",
                       "text": "Searching and judging normally."})
@@ -1031,11 +1039,16 @@ TEMPLATES.env.globals.update(status_label=status_label,
                              score_model=_score_model)
 
 
-def create_app(base_cfg: Config, scorer=None) -> FastAPI:
+def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
     """`scorer` is optional and is used for ONE thing: drafting a want's search
     terms when its author left them blank. Without it that field simply stays
     empty, which is what the whole path falls back to anyway -- so the dashboard
-    still runs, and every test that does not care can keep omitting it."""
+    still runs, and every test that does not care can keep omitting it.
+
+    `start_pass` is the same shape of thing: what "Run for an hour" calls to
+    start a pass now rather than at the next tick. `cmd_serve` hands it the
+    real one. Left out, the hour still runs from the next tick, and no test
+    can start the live service by accident."""
     app = FastAPI(title="Curbside")
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     store = Store(base_cfg.db_path)
@@ -2042,6 +2055,25 @@ def create_app(base_cfg: Config, scorer=None) -> FastAPI:
             store.archive_want(name)
             if clear == "1":
                 store.archive_matches(f"want:{name}")
+        return _answer(request, back)
+
+    @app.post("/schedule/wake")
+    def schedule_wake(request: Request, minutes: int = Form(WAKE_MINUTES),
+                      back: str = Form("/runs")):
+        """Awake outside the hours for a while, starting with a pass now.
+
+        A setting rather than a one-off run, because `Schedule.is_open` is
+        what the timer, the pill and this page all ask: the hour then runs on
+        the normal cadence and every one of them says so. 0 ends it early.
+        """
+        minutes = max(0, min(int(minutes), 12 * 60))
+        schedule_mod.wake(store, minutes, time.time())
+        if minutes and start_pass is not None:
+            # Fails open: the timer starts the hour within 15 minutes anyway.
+            try:
+                start_pass()
+            except Exception:                              # noqa: BLE001
+                log.exception("could not start a pass")
         return _answer(request, back)
 
     @app.post("/quota/override")

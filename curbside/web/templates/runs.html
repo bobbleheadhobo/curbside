@@ -43,6 +43,13 @@
         <input type="hidden" name="back" value="/runs">
         <button{% if loop.first %} class="primary"{% endif %}>{{ line.action.label }}</button>
       </form>
+      {% elif line.action.wake is defined %}
+      <form method="post" action="/schedule/wake" data-inplace="main"
+            data-toast="{{ 'Running for an hour.' if line.action.wake else 'Back to sleep.' }}">
+        <input type="hidden" name="minutes" value="{{ line.action.wake }}">
+        <input type="hidden" name="back" value="/runs">
+        <button{% if line.action.wake and loop.first %} class="primary"{% endif %}>{{ line.action.label }}</button>
+      </form>
       {% else %}
       <form method="post" action="/quota/override" data-inplace="main"
             data-toast="{{ 'Back to normal limits.' if not line.action.override else 'Judging anyway.' }}">

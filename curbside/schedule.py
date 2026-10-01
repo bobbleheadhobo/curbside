@@ -26,6 +26,11 @@ log = logging.getLogger("curbside.schedule")
 SETTING_ENABLED = "schedule.enabled"
 SETTING_START = "schedule.start"
 SETTING_END = "schedule.end"
+# "Run for an hour" from /runs: awake outside the hours until this instant,
+# epoch seconds. Its start rides along so the pill can tell a pass that just
+# woke from one that has gone quiet.
+SETTING_WOKEN_AT = "schedule.woken_at"
+SETTING_WOKEN_UNTIL = "schedule.woken_until"
 
 
 def parse_hhmm(text: str | None) -> int | None:
@@ -99,6 +104,9 @@ class Schedule:
     end_minute: int = 20 * 60
     tz: tzinfo | None = None          # None = the machine's local time
     tz_name: str | None = None
+    # Woken by hand, epoch seconds. Outside these the hours apply as usual.
+    woken_at: float | None = None
+    woken_until: float | None = None
 
     @property
     def always_on(self) -> bool:
@@ -107,10 +115,21 @@ class Schedule:
     def now(self) -> datetime:
         return datetime.now(self.tz) if self.tz else datetime.now().astimezone()
 
+    def woken(self, now: datetime | None = None) -> bool:
+        """Awake only because someone asked, and still inside that hour."""
+        if self.always_on or self.woken_until is None:
+            return False
+        now = now or self.now()
+        return now.timestamp() < self.woken_until and not self._in_window(now)
+
     def is_open(self, now: datetime | None = None) -> bool:
         if self.always_on:
             return True
         now = now or self.now()
+        return self._in_window(now) or (
+            self.woken_until is not None and now.timestamp() < self.woken_until)
+
+    def _in_window(self, now: datetime) -> bool:
         minute = now.hour * 60 + now.minute
         if self.start_minute < self.end_minute:
             return self.start_minute <= minute < self.end_minute
@@ -138,6 +157,9 @@ class Schedule:
         now = now or self.now()
         if not self.is_open(now):
             return None
+        if self.woken(now):
+            return datetime.fromtimestamp(self.woken_at or now.timestamp(),
+                                          now.tzinfo)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         when = today + timedelta(minutes=self.start_minute)
         return when if when <= now else when - timedelta(days=1)
@@ -177,11 +199,19 @@ class Schedule:
             out += " This window runs past midnight."
         return out
 
+    def woken_clock(self) -> str:
+        """When a hand-woken hour ends, as the other clocks here read."""
+        when = datetime.fromtimestamp(self.woken_until or 0, self.tz) \
+            if self.tz else datetime.fromtimestamp(self.woken_until or 0)
+        return fmt_clock(when.hour * 60 + when.minute)
+
     def state_label(self, now: datetime | None = None) -> str:
         """One phrase for the health pill: awake until when, or asleep until when."""
         if self.always_on:
             return "Always on"
         now = now or self.now()
+        if self.woken(now):
+            return f"Awake until {self.woken_clock()}"
         if self.is_open(now):
             return f"Awake until {fmt_clock(self.end_minute)}"
         return f"Asleep until {fmt_clock(self.start_minute)}"
@@ -202,7 +232,23 @@ def load(store, defaults: "ScheduleDefaults") -> Schedule:
         enabled=enabled,
         start_minute=defaults.start_minute if start is None else start,
         end_minute=defaults.end_minute if end is None else end,
-        tz=defaults.tz, tz_name=defaults.tz_name)
+        tz=defaults.tz, tz_name=defaults.tz_name,
+        woken_at=_epoch(store.get_setting(SETTING_WOKEN_AT)),
+        woken_until=_epoch(store.get_setting(SETTING_WOKEN_UNTIL)))
+
+
+def _epoch(text: str | None) -> float | None:
+    try:
+        return float(text) if text else None
+    except ValueError:
+        return None
+
+
+def wake(store, minutes: int, now: float) -> None:
+    """Awake for `minutes` from `now`, whatever the hours say. 0 ends it."""
+    store.set_setting(SETTING_WOKEN_AT, str(now) if minutes else "")
+    store.set_setting(SETTING_WOKEN_UNTIL,
+                      str(now + minutes * 60) if minutes else "")
 
 
 def save(store, *, enabled: bool, start_minute: int, end_minute: int) -> None:

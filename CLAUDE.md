@@ -60,7 +60,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 653 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 657 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -275,7 +275,12 @@ lose judgement for a few hours, never data.
 **The two deliberate exceptions are the pause switches and the waking hours.**
 Both stop the fetching as well, and both are *decisions* rather than
 interruptions: nothing found at 3am can be collected at 3am. Only `once --due`
-is gated by the hours, so a hand-run `curbside once` always runs.
+is gated by the hours, so a hand-run `curbside once` always runs. **Run for an hour** on `/runs` wakes it
+outside the hours: two `schedule.woken_*` settings that `Schedule.is_open`
+honours, so the timer, the pill and the page agree, and the dashboard starts
+`curbside.service` at once rather than waiting for the tick. `create_app` only
+gets that starter from `cmd_serve`; a test's app has none and cannot start the
+live service.
 
 **Nothing is deleted.** Rejected listings keep their reason; listings keep their
 raw source payload. Three separate parser bugs have been repaired from data

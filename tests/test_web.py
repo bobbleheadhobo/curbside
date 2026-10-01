@@ -624,6 +624,7 @@ def _sched(open_=True):
         "always_on": False, "window_label": s.window_label,
         "start_minute": s.start_minute,
         "is_open": lambda self: open_,
+        "woken": lambda self: False,
         "opened_at": lambda self: s.opened_at(at),
         "now": lambda self: at})()
 
@@ -3100,3 +3101,41 @@ def test_a_logout_says_so_on_the_pill_and_runs(tmp_path):
         "scoring skipped: api_error: Failed to authenticate: OAuth session "
         "expired and could not be refreshed") == [
         "Not judged: Claude Code is logged out."]
+
+
+def test_run_for_an_hour_starts_a_pass_and_can_be_ended(tmp_path):
+    """Offered while asleep. It wakes the bot for an hour and starts a pass
+    now; while woken it offers Back to sleep, which starts nothing."""
+    import shutil
+    from datetime import datetime
+    from pathlib import Path
+    from fastapi.testclient import TestClient
+    from curbside import schedule as sched_mod
+    from curbside.config import load
+    from curbside.db import Store
+    from curbside.web.app import create_app
+    root = Path(__file__).resolve().parents[1]
+    shutil.copy(root / "config.yaml", tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    started = []
+    client = TestClient(create_app(cfg, start_pass=lambda: started.append(1)))
+
+    # Hours that exclude right now, wherever the test runs.
+    now = datetime.now(cfg.schedule.tz) if cfg.schedule.tz else datetime.now()
+    m = now.hour * 60 + now.minute
+    store = Store(cfg.db_path)
+    sched_mod.save(store, enabled=True, start_minute=(m + 120) % 1440,
+                   end_minute=(m + 180) % 1440)
+
+    page = client.get("/runs").text
+    assert "Run for an hour" in page and "Back to sleep" not in page
+
+    client.post("/schedule/wake", data={"minutes": "60"})
+    assert started == [1]
+    page = client.get("/runs").text
+    assert "Back to sleep" in page and "Run for an hour" not in page
+    assert "Woken by hand" in page
+
+    client.post("/schedule/wake", data={"minutes": "0"})
+    assert started == [1], "going back to sleep starts nothing"
+    assert "Run for an hour" in client.get("/runs").text

@@ -240,3 +240,30 @@ def test_no_timezone_falls_back_to_the_machine_rather_than_to_utc():
     from curbside.schedule import local_day_start
     now = datetime(2026, 9, 14, 16, 25, tzinfo=timezone.utc)
     assert local_day_start(None, now).astimezone().hour == 0
+
+
+def test_run_for_an_hour_wakes_it_outside_the_hours_and_then_lapses():
+    """Woken by hand from /runs. `is_open` is what the timer, the pill and the
+    page all ask, so the override lives there and nowhere else."""
+    night = at(3)
+    s = Schedule(enabled=True, start_minute=12 * 60, end_minute=20 * 60,
+                 woken_at=night.timestamp(),
+                 woken_until=(night + timedelta(hours=1)).timestamp())
+    assert s.is_open(night) and s.woken(night)
+    assert s.is_open(night + timedelta(minutes=59))
+    assert not s.is_open(night + timedelta(minutes=61)), "it lapses by itself"
+    assert s.opened_at(night + timedelta(minutes=5)) == night, \
+        "so the pill reads a fresh wake, not a quiet night"
+    assert s.state_label(night) == "Awake until 4am"
+    # Inside the hours it is just awake; the hand-woken hour is not news.
+    assert not s.woken(at(13)) and s.is_open(at(13))
+
+
+def test_waking_is_stored_and_zero_ends_it(tmp_path):
+    store = Store(tmp_path / "t.db")
+    sched_mod.wake(store, 60, 1000.0)
+    s = sched_mod.load(store, ScheduleDefaults(enabled=True))
+    assert (s.woken_at, s.woken_until) == (1000.0, 4600.0)
+    sched_mod.wake(store, 0, 2000.0)
+    s = sched_mod.load(store, ScheduleDefaults(enabled=True))
+    assert s.woken_until is None

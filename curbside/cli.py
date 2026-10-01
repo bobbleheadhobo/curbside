@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -359,6 +360,15 @@ def cmd_hunts(args) -> int:
     return 0
 
 
+def _start_pass() -> None:
+    """Start the timer's own unit now, for "Run for an hour" on /runs. The
+    same unit, so a pass started by hand cannot overlap one the timer fired:
+    systemd runs one instance of a oneshot at a time."""
+    subprocess.run(["systemctl", "--user", "start", "--no-block",
+                    "curbside.service"], check=True, timeout=10,
+                   capture_output=True)
+
+
 def cmd_serve(args) -> int:
     import uvicorn
     from .web.app import create_app
@@ -369,7 +379,7 @@ def cmd_serve(args) -> int:
     # tests can hand it a fake -- or nothing, which simply turns the drafting
     # off. It spends through the same ceilings and pauses as the poller.
     scorer = _build_scorer(cfg, Store(cfg.db_path))
-    uvicorn.run(create_app(cfg, scorer=scorer),
+    uvicorn.run(create_app(cfg, scorer=scorer, start_pass=_start_pass),
                 host=args.host, port=args.port, log_level="info")
     return 0
 
