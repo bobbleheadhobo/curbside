@@ -2244,8 +2244,10 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         rows = [dict(r) for r in store.conn.execute(
             "SELECT * FROM runs ORDER BY id DESC LIMIT 200")]
         backlog = store.unjudged_counts()
+        # Top priority first, the order the pass runs them in.
         hunt_rows = [{"hunt": h, "waiting": backlog.get(h.id, 0),
-                      "paused": h.id in off} for h in hunts]
+                      "paused": h.id in off}
+                     for h in sorted(hunts, key=lambda h: not h.priority)]
         passes = group_passes(rows)
         last = _last_run()
         return TEMPLATES.TemplateResponse(request, "runs.html", ctx(

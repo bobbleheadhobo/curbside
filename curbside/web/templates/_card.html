@@ -13,6 +13,10 @@
    rather than pushing the next listing off the screen. Nothing is hidden that
    explains a decision; it is one tap away and the summary says what is in it. #}
 
+{# A top-priority want, wherever it is named: the Wants list and the Hunts
+   list on /runs. One macro so the two cannot drift. #}
+{% macro top_chip() %}<span class="chip top"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg>Top priority</span>{% endmacro %}
+
 {% macro _money(cents) %}{% if cents == 0 %}free{% else %}${{ '{:,.0f}'.format(cents/100) }}{% endif %}{% endmacro %}
 
 {# The price, with its drop chip. Shared with listing.html, which used to

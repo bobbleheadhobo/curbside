@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% from "_card.html" import top_chip %}
 {% block title %}Runs &middot; Curbside{% endblock %}
 {% block mainclass %}wide{% endblock %}
 {% block content %}
@@ -121,7 +121,7 @@
   <div class="huntlist">
     {% for r in hunt_rows %}
     <a href="/hunt/{{ r.hunt.id }}">
-      <span class="grow"><b>{{ r.hunt.name }}</b>
+      <span class="grow"><b>{{ r.hunt.name }}{% if r.hunt.priority %} {{ top_chip() }}{% endif %}</b>
         <small>{{ 'Free stuff' if r.hunt.kind == 'sweep' else 'Want' }}
           &middot; {{ ilabels.get(r.hunt.interval_minutes, 'every %d min' % r.hunt.interval_minutes)|lower }}</small></span>
       {% if r.paused %}<span class="chip">paused</span>{% endif %}

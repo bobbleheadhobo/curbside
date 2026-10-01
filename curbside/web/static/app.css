@@ -1367,3 +1367,11 @@ td .kind.hi{color:var(--warn)}
 /* --- a hunt's page ---------------------------------------------------------- */
 .huntnote{margin:-6px 0 16px;font-size:13px;color:var(--dim)}
 .huntnote a{color:var(--accent);font-weight:550}
+
+/* A top-priority want, beside its name. The page's own tint: amber, red and
+   green already mean unknown, against and confirmed. Repeats the size and
+   colour because `.huntlist svg.i` is as specific and would otherwise make
+   the star a large grey one. */
+.chip.top{background:var(--accent-soft);color:var(--accent);
+  vertical-align:2px;margin-left:4px;font-size:11px;letter-spacing:0}
+.chip.top svg.i{font-size:12px;color:var(--accent)}

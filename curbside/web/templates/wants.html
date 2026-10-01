@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "_card.html" import card %}
+{% extends "base.html" %}{% from "_card.html" import card, top_chip %}
 {% block title %}Wants &middot; Curbside{% endblock %}
 {% block content %}
 {% set unsure = items|selectattr('match','equalto','unknown')|list|length %}
@@ -40,9 +40,8 @@
   {% for r in live %}
   <div class="wantrow {{ 'off' if r.paused }}">
     <a class="grow" href="/wants/{{ r.w.name }}">
-      <b>{{ r.w.name }}</b>
+      <b>{{ r.w.name }}{% if r.w.priority %} {{ top_chip() }}{% endif %}</b>
       <small>
-        {%- if r.w.priority %}Top priority &middot; {% endif %}
         {%- if r.w.max_price_cents == 0 %}Free ones only
         {%- else %}Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}{% endif %}
         {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,

@@ -1078,7 +1078,12 @@ def test_the_form_sets_top_priority_and_the_list_leads_with_it(app):
     rows = [r for r in re.findall(r'href="/wants/([a-z0-9-]+)"', page)
             if r != "new"]
     assert rows[0] == "zebra-chair"
-    assert "Top priority" in page
+    assert page.count('class="chip top"') == 1, "on its row, and only its"
+
+    runs = client.get("/runs").text
+    hunts = runs.split('id="hunts"')[1]
+    assert hunts.index("want:zebra-chair") < hunts.index("want:aardvark-lamp")
+    assert hunts.count('class="chip top"') == 1
 
     # Unticking is a save without the field, as a browser sends it.
     client.post("/wants/save", data={**form, "name": "Zebra Chair",
