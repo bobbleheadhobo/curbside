@@ -3139,3 +3139,23 @@ def test_run_for_an_hour_starts_a_pass_and_can_be_ended(tmp_path):
     client.post("/schedule/wake", data={"minutes": "0"})
     assert started == [1], "going back to sleep starts nothing"
     assert "Run for an hour" in client.get("/runs").text
+
+
+def test_a_listing_saved_while_waiting_is_on_saved(tmp_path):
+    """It has no score and never will, since saving stops it being judged.
+    /saved required a score, so it vanished from every list."""
+    from curbside.db import Store
+    from curbside.models import Listing
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+    s = Store(cfg.db_path)
+    l = Listing(id="facebook:30", source="facebook", source_id="30",
+                title="Saved before judging", description="d",
+                price_cents=5000, currency="USD", url="u", images=("a.jpg",))
+    s.upsert_listing(l)
+    s.mark_matches(hunt.id, [l])
+    client.post("/triage", data={"hunt_id": hunt.id, "listing_id": l.id,
+                                 "status": "saved"})
+    page = client.get("/saved").text
+    assert "Saved before judging" in page
+    assert "Why it is here" not in page.split("Saved before judging")[1][:3000]

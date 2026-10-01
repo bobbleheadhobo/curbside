@@ -57,7 +57,8 @@ log = logging.getLogger("curbside.web")
 # A non-matching needle in str.replace is a SILENT no-op, so editing the text
 # "WHERE m.status = ?" produced a perfectly valid query against the wrong rows,
 # with nothing raised anywhere. The clause is a parameter now.
-def _queue_sql(where: str) -> str:
+def _queue_sql(where: str, scores: str = "JOIN") -> str:
+    """`scores` is LEFT JOIN where a listing may never have been judged."""
     return f"""
 SELECT m.hunt_id, m.status, l.*,
        l.previous_price_cents,
@@ -70,7 +71,7 @@ SELECT m.hunt_id, m.status, l.*,
        s.price_unclear
 FROM hunt_matches m
 JOIN listings l ON l.id = m.listing_id
-JOIN scores  s ON s.id = (SELECT MAX(id) FROM scores
+{scores} scores  s ON s.id = (SELECT MAX(id) FROM scores
                           WHERE hunt_id = m.hunt_id AND listing_id = m.listing_id)
 {where}
 ORDER BY s.deal_score DESC, l.last_seen DESC
@@ -236,7 +237,12 @@ QUEUE_SQL = _queue_sql("WHERE m.status = ?" + ONE_BIN)
 # thing BECOMES, this page already keeps a sold listing rather than dropping it,
 # and a fourth bin in the nav for something that happens a few times a month
 # would be a page you visit to confirm it is still empty.
-SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'grabbed')" + ONE_BIN)
+#
+# LEFT JOIN, because a listing saved off the Waiting view has no score and
+# never will: saving it is what stops it being judged. With an inner join it
+# vanished from every list the moment you saved it. Unscored sorts last.
+SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'grabbed')" + ONE_BIN,
+                       scores="LEFT JOIN")
 
 # The band just under the bar. `deal_score` is judged as if unknowns resolve
 # favourably, so a 6 means "even if it is what it looks like, it is mediocre" --
