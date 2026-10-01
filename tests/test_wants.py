@@ -1085,6 +1085,11 @@ def test_the_form_sets_top_priority_and_the_list_leads_with_it(app):
     assert hunts.index("want:zebra-chair") < hunts.index("want:aardvark-lamp")
     assert hunts.count('class="chip top"') == 1
 
+    client.post("/wants/save", data={**form, "name": "Zebra Chair",
+                                     "existing": "zebra-chair", "priority": "0"})
+    assert store.get_want("zebra-chair").want.priority is False, '"0" is no'
+    client.post("/wants/save", data={**form, "name": "Zebra Chair",
+                                     "existing": "zebra-chair", "priority": "1"})
     # Unticking is a save without the field, as a browser sends it.
     client.post("/wants/save", data={**form, "name": "Zebra Chair",
                                      "existing": "zebra-chair"})

@@ -691,6 +691,12 @@ def judging_view(state: JudgingState, now: float | None = None) -> dict:
             "resumes": resumes, "raw": state.reason}
 
 
+def _ticked(value: str) -> bool:
+    """A checkbox, as a form posts it. Absent means unticked, and so does a
+    "0": `bool("0")` is True, which would read an explicit no as a yes."""
+    return value.strip().lower() in ("1", "on", "true", "yes")
+
+
 # How long "Run for an hour" keeps the bot awake outside its hours.
 WAKE_MINUTES = 60
 
@@ -1940,7 +1946,7 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         """
         values = {"name": name, "description": description,
                   "max_price": max_price, "queries": queries,
-                  "requires": requires, "priority": bool(priority)}
+                  "requires": requires, "priority": _ticked(priority)}
         stored = store.get_want(existing) if existing else None
         # "Suggest terms" posts here in the background now, so every way this
         # can answer has a JSON twin. Same shape as /settings/exclude: ok:false
@@ -2032,7 +2038,7 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
             name=slug, description=description.strip(),
             max_price_cents=int(round(dollars * 100)),
             queries=_lines(queries), requires=_lines(requires),
-            priority=bool(priority)))
+            priority=_ticked(priority)))
         # Re-adding a name that was deleted brings it back rather than
         # colliding with it, and its old matches come back with it.
         store.restore_want(slug)
