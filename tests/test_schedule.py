@@ -267,3 +267,20 @@ def test_waking_is_stored_and_zero_ends_it(tmp_path):
     sched_mod.wake(store, 0, 2000.0)
     s = sched_mod.load(store, ScheduleDefaults(enabled=True))
     assert s.woken_until is None
+
+
+def test_an_hour_that_runs_into_the_hours_does_not_claim_to_end():
+    """Woken at 10:46 with the hours opening at 11, it is awake until the
+    hours close, not until 11:46."""
+    morning = at(10, 46)
+    s = Schedule(enabled=True, start_minute=11 * 60, end_minute=20 * 60,
+                 woken_at=morning.timestamp(),
+                 woken_until=(morning + timedelta(hours=1)).timestamp())
+    assert s.woken(morning) and s.woken_into_window()
+    assert s.state_label(morning) == "Awake until 8pm"
+    night = at(3)
+    s = Schedule(enabled=True, start_minute=11 * 60, end_minute=20 * 60,
+                 woken_at=night.timestamp(),
+                 woken_until=(night + timedelta(hours=1)).timestamp())
+    assert not s.woken_into_window()
+    assert s.state_label(night) == "Awake until 4am"

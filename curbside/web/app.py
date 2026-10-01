@@ -836,7 +836,10 @@ def now_lines(*, judging: dict, paused: list, hunts: list, sched,
     elif sched.woken() and not all_off:
         lines.append({"tone": "ok",
                       "title": f"Awake until {sched.woken_clock()}",
-                      "text": "Woken by hand. Asleep again after that.",
+                      "text": ("Woken by hand. Your hours start at "
+                               + schedule_mod.fmt_clock(sched.start_minute)
+                               + "." if sched.woken_into_window()
+                               else "Woken by hand. Asleep again after that."),
                       "action": {"wake": 0, "label": "Back to sleep"}})
     if not lines:
         lines.append({"tone": "ok", "title": "Working",

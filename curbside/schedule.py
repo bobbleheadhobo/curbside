@@ -199,11 +199,23 @@ class Schedule:
             out += " This window runs past midnight."
         return out
 
+    def _woken_end(self) -> datetime:
+        return (datetime.fromtimestamp(self.woken_until or 0, self.tz)
+                if self.tz else datetime.fromtimestamp(self.woken_until or 0))
+
+    def woken_into_window(self) -> bool:
+        """Whether the hand-woken hour runs on into the waking hours, so it
+        never goes back to sleep at its end. Pressed at 10:46 with the hours
+        opening at 11, "awake until 11:46" was wrong by most of a day."""
+        return self.woken_until is not None and self._in_window(self._woken_end())
+
     def woken_clock(self) -> str:
-        """When a hand-woken hour ends, as the other clocks here read."""
-        when = datetime.fromtimestamp(self.woken_until or 0, self.tz) \
-            if self.tz else datetime.fromtimestamp(self.woken_until or 0)
-        return fmt_clock(when.hour * 60 + when.minute)
+        """When it is next asleep, as the other clocks here read: the end of
+        the hour, or of the waking hours if the hour runs into them."""
+        if self.woken_into_window():
+            return fmt_clock(self.end_minute)
+        end = self._woken_end()
+        return fmt_clock(end.hour * 60 + end.minute)
 
     def state_label(self, now: datetime | None = None) -> str:
         """One phrase for the health pill: awake until when, or asleep until when."""
