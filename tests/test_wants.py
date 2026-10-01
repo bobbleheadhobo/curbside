@@ -1036,3 +1036,51 @@ def test_made_the_bar_is_the_hunts_own_bar(tmp_path):
     score("x:3", 4.0)                  # judged again, lower: the latest counts
     y = store.query_yield("want:w", ["a"], bar=7.0)["a"]
     assert (y["found"], y["only"], y["good"]) == (3, 3, 1)
+
+
+def test_top_priority_round_trips_and_reaches_the_hunt(tmp_path):
+    """Saved on the want, read back by the store, and carried onto its hunt,
+    which is what the pass order and Discord read."""
+    from curbside.config import load, with_store
+    import shutil
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    shutil.copy(root / "config.yaml", tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    store = Store(cfg.db_path)
+    store.save_want(Want(name="chair", description="d", max_price_cents=15000,
+                         queries=("office chair",), priority=True))
+    assert store.get_want("chair").want.priority is True
+    hunt = next(h for h in with_store(cfg, store).hunts if h.id == "want:chair")
+    assert hunt.priority is True
+    store.save_want(Want(name="chair", description="d", max_price_cents=15000,
+                         queries=("office chair",)))
+    assert store.get_want("chair").want.priority is False
+
+
+def test_the_form_sets_top_priority_and_the_list_leads_with_it(app):
+    """Ticked on the editor, shown ticked when it is opened again, and listed
+    first on / because that is the order the pass runs them in."""
+    client, cfg, store = app
+    form = {"description": "d", "max_price": "150",
+            "queries": "office chair", "interval": "60"}
+    client.post("/wants/save", data={**form, "name": "Zebra Chair",
+                                     "priority": "1"})
+    client.post("/wants/save", data={**form, "name": "Aardvark Lamp"})
+    assert store.get_want("zebra-chair").want.priority is True
+
+    editor = client.get("/wants/zebra-chair").text
+    assert re.search(r'id="f-priority"[^>]*checked', editor)
+    assert not re.search(r'id="f-priority"[^>]*checked',
+                         client.get("/wants/aardvark-lamp").text)
+
+    page = client.get("/?manage=1").text
+    rows = [r for r in re.findall(r'href="/wants/([a-z0-9-]+)"', page)
+            if r != "new"]
+    assert rows[0] == "zebra-chair"
+    assert "Top priority" in page
+
+    # Unticking is a save without the field, as a browser sends it.
+    client.post("/wants/save", data={**form, "name": "Zebra Chair",
+                                     "existing": "zebra-chair"})
+    assert store.get_want("zebra-chair").want.priority is False

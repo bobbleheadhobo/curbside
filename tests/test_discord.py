@@ -411,3 +411,28 @@ def test_the_logout_message_goes_to_the_wants_channel_with_a_mention(rig):
     assert hook == "https://w"
     assert down["content"].startswith("<@123> ") and "logged out" in down["content"]
     assert "12 waiting" in back["content"] and "<@" not in back["content"]
+
+
+def test_a_top_priority_want_mentions_you_wherever_it_was_found(rig):
+    """Its own hunt's picks, and a free sweep find that matched it. A pick
+    for any other want stays as quiet as before."""
+    from dataclasses import replace
+    from curbside.models import Want
+    store, sweep, n, sent = rig
+    chair = Want(name="chair", description="d", max_price_cents=0,
+                 priority=True)
+    shelf = Want(name="shelf", description="d", max_price_cents=0)
+    want_hunt = replace(sweep, id="want:chair", kind="want", wants=(chair,),
+                        priority=True)
+    sweep = replace(sweep, wants=(chair, shelf))
+
+    for hunt, lid, matched in ((want_hunt, "fb:1", "chair"),
+                               (sweep, "fb:2", "chair"),
+                               (sweep, "fb:3", "shelf")):
+        l = make_listing(lid)
+        _register(store, hunt, l)
+        n.notify(hunt, [(l, make_score(match="yes", deal_score=7.0,
+                                       listing_id=lid, matched_want=matched))])
+    said = [p.get("content", "") for _, p in sent]
+    assert said[0] == said[1] == "<@123> top priority"
+    assert said[2] == ""

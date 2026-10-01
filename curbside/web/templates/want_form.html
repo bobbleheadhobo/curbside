@@ -67,6 +67,15 @@
         evidence.</p>
     </div>
 
+    <div class="field inline-check">
+      <input type="checkbox" id="f-priority" name="priority" value="1"
+             {% if v.priority %}checked{% endif %}>
+      <div>
+        <label class="lbl" for="f-priority">Top priority</label>
+        <p class="hint">Searched first every pass, and its finds mention you.</p>
+      </div>
+    </div>
+
     <div class="field">
       <label for="f-iv">How often to search</label>
       <select id="f-iv" name="interval">

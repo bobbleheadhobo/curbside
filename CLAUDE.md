@@ -60,7 +60,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 657 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 661 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -242,7 +242,12 @@ then wants by name — so last was always `want:stacked-ottoman`, the only hunt
 in the database ever to record `BudgetExhausted`. `cli._rotated` advances a
 `pass_rotation` settings row each pass, so the shortage takes turns: without
 it, last would mean never. It shifts by one place per pass, so a skipped hunt
-does not jump to the front; being left due is what gets it fetched. `--dry-run` reads the counter and does not
+does not jump to the front; being left due is what gets it fetched. The one
+exception is a **top-priority** want (`Want.priority`, a checkbox on its
+editor): those go first, ahead of the turns, and the rest rotate behind them.
+It is a flag and not a rank on purpose. A rank puts something last, and last
+is never. It also @mentions you on its picks, and it never reaches the prompt:
+how much you want a thing is not how good a match it is. `--dry-run` reads the counter and does not
 advance it, because it promises to write nothing.
 
 **But rotation shares a shortage out; it does not create budget.** Search costs

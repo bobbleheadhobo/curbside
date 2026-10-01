@@ -1586,6 +1586,9 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
                 "matched": (counts.get(sw.hunt_id) or {"n": 0})["n"],
                 "in_bins": (counts.get(sw.hunt_id) or {"in_bins": 0})["in_bins"] or 0,
             })
+        # Top priority first, as the pass runs them. Stable, so the rest keep
+        # the order the store gave them.
+        rows.sort(key=lambda r: not r["w"].priority)
         return rows
 
     @app.get("/settings")
@@ -1892,14 +1895,14 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
             "name": w.name, "description": w.description,
             "max_price": f"{w.max_price_cents / 100:.0f}",
             "queries": "\n".join(w.queries),
-            "requires": "\n".join(w.requires)})
+            "requires": "\n".join(w.requires), "priority": w.priority})
 
     @app.post("/wants/save")
     def save_want(request: Request, description: str = Form(""),
                   max_price: str = Form(""), queries: str = Form(""),
                   requires: str = Form(""), name: str = Form(""),
                   existing: str = Form(""), interval: int = Form(60),
-                  action: str = Form("")):
+                  priority: str = Form(""), action: str = Form("")):
         """Create or edit one want.
 
         The name is derived once and then frozen. It is the hunt id, the URL of
@@ -1908,7 +1911,7 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         """
         values = {"name": name, "description": description,
                   "max_price": max_price, "queries": queries,
-                  "requires": requires}
+                  "requires": requires, "priority": bool(priority)}
         stored = store.get_want(existing) if existing else None
         # "Suggest terms" posts here in the background now, so every way this
         # can answer has a JSON twin. Same shape as /settings/exclude: ok:false
@@ -1999,7 +2002,8 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         store.save_want(Want(
             name=slug, description=description.strip(),
             max_price_cents=int(round(dollars * 100)),
-            queries=_lines(queries), requires=_lines(requires)))
+            queries=_lines(queries), requires=_lines(requires),
+            priority=bool(priority)))
         # Re-adding a name that was deleted brings it back rather than
         # colliding with it, and its old matches come back with it.
         store.restore_want(slug)

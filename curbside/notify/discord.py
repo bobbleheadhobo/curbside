@@ -152,6 +152,14 @@ def build_embed(listing: Listing, score: Score, dashboard_url: str) -> dict:
     return embed
 
 
+def _top_priority(hunt: Hunt, matched_want: str | None) -> bool:
+    """Whether this pick is for a top-priority want. A want hunt carries only
+    its own want; a sweep carries every one, so the match names which."""
+    if hunt.kind == "want":
+        return hunt.priority
+    return any(w.priority and w.name == matched_want for w in hunt.wants)
+
+
 class DiscordNotifier:
     name = "discord"
 
@@ -286,6 +294,11 @@ class DiscordNotifier:
             if (not wanted and self.mention_user_id
                     and score.deal_score >= self.mention_score):
                 payload["content"] = f"<@{self.mention_user_id}> worth a look"
+            # A top-priority want's picks always mention you, wherever they were
+            # found: the sweep finding the chair free is the best case of all.
+            if (wanted and self.mention_user_id
+                    and _top_priority(hunt, score.matched_want)):
+                payload["content"] = f"<@{self.mention_user_id}> top priority"
 
             if self._post(webhook, payload):
                 self.store.mark_notified(hunt.id, listing.id)

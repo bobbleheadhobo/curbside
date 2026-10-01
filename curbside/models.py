@@ -48,6 +48,11 @@ class Want:
     # blended into a single number -- and an unverifiable one becomes an explicit
     # `unknown` instead of quietly scoring 4.5 and never being seen.
     requires: tuple[str, ...] = ()
+    # Top priority: searched first in every pass, so the request budget never
+    # runs out on it, and its picks @mention you. It never reaches the prompt.
+    # A score says how good a match is, and how much you want the thing is a
+    # different question.
+    priority: bool = False
 
 
 WANT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
@@ -116,6 +121,7 @@ class Hunt:
     # so want hunts default to no limit at all. 0 disables.
     max_age_days: int = 0
     enabled: bool = True
+    priority: bool = False           # from its want; see `Want.priority`
 
 
 @dataclass(frozen=True)

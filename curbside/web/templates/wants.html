@@ -42,6 +42,7 @@
     <a class="grow" href="/wants/{{ r.w.name }}">
       <b>{{ r.w.name }}</b>
       <small>
+        {%- if r.w.priority %}Top priority &middot; {% endif %}
         {%- if r.w.max_price_cents == 0 %}Free ones only
         {%- else %}Up to ${{ '%.0f'|format(r.w.max_price_cents / 100) }}{% endif %}
         {%- if r.hunt %} &middot; {{ ilabels.get(r.hunt.interval_minutes,

@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS wants (
   -- Off the manage panel as well. Only a removed want can be forgotten, and
   -- the row stays for the same reasons as above; restoring clears both.
   forgotten_at    TEXT,
+  priority        INTEGER NOT NULL DEFAULT 0,   -- Want.priority
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
@@ -266,7 +267,8 @@ class Store:
                               ("notified_at", "TEXT"),
                               ("rechecked_at", "TEXT"),
                               ("alerted_price_cents", "INTEGER"))),
-            ("wants", (("forgotten_at", "TEXT"),)),
+            ("wants", (("forgotten_at", "TEXT"),
+                       ("priority", "INTEGER NOT NULL DEFAULT 0"))),
             ("runs", (("warning", "TEXT"),
                       ("n_wanted", "INTEGER NOT NULL DEFAULT 0"),
                       ("n_free_find", "INTEGER NOT NULL DEFAULT 0"),
@@ -1399,17 +1401,19 @@ class Store:
         now = _now()
         cur = self.conn.execute(
             """INSERT INTO wants (name, description, max_price_cents, queries,
-                                  requires, origin, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?)
+                                  requires, priority, origin, created_at,
+                                  updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)
                ON CONFLICT(name) DO UPDATE SET
                  description=excluded.description,
                  max_price_cents=excluded.max_price_cents,
                  queries=excluded.queries,
                  requires=excluded.requires,
+                 priority=excluded.priority,
                  updated_at=excluded.updated_at""",
             (want.name, want.description, want.max_price_cents,
              json.dumps(list(want.queries)), json.dumps(list(want.requires)),
-             origin, now, now))
+             int(want.priority), origin, now, now))
         return cur.rowcount or 0
 
     def archive_want(self, name: str) -> None:
@@ -1494,6 +1498,7 @@ class Store:
                 max_price_cents=r["max_price_cents"],
                 queries=tuple(json.loads(r["queries"] or "[]")),
                 requires=tuple(json.loads(r["requires"] or "[]")),
+                priority=bool(r["priority"]),
             ),
             origin=r["origin"],
             archived_at=r["archived_at"],

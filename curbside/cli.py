@@ -154,7 +154,19 @@ def _rotated(hunts, store, advance: bool = True):
     The counter is advanced here rather than derived from the clock so that a
     pass which does nothing (outside the waking hours) does not silently skip
     a turn.
+
+    Top-priority wants are the exception: they go first, ahead of the turns,
+    so the budget never runs out on them. Only those take the front, which is
+    why it is a flag and not a rank. Rank everything and the bottom of the
+    list is skipped on every short pass, which is the starvation rotation
+    exists to prevent.
     """
+    hunts = list(hunts)
+    first = [h for h in hunts if getattr(h, "priority", False)]
+    return first + _turns([h for h in hunts if h not in first], store, advance)
+
+
+def _turns(hunts, store, advance: bool):
     hunts = list(hunts)
     if len(hunts) < 2:
         return hunts

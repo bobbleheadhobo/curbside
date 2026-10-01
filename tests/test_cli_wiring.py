@@ -280,3 +280,17 @@ def test_rotation_survives_a_single_hunt_and_a_junk_counter(store):
     assert _rotated(["only"], store) == ["only"]
     store.set_setting("pass_rotation", "not a number")
     assert _rotated(["a", "b"], store) == ["a", "b"]
+
+
+def test_a_top_priority_want_always_goes_first(store):
+    """It is never the hunt the budget runs out on. The rest still take
+    turns behind it, so a flag cannot starve anything that a rank would."""
+    from types import SimpleNamespace as H
+    from curbside.cli import _rotated
+    chair = H(name="chair", priority=True)
+    rest = [H(name=n, priority=False) for n in ("sweep", "shelf", "pots")]
+    hunts = [rest[0], rest[1], chair, rest[2]]
+    seen = [[h.name for h in _rotated(hunts, store)] for _ in range(3)]
+    assert [s[0] for s in seen] == ["chair"] * 3
+    assert seen[0][1:] == ["sweep", "shelf", "pots"]
+    assert seen[1][1:] == ["shelf", "pots", "sweep"]

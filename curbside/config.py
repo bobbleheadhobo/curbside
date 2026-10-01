@@ -239,11 +239,11 @@ class Config:
                 f"want:{w.name}", w.name, "want",
                 self.want_hunts.get(w.name) or WantHuntSpec(),
                 queries=w.queries, max_price_cents=w.max_price_cents,
-                wants=(w,)))
+                wants=(w,), priority=w.priority))
         return tuple(hunts)
 
     def _hunt(self, hid: str, name: str, kind: str, spec, *,
-              queries, max_price_cents, wants) -> Hunt:
+              queries, max_price_cents, wants, priority=False) -> Hunt:
         """One hunt, with every per-hunt override resolved against the defaults.
 
         Sweeps and want-hunts differ in six values and agreed on the other
@@ -269,7 +269,8 @@ class Config:
             interval_minutes=self.interval_overrides.get(
                 hid, spec.interval_minutes),
             max_results=override("max_results"),
-            max_age_days=spec.max_age_days, enabled=spec.enabled)
+            max_age_days=spec.max_age_days, enabled=spec.enabled,
+            priority=priority)
 
 
 def _family(raw) -> str:
