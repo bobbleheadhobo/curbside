@@ -60,7 +60,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 665 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 668 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy
@@ -363,6 +363,13 @@ re-fetch bought nothing: an unchanged listing re-hashes to the same keys.
 re-runs the check on the stored row before the cap. No request, no slot, and
 a merge still comes undone when the search feed brings a new price, title or
 photo.
+
+**A listing saved from Waiting is judged once, and skips those checks.**
+`Store.unjudged` puts it at the head of the queue as a `saved` candidate, and
+`pipeline._drop` keeps it whatever the after-page checks say. It has to: a
+saved row's status is never written (`set_judged_status`), so a drop there
+could not stick and would take a slot on every run. Its score row is what
+takes it off the queue, and it stays saved and unannounced.
 
 **A rejection must be recorded, never just dropped.** `store.record_rejections`
 is what makes a drop explainable on `/hunt` instead of a listing silently

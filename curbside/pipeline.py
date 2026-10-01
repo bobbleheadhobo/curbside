@@ -117,6 +117,14 @@ def _drop(store: Store, hunt: Hunt, gr: GateResult,
     keep: list[Candidate] = []
     dropped: list[tuple[str, str]] = []
     for cand in gr.candidates:
+        # You saved it, so it is judged whatever these say: too far, too old
+        # or no photo is yours to weigh, and these checks exist to save money
+        # on listings nobody chose. It also has to be: a saved row's status is
+        # never written, so a drop here could not stick, and it would come
+        # back and take a slot on every run, unjudged, forever.
+        if cand.reason == "saved":
+            keep.append(cand)
+            continue
         reason = reason_for(cand)
         if reason:
             dropped.append((cand.listing.id, reason))
@@ -398,7 +406,9 @@ def run_hunt(
     room = hunt.max_results - len(gr.candidates)
     if room > 0:
         already = {c.listing.id for c in gr.candidates}
-        older = [Candidate(l, "backlog")
+        saved = {lid for lid, st in store.statuses(hunt.id).items()
+                 if st == "saved"}
+        older = [Candidate(l, "saved" if l.id in saved else "backlog")
                  for l in store.unjudged(hunt.id, source.name, room + len(already))
                  if l.id not in already][:room]
         if older:

@@ -363,7 +363,8 @@ class Score:
 class Candidate:
     """Survived the gate and is headed for the model."""
     listing: Listing
-    # "new" | "price_drop" | "relist" | "backlog" | "was_duplicate"
+    # "new" | "price_drop" | "relist" | "backlog" | "was_duplicate" | "saved"
+    # ("saved": you saved it from the Waiting view before it was judged)
     reason: str
 
 

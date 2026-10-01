@@ -2006,3 +2006,66 @@ def test_a_decision_made_while_a_batch_is_judged_is_kept(rig):
     statuses = set(store.statuses(hunt.id).values())
     assert not statuses & {"wanted", "free_find", "scored"}, statuses
     assert told == [] and r.n_wanted + r.n_free_find == 0
+
+
+def test_a_listing_saved_while_waiting_is_judged_once_and_stays_saved(rig):
+    """Saving it is the point it is worth a judgement: the scam check, the
+    value, a price for drops to be measured from. It goes ahead of the rest of
+    the queue, is never moved off Saved or announced, and is judged once."""
+    cfg, store, source, scorer, _ = rig
+    told = []
+
+    class Recorder:
+        name = "recorder"
+        def notify(self, hunt, surfaced):
+            told.extend(l.id for l, _ in surfaced)
+
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    run_hunt(store, hunt, source, scorer, [], cfg.location, no_score=True)
+    waiting = store.unjudged(hunt.id, source.name, 50)
+    assert len(waiting) > 1
+    mine = waiting[-1]                        # last in line, until saved
+    store.set_status(hunt.id, mine.id, "saved")
+    assert store.unjudged(hunt.id, source.name, 50)[0].id == mine.id
+
+    run_hunt(store, hunt, source, scorer, [Recorder()], cfg.location)
+    scores = store.conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE hunt_id=? AND listing_id=?",
+        (hunt.id, mine.id)).fetchone()[0]
+    assert scores == 1
+    assert store.statuses(hunt.id)[mine.id] == "saved"
+    assert mine.id not in told
+
+    run_hunt(store, hunt, source, scorer, [Recorder()], cfg.location)
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE hunt_id=? AND listing_id=?",
+        (hunt.id, mine.id)).fetchone()[0] == 1, "judged once"
+    assert all(l.id != mine.id for l in store.unjudged(hunt.id, source.name, 50))
+
+
+def test_a_dismissed_waiting_listing_is_never_judged(rig):
+    cfg, store, source, scorer, _ = rig
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    run_hunt(store, hunt, source, scorer, [], cfg.location, no_score=True)
+    gone = store.unjudged(hunt.id, source.name, 50)[0]
+    store.set_status(hunt.id, gone.id, "dismissed")
+    run_hunt(store, hunt, source, scorer, [], cfg.location)
+    assert store.conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE listing_id=?", (gone.id,)
+    ).fetchone()[0] == 0
+
+
+def test_the_after_page_checks_keep_a_saved_listing(rig):
+    """A saved row's status is never written, so a drop could not stick: it
+    would come back and take a slot on every run, unjudged, forever."""
+    from conftest import make_listing
+    from curbside.models import Candidate, GateResult
+    from curbside.pipeline import _drop
+    cfg, store, *_ = rig
+    hunt = cfg.hunts[0]
+    mine, other = make_listing(lid="x:1"), make_listing(lid="x:2")
+    gr = _drop(store, hunt, GateResult([Candidate(mine, "saved"),
+                                        Candidate(other, "backlog")], []),
+               lambda c: "too_old", "%d too old")
+    assert [c.listing.id for c in gr.candidates] == ["x:1"]
+    assert gr.rejected == [("x:2", "too_old")]

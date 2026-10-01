@@ -1091,14 +1091,26 @@ class Store:
 
         Excludes anything confirmed off the market, so a backlog cannot resurrect
         something `recheck` already retired.
+
+        A listing you SAVED before it was judged is here too, and first. Saving
+        it is the point it is worth a judgement -- the scam check, the value,
+        what to ask the seller -- and without a score it also has no price for
+        a drop to be measured from. It is judged once: the score row is what
+        takes it back off this list, and `set_judged_status` leaves it saved.
+        A dismissed one is never judged, which would be paying to think about
+        something you already turned down.
         """
         if limit <= 0:
             return []
         return [self.row_to_listing(r) for r in self.conn.execute(
             """SELECT l.* FROM hunt_matches m JOIN listings l ON l.id = m.listing_id
-               WHERE m.hunt_id = ? AND m.status = 'new' AND l.source = ?
-                 AND l.sold_at IS NULL
-               ORDER BY COALESCE(l.posted_at, l.first_seen) DESC
+               WHERE m.hunt_id = ? AND l.source = ? AND l.sold_at IS NULL
+                 AND (m.status = 'new'
+                      OR (m.status = 'saved' AND NOT EXISTS (
+                            SELECT 1 FROM scores s WHERE s.hunt_id = m.hunt_id
+                              AND s.listing_id = m.listing_id)))
+               ORDER BY m.status = 'saved' DESC,
+                        COALESCE(l.posted_at, l.first_seen) DESC
                LIMIT ?""", (hunt_id, source, limit))]
 
     def unjudged_counts(self) -> dict[str, int]:
