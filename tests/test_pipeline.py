@@ -1978,3 +1978,31 @@ def test_a_site_that_will_not_answer_is_still_an_error(rig):
     r = run_hunt(store, hunt, Gated(), scorer, notifiers, cfg.location)
     assert r.error and "SourceBlocked" in r.error
     assert store.last_success_at(hunt.id, "fixture") is None
+
+
+def test_a_decision_made_while_a_batch_is_judged_is_kept(rig):
+    """The gate reads statuses at the start of a pass, and judging takes a
+    minute or two. Dismissing a waiting listing in that time used to be undone
+    when its score arrived: it went back on the list and was announced."""
+    cfg, store, source, scorer, _ = rig
+    told = []
+
+    class Recorder:
+        name = "recorder"
+        def notify(self, hunt, surfaced):
+            told.extend(l.id for l, _ in surfaced)
+
+    class DecidesMidway(StubScorer):
+        def appraise(self, hunt, candidates):
+            scores = super().appraise(hunt, candidates)
+            for c in candidates:              # you, on the Waiting view
+                store.set_status(hunt.id, c.listing.id, "dismissed")
+            return scores
+
+    hunt = next(h for h in cfg.hunts if h.name == "free-nearby")
+    r = run_hunt(store, hunt, source, DecidesMidway(), [Recorder()],
+                 cfg.location)
+    assert r.n_scored > 0
+    statuses = set(store.statuses(hunt.id).values())
+    assert not statuses & {"wanted", "free_find", "scored"}, statuses
+    assert told == [] and r.n_wanted + r.n_free_find == 0

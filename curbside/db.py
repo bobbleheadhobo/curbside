@@ -19,7 +19,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from .models import Hunt, Listing, Score, StoredWant, UpsertResult, Want
+from .models import (DECIDED, Hunt, Listing, Score, StoredWant, UpsertResult,
+                     Want)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -669,6 +670,22 @@ class Store:
                WHERE hunt_id=? AND listing_id=? AND status IN ('new','filtered')""",
             [(reason, now, hunt_id, lid) for lid, reason in rejected],
         )
+
+    def set_judged_status(self, hunt_id: str, listing_id: str,
+                          status: str) -> int:
+        """The pipeline's status write: where a judgement puts a listing,
+        unless you decided on it first.
+
+        The gate keeps decided listings out of a pass, but it reads them at the
+        START. Judging a batch takes a minute or two, and a listing you
+        dismissed from the Waiting view in that time was set straight back to
+        `wanted` when its score arrived, and announced on Discord. The score
+        row is still saved; only the status is yours."""
+        marks = ",".join("?" * len(DECIDED))
+        return self.conn.execute(
+            "UPDATE hunt_matches SET status=?, updated_at=? "
+            f"WHERE hunt_id=? AND listing_id=? AND status NOT IN ({marks})",
+            (status, _now(), hunt_id, listing_id, *DECIDED)).rowcount
 
     def set_status(self, hunt_id: str, listing_id: str, status: str,
                    note: str | None = None) -> int:

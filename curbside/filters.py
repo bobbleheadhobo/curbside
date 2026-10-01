@@ -20,15 +20,15 @@ from functools import lru_cache
 from typing import Iterable, Mapping, Sequence
 
 from .geo import approx_distance_miles
-from .models import Candidate, GateResult, Hunt, Listing, Location, UpsertResult
+from .models import (DECIDED, Candidate, GateResult, Hunt, Listing, Location,
+                     UpsertResult)
 
 # How far a price must fall before a listing we already judged is worth
 # re-judging. Below this it is noise -- sellers nudge prices constantly.
 PRICE_DROP_THRESHOLD = 0.15
 
-# A decision you made, which is never re-judged. `grabbed` is the strongest
-# case of it: the thing is in the user's house.
-TRIAGED = ("saved", "dismissed", "grabbed")
+# A decision you made, which is never re-judged. See `models.DECIDED`.
+TRIAGED = DECIDED
 
 # Post-enrichment rejections that cannot come untrue. A listing does not grow a
 # photograph and it does not get younger, so re-deciding either one costs a

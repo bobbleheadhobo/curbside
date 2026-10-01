@@ -182,7 +182,7 @@ def _record_triage_drops(store: Store, hunt: Hunt, dropped: Sequence[Candidate],
                       + (notes.get(cand.listing.id) or "no reason given"),
             resolved_model=resolved_model)
         store.save_score(score, priced_at_cents=cand.listing.price_cents)
-        store.set_status(hunt.id, cand.listing.id, "scored")
+        store.set_judged_status(hunt.id, cand.listing.id, "scored")
     return len(dropped)
 
 
@@ -643,7 +643,7 @@ def run_hunt(
     by_id = {c.listing.id: c.listing for c in survivors}
     for score in scores:
         store.save_score(score, priced_at_cents=by_id[score.listing_id].price_cents)
-        store.set_status(hunt.id, score.listing_id, "scored")
+        store.set_judged_status(hunt.id, score.listing_id, "scored")
         result.cost_usd += score.cost_usd
     result.n_scored = len(scores) + n_dropped
 
@@ -706,10 +706,13 @@ def run_hunt(
         elif bin_name == "free_find":
             free_finds.append(s)
 
-    for s in wanted:
-        store.set_status(hunt.id, s.listing_id, "wanted")
-    for s in free_finds:
-        store.set_status(hunt.id, s.listing_id, "free_find")
+    # Only what actually landed. A listing you decided on while this batch
+    # was judged keeps your decision, and must not be announced or counted as
+    # a pick: `surfaced` goes to Discord straight from these lists.
+    wanted = [s for s in wanted
+              if store.set_judged_status(hunt.id, s.listing_id, "wanted")]
+    free_finds = [s for s in free_finds
+                  if store.set_judged_status(hunt.id, s.listing_id, "free_find")]
     result.n_wanted, result.n_free_find = len(wanted), len(free_finds)
 
     # Keep a local copy of the photo for anything you will actually browse.

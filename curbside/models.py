@@ -32,6 +32,12 @@ def normalize_title(title: str) -> str:
 # quietly grow past what the tool itself would propose.
 MAX_QUERIES = 6
 
+# A decision you made. The gate never re-judges one, and the pipeline never
+# writes over one: a pass judging a listing you dismissed while it ran would
+# otherwise put it back on your list. `grabbed` is the strongest case of it:
+# the thing is in the user's house.
+DECIDED = ("saved", "dismissed", "grabbed")
+
 
 @dataclass(frozen=True)
 class Want:
