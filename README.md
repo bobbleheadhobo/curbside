@@ -106,6 +106,11 @@ pass, from the same per-pass budget that fetches descriptions, so a want may
 have at most six. Its editor shows what each term has found that no other term
 did, which is how to decide which one to cut.
 
+**A want can be top priority.** It is searched first in every pass, so the
+request budget never runs out on it, its picks @mention you on Discord, and it
+leads the lists with a starred tag. Keep it to one or two: flag everything and
+it means nothing.
+
 The waking hours, each hunt's cadence, the blocked words and the tuned limits
 (the two score bars, the batch cap, the radius, the photo budget) are set on
 `/settings`, and the same seed-once rule applies to the blocked words.
@@ -120,11 +125,14 @@ Built for a phone, read many times a day. Five tabs along the bottom:
 | **Free** `/free` | free finds: picks that match nothing but are worth collecting |
 | **Saved** `/saved` | what you kept; **Grabbed it** records what you paid |
 | **Skipped** `/skipped` | judged and passed over, so the bar can be checked |
-| **Runs** `/runs` | what is running now, and why judging is held if it is |
+| **Runs** `/runs` | what is running now, and why judging is held if it is. **Run for an hour** wakes it outside its hours |
 
 `/stats` says what the bot spends and what each hunt found for it, `/settings`
 holds the controls above, and `/hunt/<id>` shows what one hunt judged and why
-anything was dropped. Each page has its own hue, so you can tell where you are
+anything was dropped. Its Waiting view is the queue still to be judged, and
+you can save or dismiss from it by hand; something saved there is judged once
+and stays saved. If Claude Code is logged out the pill says so, and Discord
+does too, once when it happens and once when it is back. Each page has its own hue, so you can tell where you are
 at a glance. [`DESIGN.md`](DESIGN.md) is the
 system, and [`docs/UI.md`](docs/UI.md) is how to work on it.
 

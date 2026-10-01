@@ -291,6 +291,15 @@ live service.
 raw source payload. Three separate parser bugs have been repaired from data
 already on disk, with no re-fetching. Price observations are append-only.
 
+**The pipeline never writes over your decision.** The gate reads statuses at
+the start of a pass, and judging a batch takes a minute or two, so a listing
+can be saved or dismissed from the Waiting view while its score is on the way.
+Every status the pipeline writes goes through `Store.set_judged_status`, which
+leaves `models.DECIDED` (saved, dismissed, grabbed) alone, and only picks whose
+write landed are announced. Do not route a new pipeline status write through
+plain `set_status`: that is the triage button's, and it writes unconditionally,
+which is how a dismissal used to come back as a pick and ping Discord.
+
 **What you paid is the only ground truth in the database.** Every judged
 listing carries an `est_value_cents` the model made up, and nothing else here
 can falsify one. `listings.grabbed_at` and `paid_cents` are written by the

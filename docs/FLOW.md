@@ -99,7 +99,7 @@ class Score:
 @dataclass(frozen=True)
 class Candidate:                   # survived the gate, headed for the model
     listing: Listing
-    reason: str                    # "new" | "price_drop" | "relist" | "backlog"
+    reason: str                    # "new" | "price_drop" | "relist" | "backlog" | "was_duplicate" | "saved"
 
 @dataclass(frozen=True)
 class StoredWant:                  # a want as the DATABASE holds it
@@ -226,7 +226,15 @@ ADMIT:
   - never scored for this hunt                           → reason "new"
   - price dropped ≥ 15% since last score                 → reason "price_drop"
   - relist of a previously-gone listing                  → reason "relist"
+
+TOP-UP (after the gate, with room under the cap):
+  - saved from Waiting, never scored                     → reason "saved"
+  - still new, collected earlier                         → reason "backlog"
 ```
+
+A `saved` candidate is the one exception to "triaged": you saved it before it
+was judged, so it is judged once and stays saved. It skips the post-enrichment
+checks, since a saved row's status is never written and a drop could not stick.
 
 `rejected` entries are **written to the DB**, not dropped. When a hunt returns nothing you
 can see whether 200 listings were fetched and all rejected on `over_price` (your cap is too
@@ -281,11 +289,14 @@ Failure is handled at three different depths, and the distinctions are load-bear
                                         └─ below threshold      ├─→ saved ──→ grabbed
                                            (visible in "all")   └─→ dismissed ──→ feeds F12
 
+   new ──(by hand, from the Waiting view)──→ saved (judged once) | dismissed (never judged)
    any state ──(absent from source N consecutive runs)──→ gone
 ```
 
 `filtered` is not terminal — a price drop pulls a listing back into contention. `dismissed`
-is terminal for surfacing but productive as training signal.
+is terminal for surfacing but productive as training signal. Saved, dismissed and grabbed
+(`models.DECIDED`) are yours: the pipeline never writes over one, even when it is part way
+through judging that listing.
 
 ## Part 5 — Dashboard
 
@@ -302,11 +313,14 @@ Four lists, sorted by *why* a listing is there rather than by how sure we are:
   the list.
 - **Saved** (`/saved`) — `status IN (saved, grabbed)`. What you decided to act on,
   and what you went and got. A grabbed listing is marked and counted apart, not
-  moved to a page of its own.
+  moved to a page of its own. Something saved before it was judged shows here
+  unscored until its one judgement arrives.
 - **Skipped** (`/skipped`) — judged, then passed over. Renamed from `/near`,
   which read as "near me"; the old URL 308-redirects.
 - **Hunt** (`/hunt/<id>`) — everything matched for one hunt, filtered by status,
   including rejected listings with their reason. This is how you tune a hunt.
+  Its Waiting view is the judging queue, and each card there can be saved or
+  dismissed by hand, which matters most while judging is held.
 - **Listing** (`/listing/<id>`) — images, full description, the judgement
   (score, reasoning, flags, requirements and unknowns) with earlier passes
   beneath it, price sparkline, link out, triage.

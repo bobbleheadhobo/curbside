@@ -29,6 +29,14 @@ Three rules keep it from becoming a mystery:
 * Being asleep is stated in the health pill on every page (`Asleep till 12pm`),
   and the first half hour after waking never reads as "quiet", because the last
   run is legitimately as old as the night.
+* **Run for an hour**, on `/runs` while asleep, wakes it by hand: two settings
+  (`schedule.woken_at`, `schedule.woken_until`) that `Schedule.is_open`
+  honours, so the timer, the pill and the page agree without a second check
+  anywhere, and the hour lapses by itself. The dashboard also starts
+  `curbside.service` at once, the timer's own unit, so the first pass does not
+  wait for the tick and cannot overlap a scheduled one. While woken the line
+  offers **Back to sleep**. An hour that runs on into the waking hours says
+  so, rather than claiming it ends.
 
 The window lives in `settings` and is edited at `/settings`; `config.yaml`
 supplies the starting values and the timezone.
@@ -97,6 +105,13 @@ first queries' results away: the receiver want spent 4 of its 7 like that.
 And the order rotates. `cli._rotated` advances a `pass_rotation` settings row
 each pass, one place at a time, so the shortage takes turns; without it, last
 would mean never. `--dry-run` reads the counter without advancing it.
+
+**Top-priority wants go first**, ahead of the turns, and the rest rotate behind
+them. It is a checkbox on the want (`wants.priority`), copied onto its hunt,
+and it is a flag rather than a rank on purpose: a rank puts something last,
+and last is never. A top-priority want's picks also @mention you on Discord,
+including a free sweep find that matched it. It never reaches the prompt,
+because how much you want a thing is not how good a match it is.
 
 Rotation makes a shortage fair. It does not make it smaller, and the cost side
 grows with the wants rather than with the listings. A search is one request per
@@ -238,7 +253,16 @@ from "silently broken", so it is no longer the caller's to remember.
   `new`, still this source, not confirmed sold, newest first. In steady state
   the backlog is empty and nothing changes, so re-running still costs nothing.
   The count per hunt is on `/runs`, because the one failure that view could not
-  show was collecting things and never judging them.
+  show was collecting things and never judging them. Each count is a link to
+  that hunt's Waiting view, where every card can be saved or dismissed by hand.
+
+  **A listing saved from Waiting joins the head of that queue**, as a `saved`
+  candidate, and is judged once: saving it is the point a judgement is worth
+  having, and without a score it has no price for a drop to be measured from.
+  It skips the post-enrichment checks in `pipeline._drop`, which it has to: a
+  saved row's status is never written, so a drop could not stick and would take
+  a slot on every run. Its score row takes it off the queue. A dismissed one is
+  never judged.
 - **A photograph is the minimum.** Without one there is nothing for the image
   pass to open, and on Craigslist a photoless post is usually not a listing at
   all: of the 51 collected, the titles run *"Gone"*, *"Free junk metal
@@ -353,6 +377,14 @@ priced items from want hunts, including a $40 entertainment centre carrying a
 green tv-stand chip in a tab called "Free finds". The sweep is free-only by
 construction, so this makes the list's name true. A want hunt's non-matches stay
 `scored` and are still findable in `/skipped`.
+
+**Routing never writes over your decision.** The gate reads statuses at the
+start of a pass and judging a batch takes a minute or two, so a listing can be
+saved or dismissed while its score is on the way. Every status the pipeline
+writes goes through `Store.set_judged_status`, which leaves `models.DECIDED`
+(saved, dismissed, grabbed) alone, and only what actually landed is announced.
+Before it, a dismissal made on the Waiting view was undone when the score
+arrived, and pinged Discord.
 
 **And a listing appears on exactly one list.** `hunt_matches` remains per
 (hunt, listing) — independent triage state is worth keeping — but the views
@@ -516,7 +548,11 @@ It is also invisible from outside. On 2026-09-30 the OAuth session expired and
 the bot went nine hours collecting and judging nothing.
 
 `_invoke` recognises the failure from the result text and stamps
-`claude_logged_out_at`; the next call that succeeds clears it.
+`claude_logged_out_at`; the next call that succeeds clears it. The text has to
+**open** with Claude Code's own wording ("Failed to authenticate", "Not logged
+in", "Please run /login"), because a failed call's text can be the model's
+answer about a listing, and "authenticated designer bag" would otherwise be a
+logout.
 `announce_login` runs after each pass and compares that with
 `claude_logged_out_announced`, so the wants channel gets one message when the
 login goes and one when it comes back. It is only marked announced once a post
@@ -527,6 +563,11 @@ other hold, so the pill reads **Logged out** and `/runs` says how to fix it,
 without the "Judge anyway" button, which cannot get past it.
 `check_available` passes `login=False` and still calls: that call is how the
 bot finds out you logged back in.
+
+Which means the flag can outlive the logout. Log back in under the spend
+ceiling and no call is made until midnight, so the logout went on showing and
+hid the ceiling along with its button. `/runs` now shows whatever else is
+holding judging as its own **Also paused** line, button and all.
 
 ## 9. Signals surfaced in the dashboard
 
@@ -549,14 +590,14 @@ All of this was collected and none of it was visible:
 |---|---|
 | `/` wants | matches for your list, unverified ones flagged. The wants list is edited here, in a panel folded above the cards |
 | `/free` free finds | worth collecting regardless of the list |
-| `/saved` | what you decided to act on, and what you went and grabbed |
+| `/saved` | what you decided to act on, and what you went and grabbed. Includes things saved before they were judged |
 | `/skipped` | judged, then passed over. `/near` 308-redirects here |
-| `/hunt/<id>` | one hunt's record by view (judged by default), and why the gate rejected what it did |
+| `/hunt/<id>` | one hunt's record by view (judged by default; `?view=waiting` for the queue, which can be saved or dismissed by hand), and why the gate rejected what it did |
 | `/listing/<id>` | detail, the judgement and every earlier pass, price sparkline |
-| `/runs` | what is true now and the one action each fact needs, the plan, every hunt's backlog, the last ten passes |
+| `/runs` | what is true now and the one action each fact needs (Run for an hour while asleep), the plan, every hunt's backlog linked to its Waiting view, the last ten passes |
 | `/runs/all` | every run, one row each, filterable by hunt |
 | `/settings` | running (hours and both pause switches), every cadence, the tuned limits, the blocked words |
-| `/wants/<name>` | one want: what it looks for, its budget, its cadence |
+| `/wants/<name>` | one want: what it looks for, its budget, its cadence, top priority |
 
 The settings page carries two **pause switches**: one for the sweeps, one for
 everything, and `/runs` offers Resume while either is on. Unlike every other pause here, they stop the *fetching* as well as
@@ -619,6 +660,8 @@ either the seed or is not consulted at all:
 | the two score bars, the per-run cap, the radius | `settings` `tune:<name>` | default |
 | blocked words | `settings` `hunt_exclude:<id>` | **seeds each hunt once** |
 | waking hours | `settings` `schedule.*` | starting values |
+| a hand-woken hour | `settings` `schedule.woken_*` | none |
+| top priority | `wants.priority` | none: set from the want's editor |
 | timezone | `config.yaml` | the only home. It is a fact, not a preference |
 | pause switches | `settings` `hunt_disabled:<id>` | `enabled:` still wins if false |
 

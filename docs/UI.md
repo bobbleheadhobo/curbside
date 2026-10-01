@@ -634,7 +634,9 @@ casually, and do not assume the browser is trusted.
 
 **The triage contract**: POST `/triage` with `hunt_id`, `listing_id`, `status`,
 optional `note`, and `back`. Status must be one of `saved` / `dismissed` /
-`wanted` / `free_find`. **Dismissing is not cosmetic** — dismissed
+`wanted` / `free_find` / `scored` / `new`. The last two exist for Undo and Put
+back, which must return a card exactly where it was: `scored` from `/skipped`,
+`new` from a hunt's Waiting view. **Dismissing is not cosmetic** — dismissed
 titles become negative examples in that hunt's next prompt, so the button is
 part of how the bot learns.
 
@@ -657,9 +659,22 @@ about 230px each: 46,000px on a phone, with the list of hunts at the very
 bottom. The top is now a status card built by `now_lines`: every fact true
 right now, most actionable first in the same order as the pill's ladder, each
 with the ONE action it calls for (*Judge anyway* when judging is held, *Resume*
-when something is paused). Only the lead fact's button is filled. Then the plan
-meters, then every hunt with its backlog, then what it is judging, then the
-last ten **passes**. `group_passes` finds a pass without a column: runs inside
+when something is paused, *Run for an hour* while asleep and *Back to sleep*
+once woken). Only the lead fact's button is filled. A logout offers no *Judge
+anyway*, since the other end refuses either way; whatever else is holding
+judging underneath it gets its own **Also paused** line with the button. Then
+the plan meters, then every hunt with its backlog, then what it is judging,
+then the last ten **passes**.
+
+**Each hunt row has two destinations, so it is not one anchor.** The row opens
+the hunt; its *N waiting* chip opens the same hunt on `?view=waiting`, which is
+what the chip counts. Links do not nest, so the row is a `.huntrow` with a
+`.huntrow-open` link stretched across it and the chip as its own link above,
+the same arrangement as `.card-open` on a listing card. Top-priority hunts
+lead the list and carry the starred `top_chip()` from `_card.html`, as they do
+on the wants list: one macro, so the two cannot drift. The chip takes the
+page's own tint, because amber, red and green already mean unknown, against
+and confirmed. `group_passes` finds a pass without a column: runs inside
 one start the instant the last finished, passes are minutes apart. Each pass is
 a `<details>` whose summary carries its warnings in plain words
 (`plain_warning`); the raw text stays in `title`. "What it is judging" shows
@@ -704,6 +719,7 @@ reporting "Asleep till 12pm" over a bot with every hunt switched off.
 1  every hunt off   → "Paused"          nothing runs, so nothing else explains it
 2  last run errored → "Fetch failing"
 2b stood aside      → "Judging paused"  fetched fine; the plan quota said no
+                     "Logged out"     the same rung, when Claude Code needs /login
 3  some hunts off   → "2 hunts off"     indefinite; only you undo it
 4  no runs at all   → "No runs yet"
 5  outside hours    → "Asleep till 12pm"  self-resolving, so it yields to a pause
@@ -846,9 +862,12 @@ dismissed -- under the database's own words (`free_find`, `filtered`), with
 Save and Dismiss on every card, so a dismissed listing offered Dismiss again.
 `HUNT_VIEWS` names each view in plain words over the statuses behind it, and a
 view with nothing in it has no chip. Each card offers only what its state
-allows: Save and Dismiss while undecided, **Put back** once dismissed (to the
-list `route` says its score earns, else Skipped), nothing when gone or
-rejected. Put back carries `data-kind="restored"` so `app.js` folds it with
+allows: Save and Dismiss while undecided, Waiting included, **Put back** once
+dismissed (to the list `route` says its score earns, else Skipped, and back to
+Waiting for one dismissed before it was judged), nothing when gone or
+rejected. Waiting gets the buttons because when judging is held it is the only
+place new finds are; saving one there queues it for one judgement and keeps it
+saved, and it appears on `/saved` unscored meanwhile. Put back carries `data-kind="restored"` so `app.js` folds it with
 Undo like the other two. Rejection reasons are grouped and named
 (`reason_label`): every duplicate was its own `duplicate_of:<id>` tag, and
 every tag used to link to all the rejections rather than its own. The counts
