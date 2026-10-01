@@ -3177,3 +3177,28 @@ def test_a_logout_does_not_hide_the_hold_beneath_it(tmp_path):
     assert "Claude Code is logged out." in page
     assert "Also paused" in page and "past the 70% mark" in page
     assert page.count("Judge anyway") == 1, "on the hold it can lift"
+
+
+def test_the_waiting_chip_opens_the_hunt_on_waiting(tmp_path):
+    """It sat inside the row's one link, so tapping it opened the hunt on
+    Judged, which is not what it was counting."""
+    import re
+    from curbside.db import Store
+    from curbside.models import Listing
+    client, cfg = _client(tmp_path)
+    hunt = _hunt_fixture(cfg)
+    s = Store(cfg.db_path)
+    l = Listing(id="facebook:40", source="facebook", source_id="40",
+                title="Still waiting", description="d", price_cents=5000,
+                currency="USD", url="u", images=("a.jpg",))
+    s.upsert_listing(l)
+    s.mark_matches(hunt.id, [l])
+
+    rows = client.get("/runs").text.split('id="hunts"')[1]
+    row = next(r for r in rows.split('<div class="huntrow">')
+               if f'href="/hunt/{hunt.id}"' in r)
+    assert f'class="huntrow-open" href="/hunt/{hunt.id}"' in row
+    chip = re.search(r'<a class="chip unk" href="([^"]+)">(\d+) waiting', row)
+    assert chip and chip[1] == f"/hunt/{hunt.id}?view=waiting"
+    page = client.get(chip[1]).text
+    assert "Still waiting" in page

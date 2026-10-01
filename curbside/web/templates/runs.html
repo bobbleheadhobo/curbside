@@ -120,13 +120,18 @@
   <h2>Hunts</h2>
   <div class="huntlist">
     {% for r in hunt_rows %}
-    <a href="/hunt/{{ r.hunt.id }}">
+    {# Two destinations, so the row is not one anchor -- links do not nest.
+       The row opens the hunt; the waiting chip opens it on Waiting, which is
+       what you were tapping it to see. Same overlay as a listing card. #}
+    <div class="huntrow">
+      <a class="huntrow-open" href="/hunt/{{ r.hunt.id }}"
+         aria-label="{{ r.hunt.name }}"></a>
       <span class="grow"><b>{{ r.hunt.name }}{% if r.hunt.priority %} {{ top_chip() }}{% endif %}</b>
         <small>{{ 'Free stuff' if r.hunt.kind == 'sweep' else 'Want' }}
           &middot; {{ ilabels.get(r.hunt.interval_minutes, 'every %d min' % r.hunt.interval_minutes)|lower }}</small></span>
       {% if r.paused %}<span class="chip">paused</span>{% endif %}
-      {% if r.waiting %}<span class="chip unk">{{ r.waiting }} waiting</span>{% endif %}
-    </a>
+      {% if r.waiting %}<a class="chip unk" href="/hunt/{{ r.hunt.id }}?view=waiting">{{ r.waiting }} waiting</a>{% endif %}
+    </div>
     {% else %}
     <div style="padding:14px 15px;color:var(--dim);font-size:13.5px">
       No hunts yet. Add a want from the Wants tab.</div>
