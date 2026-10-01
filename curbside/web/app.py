@@ -783,22 +783,33 @@ def now_lines(*, judging: dict, paused: list, hunts: list, sched,
         lines.append({"tone": "bad", "title": "The last fetch failed",
                       "text": f"{plain_error(last['error'])} It tries again "
                               f"next pass.", "raw": last["error"]})
-    if judging["held"]:
+    def held_line(j: dict) -> dict:
         line = {"tone": "warn", "title": "Judging is paused",
                 "text": " ".join(t for t in (
-                    f"{judging['why']}.", judging["resumes"],
-                    "Still collecting.") if t),
-                "raw": judging["raw"]}
+                    f"{j['why']}.", j["resumes"], "Still collecting.") if t),
+                "raw": j["raw"]}
         # Judging anyway cannot get past a logout: the other end refuses.
-        if judging.get("kind") != "logged_out":
+        if j.get("kind") != "logged_out":
             line["action"] = {"override": 120,
                               "label": "Judge anyway for 2 hours"}
-        lines.append(line)
+        return line
+
+    def override_line(j: dict) -> dict:
+        return {"tone": "ok", "title": "Judging anyway", "text": j["why"],
+                "action": {"override": 0, "label": "Back to normal limits"}}
+
+    if judging["held"]:
+        lines.append(held_line(judging))
+        # What else is holding it, which the logout would otherwise hide.
+        beneath = judging.get("beneath") or {}
+        if beneath.get("held"):
+            line = held_line(beneath)
+            line["title"] = "Also paused"
+            lines.append(line)
+        elif beneath.get("override"):
+            lines.append(override_line(beneath))
     elif judging["override"]:
-        lines.append({"tone": "ok", "title": "Judging anyway",
-                      "text": judging["why"],
-                      "action": {"override": 0,
-                                 "label": "Back to normal limits"}})
+        lines.append(override_line(judging))
     if paused and not all_off:
         if any(h.kind == "sweep" for h in paused):
             lines.append({"tone": "warn",
@@ -1097,7 +1108,16 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
     def _judging() -> dict:
         # `base_cfg.scorer`: the ceilings are config, not something the
         # dashboard tunes. Read only -- see `judging_state`.
-        return judging_view(judging_state(store, base_cfg.scorer))
+        state = judging_state(store, base_cfg.scorer)
+        view = judging_view(state)
+        # A logout is reported first, but it is not always the only hold, and
+        # it only clears when a call succeeds. Log back in under the spend
+        # ceiling and no call is made until midnight, so the logout went on
+        # showing and hid the one hold you could act on, with its button.
+        if state.kind == "logged_out":
+            view["beneath"] = judging_view(
+                judging_state(store, base_cfg.scorer, login=False))
+        return view
 
     def _health(paused, hunts, sched, activity, judging, last) -> dict:
         return health(last, paused, hunts, sched, activity, judging)

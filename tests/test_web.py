@@ -3159,3 +3159,21 @@ def test_a_listing_saved_while_waiting_is_on_saved(tmp_path):
     page = client.get("/saved").text
     assert "Saved before judging" in page
     assert "Why it is here" not in page.split("Saved before judging")[1][:3000]
+
+
+def test_a_logout_does_not_hide_the_hold_beneath_it(tmp_path):
+    """A logout only clears when a call succeeds, and under the spend ceiling
+    no call is made. It went on showing after you logged back in and hid the
+    ceiling, along with the button that could lift it."""
+    from curbside.db import Store
+    from curbside.scoring.claude_code import LOGGED_OUT_AT
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    s.finish_run(s.start_run(cfg.hunts[0], "x"))
+    s.set_setting(LOGGED_OUT_AT, "2026-09-30T17:06:45+00:00")
+    _record_reading(cfg, five="0.79")                  # the plan is over too
+
+    page = client.get("/runs").text
+    assert "Claude Code is logged out." in page
+    assert "Also paused" in page and "past the 70% mark" in page
+    assert page.count("Judge anyway") == 1, "on the hold it can lift"
