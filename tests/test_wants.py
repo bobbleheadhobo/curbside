@@ -1094,3 +1094,34 @@ def test_the_form_sets_top_priority_and_the_list_leads_with_it(app):
     client.post("/wants/save", data={**form, "name": "Zebra Chair",
                                      "existing": "zebra-chair"})
     assert store.get_want("zebra-chair").want.priority is False
+
+
+def test_a_new_want_is_searched_at_once_inside_the_hours(tmp_path):
+    """It has never run, so it is due. Waiting up to 15 minutes for the
+    timer to notice is a wait for nothing."""
+    from datetime import datetime
+    from curbside import schedule as sched_mod
+    shutil.copy(CONFIG, tmp_path / "config.yaml")
+    cfg = load(tmp_path / "config.yaml")
+    started = []
+    client = TestClient(create_app(cfg, start_pass=lambda: started.append(1)))
+    store = Store(cfg.db_path)
+    now = datetime.now(cfg.schedule.tz) if cfg.schedule.tz else datetime.now()
+    m = now.hour * 60 + now.minute
+    form = {"description": "d", "max_price": "50", "queries": "lamp"}
+
+    # Hours that include right now.
+    sched_mod.save(store, enabled=True, start_minute=(m - 60) % 1440,
+                   end_minute=(m + 60) % 1440)
+    client.post("/wants/save", data={**form, "name": "lamp"})
+    assert started == [1]
+
+    client.post("/wants/save", data={**form, "name": "lamp",
+                                     "existing": "lamp"})
+    assert started == [1], "an edit keeps the hunt's cadence"
+
+    # Hours that exclude right now: the timer would do nothing either.
+    sched_mod.save(store, enabled=True, start_minute=(m + 120) % 1440,
+                   end_minute=(m + 180) % 1440)
+    client.post("/wants/save", data={**form, "name": "rug"})
+    assert started == [1]

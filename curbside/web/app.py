@@ -1071,8 +1071,9 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
     empty, which is what the whole path falls back to anyway -- so the dashboard
     still runs, and every test that does not care can keep omitting it.
 
-    `start_pass` is the same shape of thing: what "Run for an hour" calls to
-    start a pass now rather than at the next tick. `cmd_serve` hands it the
+    `start_pass` is the same shape of thing: what "Run for an hour", and
+    saving a new want inside the waking hours, call to start a pass now
+    rather than at the next tick. `cmd_serve` hands it the
     real one. Left out, the hour still runs from the next tick, and no test
     can start the live service by accident."""
     app = FastAPI(title="Curbside")
@@ -2056,6 +2057,16 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         bar = next((h.min_deal_score for h in cfg.hunts if h.id == hid),
                    cfg.defaults.min_deal_score)
         store.note_want_rewritten(hid, bar)
+        # A new want has never run, so it is due: start a pass now rather than
+        # leave it up to 15 minutes for the next tick. Only inside the waking
+        # hours, where the timer would run it anyway; outside them `once --due`
+        # would do nothing. An edit starts nothing, since the hunt keeps its
+        # cadence. Fails open, like "Run for an hour": the tick still comes.
+        if stored is None and start_pass is not None and _schedule().is_open():
+            try:
+                start_pass()
+            except Exception:                              # noqa: BLE001
+                log.exception("could not start a pass")
         # Back to the list you just changed, open, rather than to the top of a
         # settings page with the change somewhere below the fold.
         return RedirectResponse(MANAGE_URL, status_code=303)
