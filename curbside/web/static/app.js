@@ -975,3 +975,13 @@ if ("serviceWorker" in navigator) {
     });
   });
 })();
+
+/* A filter dropdown applies itself on change, so its Show button only serves
+   a page loaded without this script. */
+(function () {
+  var sel = document.getElementById("huntpick");
+  if (!sel || !sel.form) return;
+  var btn = sel.form.querySelector("button[type=submit]");
+  if (btn) btn.remove();
+  sel.addEventListener("change", function () { sel.form.submit(); });
+})();

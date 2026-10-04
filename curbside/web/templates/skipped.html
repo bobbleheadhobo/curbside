@@ -26,23 +26,26 @@
   </p>
   <p>Judged, then passed over. Skim it now and then to check the bar is right.</p>
 </div>
-{# One chip per hunt, and only once there is a second to switch to. A bar is
-   set per want, so judging one means reading only what that want passed over;
-   on one page the sweep's volume buried the rest. #}
-{% set keep = '' if floor == 4.0 else '&floor=' ~ floor %}
+{# One choice per hunt, and only once there is a second to switch to. A bar
+   is set per want, so judging one means reading only what that want passed
+   over. A dropdown rather than chips: seven hunts as chips wrapped to three
+   rows above the cards. A plain GET form, so it works without the script,
+   which only submits it on change and drops the button. #}
 {% if chips|length > 1 %}
-<nav class="filterchips" aria-label="Hunt">
-  <a class="chip" href="/skipped{{ '?' ~ keep[1:] if keep }}"
-     {%- if not hunt %} aria-current="true"{% endif %}>All
-    <span class="num">{{ all_n }}</span></a>
-  {% for id, name, n in chips %}
-  <a class="chip" href="/skipped?hunt={{ id|urlencode }}{{ keep }}"
-     {%- if id == hunt %} aria-current="true"{% endif %}>{{ name }}
-    <span class="num">{{ n }}</span></a>
-  {% endfor %}
-</nav>
+<form class="huntpick" method="get" action="/skipped">
+  <label class="sr" for="huntpick">Hunt</label>
+  <select id="huntpick" name="hunt">
+    <option value=""{% if not hunt %} selected{% endif %}>All hunts ({{ all_n }})</option>
+    {% for id, name, n in chips %}
+    <option value="{{ id }}"{% if id == hunt %} selected{% endif %}>{{ name }} ({{ n }})</option>
+    {% endfor %}
+  </select>
+  {% if floor != 4.0 %}<input type="hidden" name="floor" value="{{ floor }}">{% endif %}
+  <button class="btn" type="submit">Show</button>
+</form>
 {% endif %}
 
+{% set keep = '' if floor == 4.0 else '&floor=' ~ floor %}
 {% set back = '/skipped?hunt=' ~ hunt|urlencode ~ keep if hunt else '/skipped' ~ ('?' ~ keep[1:] if keep else '') %}
 <div class="stack">
 {% for i in items %}{{ card(i, back) }}{% else %}

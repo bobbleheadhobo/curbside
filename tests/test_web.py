@@ -3227,7 +3227,7 @@ def test_skipped_filters_to_one_hunt(tmp_path):
 
     every = client.get("/skipped").text
     assert all(f"item x:{n}" in every for n in (1, 2, 3))
-    assert f"?hunt={b.id.replace(':', '%3A')}" in every     # its chip
+    assert f'<option value="{b.id}"' in every               # its choice
 
     one = client.get(f"/skipped?hunt={b.id}").text
     assert "item x:1" not in one
