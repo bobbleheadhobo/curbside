@@ -55,7 +55,7 @@ curbside/web/
     wants.html      /        matches, and the wants list itself
     free.html       /free    worth grabbing anyway
     saved.html      /saved   what you decided to act on
-    skipped.html    /skipped judged, then passed over (/near redirects here)
+    skipped.html    /skipped judged, then passed over, ?hunt= narrows to one (/near redirects here)
     hunt.html       /hunt/<id>  one hunt's record, by view, and why things were rejected
     listing.html    /listing/<id>  detail, scores, price sparkline
     error.html      404 / 400 / 500, in the normal shell

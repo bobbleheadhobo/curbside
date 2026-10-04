@@ -60,7 +60,7 @@ default `config.yaml` points at live sources with the real scorer.
 .venv/bin/python -m curbside.cli once --dry-run      # fetch + gate, writes nothing
 .venv/bin/python -m curbside.cli notify              # flush alerts, no fetch, no cost
 .venv/bin/python -m curbside.cli recheck            # still for sale? requests, no quota
-.venv/bin/python -m pytest tests/ -q                # 670 tests, all offline
+.venv/bin/python -m pytest tests/ -q                # 671 tests, all offline
 ```
 
 To exercise the real thing without touching the live database, copy

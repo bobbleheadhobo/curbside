@@ -256,7 +256,23 @@ SAVED_SQL = _queue_sql("WHERE m.status IN ('saved', 'grabbed')" + ONE_BIN,
 # which brings it here with the card saying "price unclear" over it. A folded
 # group on /free used to carry them instead: it rendered a second copy of any
 # that reached a bin anyway, and scanned `scores` unindexed on every load.
-NEAR_MISS_SQL = _queue_sql("WHERE m.status = 'scored' AND s.deal_score >= ?")
+#
+# `hunt` narrows it to one hunt, '' for all of them. A wants bar is judged per
+# want, and with every hunt on one page the sweep's volume buried the few cards
+# that said anything about one want's threshold.
+NEAR_MISS_SQL = _queue_sql("WHERE m.status = 'scored' AND s.deal_score >= ?"
+                           " AND (? = '' OR m.hunt_id = ?)")
+
+# What the hunt chips on /skipped count, over the same rows NEAR_MISS_SQL
+# reads. The page total is their sum rather than a third query that could
+# disagree with them.
+NEAR_MISS_COUNTS_SQL = """
+SELECT m.hunt_id, COUNT(*) AS n FROM hunt_matches m
+JOIN scores s ON s.id = (SELECT MAX(id) FROM scores
+                         WHERE hunt_id = m.hunt_id AND listing_id = m.listing_id)
+WHERE m.status = 'scored' AND s.deal_score >= ?
+GROUP BY m.hunt_id
+"""
 
 
 def _rows(store: Store, sql: str, args=()) -> list[dict]:
@@ -1242,19 +1258,26 @@ def create_app(base_cfg: Config, scorer=None, start_pass=None) -> FastAPI:
         return RedirectResponse(f"/skipped?floor={floor}", status_code=308)
 
     @app.get("/skipped")
-    def skipped(request: Request, floor: float = 4.0):
+    def skipped(request: Request, floor: float = 4.0, hunt: str = ""):
         """Judged, then passed over. This is how you tell whether the bar is
-        in the right place."""
-        items = _rows(store, NEAR_MISS_SQL, (floor, PAGE_LIMIT))
-        total = store.conn.execute(
-            "SELECT COUNT(*) c FROM hunt_matches m JOIN scores s ON s.id = "
-            "(SELECT MAX(id) FROM scores WHERE hunt_id=m.hunt_id AND "
-            "listing_id=m.listing_id) WHERE m.status='scored' AND s.deal_score>=?",
-            (floor,)).fetchone()["c"]
+        in the right place -- and a bar is per want, so it filters by hunt."""
+        counts = {r["hunt_id"]: r["n"] for r in
+                  store.conn.execute(NEAR_MISS_COUNTS_SQL, (floor,))}
+        # Live hunts in their usual order, then any archived want that still
+        # has rows here: what a deleted want passed over stays readable.
+        cfg = _live()
+        known = hunts_including_archived(cfg, store)
+        order = [h for h in known if h in counts]
+        order += sorted(h for h in counts if h not in known)
+        chips = [(h, known[h].name if h in known else h.split(":", 1)[-1],
+                  counts[h]) for h in order]
+        items = _rows(store, NEAR_MISS_SQL, (floor, hunt, hunt, PAGE_LIMIT))
+        total = counts.get(hunt, 0) if hunt else sum(counts.values())
         return TEMPLATES.TemplateResponse(
             request, "skipped.html",
-            ctx(request, items=items, total=total,
-                floor=floor, truncated=total > len(items)))
+            ctx(request, cfg=cfg, items=items, total=total, floor=floor,
+                chips=chips, hunt=hunt, all_n=sum(counts.values()),
+                truncated=total > len(items)))
 
     # --- installable ------------------------------------------------------
     # Android will offer to add this to a home screen given a manifest, an icon

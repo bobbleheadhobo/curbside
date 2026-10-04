@@ -26,8 +26,26 @@
   </p>
   <p>Judged, then passed over. Skim it now and then to check the bar is right.</p>
 </div>
+{# One chip per hunt, and only once there is a second to switch to. A bar is
+   set per want, so judging one means reading only what that want passed over;
+   on one page the sweep's volume buried the rest. #}
+{% set keep = '' if floor == 4.0 else '&floor=' ~ floor %}
+{% if chips|length > 1 %}
+<nav class="filterchips" aria-label="Hunt">
+  <a class="chip" href="/skipped{{ '?' ~ keep[1:] if keep }}"
+     {%- if not hunt %} aria-current="true"{% endif %}>All
+    <span class="num">{{ all_n }}</span></a>
+  {% for id, name, n in chips %}
+  <a class="chip" href="/skipped?hunt={{ id|urlencode }}{{ keep }}"
+     {%- if id == hunt %} aria-current="true"{% endif %}>{{ name }}
+    <span class="num">{{ n }}</span></a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+{% set back = '/skipped?hunt=' ~ hunt|urlencode ~ keep if hunt else '/skipped' ~ ('?' ~ keep[1:] if keep else '') %}
 <div class="stack">
-{% for i in items %}{{ card(i, '/skipped') }}{% else %}
+{% for i in items %}{{ card(i, back) }}{% else %}
 <div class="empty">
   <svg class="i" aria-hidden="true"><use href="#i-skipped"/></svg>
   <b>Nothing has been passed over yet</b>

@@ -3202,3 +3202,34 @@ def test_the_waiting_chip_opens_the_hunt_on_waiting(tmp_path):
     assert chip and chip[1] == f"/hunt/{hunt.id}?view=waiting"
     page = client.get(chip[1]).text
     assert "Still waiting" in page
+
+
+def test_skipped_filters_to_one_hunt(tmp_path):
+    """A bar is set per want, so /skipped narrows to one hunt: on one page the
+    sweep's volume buried what a single want had passed over."""
+    from datetime import datetime, timezone
+    from curbside.db import Store
+    from curbside.models import Listing, Score
+    client, cfg = _client(tmp_path)
+    s = Store(cfg.db_path)
+    a, b = cfg.hunts[0], cfg.hunts[1]
+    for lid, hunt in (("x:1", a), ("x:2", b), ("x:3", b)):
+        l = Listing(id=lid, source="x", source_id=lid[-1], title=f"item {lid}",
+                    description=None, price_cents=0, currency="USD", url="u")
+        s.upsert_listing(l); s.mark_matches(hunt.id, [l])
+        s.set_status(hunt.id, lid, "scored")
+        s.save_score(Score(listing_id=lid, hunt_id=hunt.id, model="m",
+                           scored_at=datetime.now(timezone.utc), match="no",
+                           deal_score=5.0, est_value_cents=None, condition=None,
+                           matched_want=None, worth_grabbing=True, unknowns=(),
+                           requirements=(), red_flags=(), reasoning="r"),
+                     priced_at_cents=0)
+
+    every = client.get("/skipped").text
+    assert all(f"item x:{n}" in every for n in (1, 2, 3))
+    assert f"?hunt={b.id.replace(':', '%3A')}" in every     # its chip
+
+    one = client.get(f"/skipped?hunt={b.id}").text
+    assert "item x:1" not in one
+    assert "item x:2" in one and "item x:3" in one
+    assert "<b>2</b> skipped" in one
