@@ -1382,7 +1382,6 @@ td .kind.hi{color:var(--warn)}
   vertical-align:2px;margin-left:4px;font-size:11px;letter-spacing:0}
 .chip.top svg.i{font-size:12px;color:var(--accent)}
 
-/* The hunt dropdown on /skipped. Not full width: it names a hunt, and a
-   field spanning the page reads as a form to fill in. */
+/* The hunt dropdown on /skipped. Full width, like every other select here. */
 .huntpick{display:flex;gap:8px;align-items:center;margin:0 0 16px}
-.huntpick select{width:auto;max-width:100%}
+.huntpick select{flex:1 1 auto;min-width:0}
