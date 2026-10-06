@@ -102,8 +102,14 @@ one: the default of waiting produced a single commit holding a feature, a
 redesign, six bug fixes and somebody else's uncommitted work in progress, which
 is a commit nobody can read and nobody can revert a piece of. Commit at the
 natural seam instead: tests green, dashboard restarted and checked, one thing
-finished. There is no remote, so a commit costs nothing and is trivially
-amended.
+finished. A local commit costs nothing and is trivially amended until it is
+pushed.
+
+The remote is `origin` (github.com/bobbleheadhobo/curbside), and `main` is
+pushed directly. The repo has a "changes must go through a pull request" rule
+that the owner's account bypasses, so GitHub prints a bypass notice on every
+push; that notice is expected and the push still lands. Never amend or rebase
+a commit that is already on `origin`.
 
 Message style is the log's own: a short declarative sentence, no
 `feat:`/`fix:` prefix, and a body that says *why* rather than restating the
